@@ -129,3 +129,8 @@ export type ToolDirOverride = {
   current_dir: string
   has_override: boolean
 }
+
+export type CustomScanDirEntry = {
+  name: string
+  path: string
+}

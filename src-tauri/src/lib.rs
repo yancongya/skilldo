@@ -110,7 +110,11 @@ pub fn run() {
             commands::cancel_current_operation,
             commands::get_tool_skills_dir_overrides,
             commands::set_tool_skills_dir_override,
-            commands::reset_tool_skills_dir_override
+            commands::reset_tool_skills_dir_override,
+            commands::get_custom_scan_dirs,
+            commands::add_custom_scan_dir,
+            commands::remove_custom_scan_dir,
+            commands::browse_directory_show_hidden,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

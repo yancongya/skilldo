@@ -21,6 +21,7 @@ import ImportModal from './components/skills/modals/ImportModal'
 import NewToolsModal from './components/skills/modals/NewToolsModal'
 import ScopeSyncModal from './components/skills/modals/ScopeSyncModal'
 import SharedDirModal from './components/skills/modals/SharedDirModal'
+import NamePromptModal from './components/skills/modals/NamePromptModal'
 import SettingsPage from './components/skills/SettingsPage'
 import type {
   FeaturedSkillDto,
@@ -34,6 +35,7 @@ import type {
   ToolOption,
   ToolStatusDto,
   ToolDirOverride,
+  CustomScanDirEntry,
   UpdateResultDto,
 } from './components/skills/types'
 
@@ -124,6 +126,8 @@ function App() {
   const [recentProjects, setRecentProjects] = useState<string[]>([])
   const [skillScopeState, setSkillScopeState] = useState<SkillScopeState>({})
   const [toolDirOverrides, setToolDirOverrides] = useState<ToolDirOverride[]>([])
+  const [customScanDirs, setCustomScanDirs] = useState<CustomScanDirEntry[]>([])
+  const [pendingScanDirPath, setPendingScanDirPath] = useState<string | null>(null)
 
   const isTauri =
     typeof window !== 'undefined' &&
@@ -325,13 +329,72 @@ function App() {
     }
   }, [invokeTauri, loadToolDirOverrides, t])
 
+  const loadCustomScanDirs = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      const result = await invokeTauri<CustomScanDirEntry[]>('get_custom_scan_dirs')
+      setCustomScanDirs(result)
+    } catch {
+      // non-fatal
+    }
+  }, [invokeTauri, isTauri])
+  const handleAddCustomScanDir = useCallback(async (prefilledPath?: string) => {
+    if (!isTauri) {
+      setError('This feature requires Tauri app')
+      return
+    }
+    try {
+      let rawPath: string | undefined = prefilledPath
+      if (!rawPath) {
+        const filePath = await invokeTauri<string | null>('browse_directory_show_hidden')
+        if (!filePath) return
+        setPendingScanDirPath(filePath)
+      } else {
+        const name = rawPath.split('/').pop() || rawPath.split('\\').pop() || 'custom'
+        const updated = await invokeTauri<CustomScanDirEntry[]>('add_custom_scan_dir', { name: name.trim(), path: rawPath })
+        setCustomScanDirs(updated)
+        setSuccessToastMessage(t('settingsSaved'))
+        await loadPlan()
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+    }
+  }, [isTauri, invokeTauri, t, loadPlan])
+
+  const handleConfirmScanDirName = useCallback(async (name: string) => {
+    const path = pendingScanDirPath
+    if (!path) return
+    setPendingScanDirPath(null)
+    try {
+      const updated = await invokeTauri<CustomScanDirEntry[]>('add_custom_scan_dir', { name: name.trim(), path })
+      setCustomScanDirs(updated)
+      setSuccessToastMessage(t('settingsSaved'))
+      await loadPlan()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
+    }
+  }, [pendingScanDirPath, invokeTauri, t, loadPlan])
+  const handleRemoveCustomScanDir = useCallback(async (path: string) => {
+    try {
+      const updated = await invokeTauri<CustomScanDirEntry[]>('remove_custom_scan_dir', { path })
+      setCustomScanDirs(updated)
+      setSuccessToastMessage(t('settingsSaved'))
+      await loadPlan()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [invokeTauri, t, loadPlan])
+
   useEffect(() => {
     if (isTauri) {
       loadManagedSkills()
       loadTags()
       loadToolDirOverrides()
+      loadCustomScanDirs()
     }
-  }, [isTauri, loadManagedSkills, loadTags, loadToolDirOverrides])
+  }, [isTauri, loadManagedSkills, loadTags, loadToolDirOverrides, loadCustomScanDirs])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2546,6 +2609,9 @@ function App() {
             toolDirOverrides={toolDirOverrides}
             onSetToolDirOverride={handleSetToolDirOverride}
             onResetToolDirOverride={handleResetToolDirOverride}
+            customScanDirs={customScanDirs}
+            onAddCustomScanDir={handleAddCustomScanDir}
+            onRemoveCustomScanDir={handleRemoveCustomScanDir}
             t={t}
           />
         ) : (
@@ -2666,6 +2732,15 @@ function App() {
         onSyncAll={handleSyncAllNewTools}
         t={t}
       />
+
+      {pendingScanDirPath ? (
+        <NamePromptModal
+          pendingPath={pendingScanDirPath}
+          t={t}
+          onConfirm={handleConfirmScanDirName}
+          onCancel={() => setPendingScanDirPath(null)}
+        />
+      ) : null}
 
       <DeleteModal
         open={Boolean(pendingDeleteId)}

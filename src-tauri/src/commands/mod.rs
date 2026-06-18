@@ -1,5 +1,5 @@
 use anyhow::Context;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
@@ -34,6 +34,14 @@ use crate::core::tool_adapters::{
 };
 
 const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
+const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomScanDirEntry {
+    pub name: String,
+    pub path: String,
+}
 
 fn resolve_tool_global_dir(adapter_key: &str, store: &SkillStore) -> anyhow::Result<String> {
     let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, adapter_key);
@@ -262,6 +270,120 @@ pub async fn reset_tool_skills_dir_override(
         let key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, tool_key);
         store.delete_setting(&key)?;
         Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn get_custom_scan_dirs(
+    store: State<'_, SkillStore>,
+) -> Result<Vec<CustomScanDirEntry>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw = store.get_setting(CUSTOM_SCAN_DIRS_KEY)?;
+        let dirs: Vec<CustomScanDirEntry> = match raw {
+            Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+            None => Vec::new(),
+        };
+        Ok::<_, anyhow::Error>(dirs)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn browse_directory_show_hidden(
+    app_handle: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app_handle
+        .run_on_main_thread(move || {
+            let result = browse_directory_hidden_impl();
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("failed to dispatch to main thread: {e}"))?;
+    rx.recv().map_err(|_| "main thread task cancelled".to_string())?
+}
+
+#[cfg(target_os = "macos")]
+fn browse_directory_hidden_impl() -> Result<Option<String>, String> {
+    use objc2_app_kit::{NSOpenPanel, NSModalResponseOK};
+
+    let mtm = objc2::MainThreadMarker::new()
+        .ok_or_else(|| "not on main thread".to_string())?;
+    let panel = NSOpenPanel::openPanel(mtm);
+    panel.setCanChooseDirectories(true);
+    panel.setCanChooseFiles(false);
+    panel.setAllowsMultipleSelection(false);
+    panel.setShowsHiddenFiles(true);
+    let result = panel.runModal();
+    if result == NSModalResponseOK {
+        let path = panel.URL()
+            .and_then(|url| url.path())
+            .map(|s| s.to_string())
+            .ok_or_else(|| "could not read selected path".to_string())?;
+        Ok(Some(path))
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn browse_directory_hidden_impl() -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[tauri::command]
+pub async fn add_custom_scan_dir(
+    store: State<'_, SkillStore>,
+    name: String,
+    path: String,
+) -> Result<Vec<CustomScanDirEntry>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw = store.get_setting(CUSTOM_SCAN_DIRS_KEY)?;
+        let mut dirs: Vec<CustomScanDirEntry> = match raw {
+            Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let expanded = expand_home_path(&path)?;
+        let canonical = expanded.canonicalize().context("path does not exist")?;
+        let canonical_str = canonical.to_string_lossy().to_string();
+        if !dirs.iter().any(|e| e.path == canonical_str) {
+            dirs.push(CustomScanDirEntry {
+                name,
+                path: canonical_str,
+            });
+        }
+        store.set_setting(CUSTOM_SCAN_DIRS_KEY, &serde_json::to_string(&dirs)?)?;
+        Ok::<_, anyhow::Error>(dirs)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn remove_custom_scan_dir(
+    store: State<'_, SkillStore>,
+    path: String,
+) -> Result<Vec<CustomScanDirEntry>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let raw = store.get_setting(CUSTOM_SCAN_DIRS_KEY)?;
+        let mut dirs: Vec<CustomScanDirEntry> = match raw {
+            Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let expanded = expand_home_path(&path)?;
+        let canonical = expanded.canonicalize()?;
+        let canonical_str = canonical.to_string_lossy().to_string();
+        dirs.retain(|e| e.path != canonical_str);
+        store.set_setting(CUSTOM_SCAN_DIRS_KEY, &serde_json::to_string(&dirs)?)?;
+        Ok::<_, anyhow::Error>(dirs)
     })
     .await
     .map_err(|err| err.to_string())?

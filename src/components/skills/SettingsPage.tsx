@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, FolderOpen, RotateCcw } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { Update } from '@tauri-apps/plugin-updater'
-import type { ToolDirOverride } from './types'
+import type { CustomScanDirEntry, ToolDirOverride } from './types'
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'done' | 'error'
 
@@ -24,6 +24,9 @@ type SettingsPageProps = {
   onGithubTokenChange: (token: string) => void
   onSetToolDirOverride: (toolKey: string, path: string) => void
   onResetToolDirOverride: (toolKey: string) => void
+  customScanDirs: CustomScanDirEntry[]
+  onAddCustomScanDir: (path?: string) => void
+  onRemoveCustomScanDir: (path: string) => void
   onBack: () => void
   t: TFunction
 }
@@ -46,6 +49,9 @@ const SettingsPage = ({
   onGithubTokenChange,
   onSetToolDirOverride,
   onResetToolDirOverride,
+  customScanDirs,
+  onAddCustomScanDir,
+  onRemoveCustomScanDir,
   onBack,
   t,
 }: SettingsPageProps) => {
@@ -58,6 +64,15 @@ const SettingsPage = ({
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const updateRef = useRef<Update | null>(null)
+
+  const [manualDirInput, setManualDirInput] = useState('')
+  const handleManualAddScanDir = useCallback(() => {
+    const trimmed = manualDirInput.trim()
+    if (trimmed) {
+      onAddCustomScanDir(trimmed)
+      setManualDirInput('')
+    }
+  }, [manualDirInput, onAddCustomScanDir])
 
   const handleCheckUpdate = useCallback(async () => {
     if (!isTauri) return
@@ -310,6 +325,56 @@ const SettingsPage = ({
             t={t}
           />
         ))}
+
+        <div className="settings-section-divider" />
+        <div className="settings-section-title">{t('customScanDirs')}</div>
+        <div className="settings-helper" style={{ marginBottom: 12 }}>{t('customScanDirHint')}</div>
+        {customScanDirs.map((entry) => (
+          <div className="settings-tool-dir-row" key={entry.path}>
+            <div className="settings-tool-dir-top">
+              <span className="settings-tool-dir-label">{entry.name}</span>
+              <div className="settings-tool-dir-actions">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  onClick={() => onRemoveCustomScanDir(entry.path)}
+                >
+                  {t('remove')}
+                </button>
+              </div>
+            </div>
+            <div className="settings-tool-dir-path mono">{entry.path}</div>
+          </div>
+        ))}
+        <div className="settings-input-row" style={{ marginTop: 8 }}>
+          <input
+            className="settings-input mono"
+            type="text"
+            placeholder="~/path/to/skills"
+            value={manualDirInput}
+            onChange={(e) => setManualDirInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleManualAddScanDir()
+              }
+            }}
+          />
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={handleManualAddScanDir}
+            disabled={!manualDirInput.trim()}
+          >
+            {t('addScanDir')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={() => onAddCustomScanDir()}
+          >
+            {t('browse')}
+          </button>
+        </div>
 
         <div className="settings-field settings-update-section">
           <label className="settings-label">{t('appUpdates')}</label>

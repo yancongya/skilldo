@@ -48,6 +48,7 @@ pub enum ToolId {
     Windsurf,
     Moltbot,
     HermesAgent,
+    Custom,
 }
 
 impl ToolId {
@@ -97,6 +98,7 @@ impl ToolId {
             ToolId::Windsurf => "windsurf",
             ToolId::Moltbot => "moltbot",
             ToolId::HermesAgent => "hermes_agent",
+            ToolId::Custom => "custom",
         }
     }
 }
@@ -511,6 +513,7 @@ pub fn project_relative_skills_dir(adapter: &ToolAdapter) -> &'static str {
         | ToolId::Clawdbot
         | ToolId::Moltbot
         | ToolId::HermesAgent => adapter.relative_skills_dir,
+        _ => adapter.relative_skills_dir,
     }
 }
 

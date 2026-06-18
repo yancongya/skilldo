@@ -1,13 +1,22 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context;
 use anyhow::Result;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use super::central_repo::resolve_central_repo_path;
 use super::content_hash::hash_dir;
 use super::skill_store::SkillStore;
-use super::tool_adapters::{default_tool_adapters, scan_tool_dir, DetectedSkill};
+use super::tool_adapters::{default_tool_adapters, scan_tool_dir, DetectedSkill, ToolId};
+
+const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomScanDirEntry {
+    name: String,
+    path: String,
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct OnboardingVariant {
@@ -39,20 +48,33 @@ pub fn build_onboarding_plan<R: tauri::Runtime>(
 ) -> Result<OnboardingPlan> {
     let home =
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("failed to resolve home directory"))?;
-    let central = resolve_central_repo_path(app, store)?;
+    let central = crate::core::central_repo::resolve_central_repo_path(app, store)?;
     let managed_targets = store
         .list_all_skill_target_paths()
         .unwrap_or_default()
         .into_iter()
         .map(|(tool, path)| managed_target_key(&tool, Path::new(&path)))
         .collect::<std::collections::HashSet<_>>();
-    build_onboarding_plan_in_home(&home, Some(&central), Some(&managed_targets))
+    let custom_dirs: Vec<CustomScanDirEntry> = store
+        .get_setting(CUSTOM_SCAN_DIRS_KEY)
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
+    let custom_dir_paths: Vec<String> = custom_dirs.iter().map(|e| e.path.clone()).collect();
+    build_onboarding_plan_in_home(
+        &home,
+        Some(&central),
+        Some(&managed_targets),
+        &custom_dir_paths,
+    )
 }
 
 fn build_onboarding_plan_in_home(
     home: &Path,
     exclude_root: Option<&Path>,
     exclude_managed_targets: Option<&std::collections::HashSet<String>>,
+    custom_dirs: &[String],
 ) -> Result<OnboardingPlan> {
     let adapters = default_tool_adapters();
     let mut all_detected: Vec<DetectedSkill> = Vec::new();
@@ -65,6 +87,20 @@ fn build_onboarding_plan_in_home(
         scanned += 1;
         let dir = home.join(adapter.relative_skills_dir);
         let detected = scan_tool_dir(adapter, &dir)?;
+        all_detected.extend(filter_detected(
+            detected,
+            exclude_root,
+            exclude_managed_targets,
+        ));
+    }
+
+    for custom_dir_str in custom_dirs {
+        let dir = PathBuf::from(custom_dir_str);
+        if !dir.exists() {
+            continue;
+        }
+        scanned += 1;
+        let detected = scan_custom_dir(&dir)?;
         all_detected.extend(filter_detected(
             detected,
             exclude_root,
@@ -110,6 +146,65 @@ fn build_onboarding_plan_in_home(
         total_skills_found: all_detected.len(),
         groups,
     })
+}
+
+fn scan_custom_dir(dir: &Path) -> Result<Vec<DetectedSkill>> {
+    let mut results = Vec::new();
+    if !dir.exists() {
+        return Ok(results);
+    }
+
+    if dir.join("SKILL.md").exists() || dir.join("skill.md").exists() {
+        let name = dir
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let meta = std::fs::symlink_metadata(dir)?;
+        let is_link = meta.file_type().is_symlink();
+        let link_target = if is_link {
+            std::fs::read_link(dir).ok()
+        } else {
+            None
+        };
+        results.push(DetectedSkill {
+            tool: ToolId::Custom,
+            name,
+            path: dir.to_path_buf(),
+            is_link,
+            link_target,
+        });
+        return Ok(results);
+    }
+
+    for entry in std::fs::read_dir(dir).context(format!("read dir {:?}", dir))? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        let is_dir = file_type.is_dir() || (file_type.is_symlink() && path.is_dir());
+        if !is_dir {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !path.join("SKILL.md").exists() && !path.join("skill.md").exists() {
+            continue;
+        }
+        let meta = std::fs::symlink_metadata(&path)?;
+        let is_link = meta.file_type().is_symlink();
+        let link_target = if is_link {
+            std::fs::read_link(&path).ok()
+        } else {
+            None
+        };
+        results.push(DetectedSkill {
+            tool: ToolId::Custom,
+            name,
+            path,
+            is_link,
+            link_target,
+        });
+    }
+
+    Ok(results)
 }
 
 fn filter_detected(

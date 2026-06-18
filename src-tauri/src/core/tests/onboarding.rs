@@ -20,7 +20,7 @@ fn groups_by_name_and_detects_conflicts_by_fingerprint() {
     fs::create_dir_all(home.path().join(".codex/skills/.system")).unwrap();
     fs::write(home.path().join(".codex/skills/.system/SKILL.md"), b"x").unwrap();
 
-    let plan = build_onboarding_plan_in_home(home.path(), None, None).unwrap();
+    let plan = build_onboarding_plan_in_home(home.path(), None, None, &[]).unwrap();
     assert_eq!(plan.total_tools_scanned, 2);
     assert_eq!(plan.total_skills_found, 2);
     assert_eq!(plan.groups.len(), 1);
@@ -46,7 +46,7 @@ fn excludes_central_repo_path() {
     let link_path = home.path().join(".cursor/skills/skill-a");
     symlink(central.join("skill-a"), &link_path).unwrap();
 
-    let plan = build_onboarding_plan_in_home(home.path(), Some(&central), None).unwrap();
+    let plan = build_onboarding_plan_in_home(home.path(), Some(&central), None, &[]).unwrap();
     assert_eq!(plan.total_skills_found, 0);
 }
 
@@ -65,6 +65,6 @@ fn excludes_managed_skill_targets() {
         &home.path().join(".cursor/skills/foo"),
     ));
 
-    let plan = build_onboarding_plan_in_home(home.path(), None, Some(&exclude)).unwrap();
+    let plan = build_onboarding_plan_in_home(home.path(), None, Some(&exclude), &[]).unwrap();
     assert_eq!(plan.total_skills_found, 0);
 }
