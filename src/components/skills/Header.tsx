@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Layers, Search, Settings, Tag } from 'lucide-react'
+import { Layers, RefreshCw, Search, Settings, Tag } from 'lucide-react'
 import type { TFunction } from 'i18next'
 
 type HeaderProps = {
@@ -9,6 +9,7 @@ type HeaderProps = {
   onToggleLanguage: () => void
   onOpenSettings: () => void
   onViewChange: (view: 'myskills' | 'explore' | 'tags') => void
+  onRefresh: () => void
   t: TFunction
 }
 
@@ -18,6 +19,7 @@ const Header = ({
   onToggleLanguage,
   onOpenSettings,
   onViewChange,
+  onRefresh,
   t,
 }: HeaderProps) => {
   return (
@@ -57,6 +59,9 @@ const Header = ({
         </nav>
       </div>
       <div className="header-actions">
+        <button className="icon-btn" type="button" onClick={onRefresh} title={t('refresh')}>
+          <RefreshCw size={16} />
+        </button>
         <button className="lang-btn" type="button" onClick={onToggleLanguage}>
           {language === 'en' ? t('languageShort.en') : t('languageShort.zh')}
         </button>

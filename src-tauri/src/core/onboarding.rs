@@ -55,6 +55,12 @@ pub fn build_onboarding_plan<R: tauri::Runtime>(
         .into_iter()
         .map(|(tool, path)| managed_target_key(&tool, Path::new(&path)))
         .collect::<std::collections::HashSet<_>>();
+    let managed_names: std::collections::HashSet<String> = store
+        .list_skills()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.name.to_lowercase())
+        .collect();
     let custom_dirs: Vec<CustomScanDirEntry> = store
         .get_setting(CUSTOM_SCAN_DIRS_KEY)
         .ok()
@@ -66,6 +72,7 @@ pub fn build_onboarding_plan<R: tauri::Runtime>(
         &home,
         Some(&central),
         Some(&managed_targets),
+        Some(&managed_names),
         &custom_dir_paths,
     )
 }
@@ -74,6 +81,7 @@ fn build_onboarding_plan_in_home(
     home: &Path,
     exclude_root: Option<&Path>,
     exclude_managed_targets: Option<&std::collections::HashSet<String>>,
+    exclude_managed_names: Option<&std::collections::HashSet<String>>,
     custom_dirs: &[String],
 ) -> Result<OnboardingPlan> {
     let adapters = default_tool_adapters();
@@ -91,6 +99,7 @@ fn build_onboarding_plan_in_home(
             detected,
             exclude_root,
             exclude_managed_targets,
+            exclude_managed_names,
         ));
     }
 
@@ -105,6 +114,7 @@ fn build_onboarding_plan_in_home(
             detected,
             exclude_root,
             exclude_managed_targets,
+            exclude_managed_names,
         ));
     }
 
@@ -211,8 +221,10 @@ fn filter_detected(
     detected: Vec<DetectedSkill>,
     exclude_root: Option<&Path>,
     exclude_managed_targets: Option<&std::collections::HashSet<String>>,
+    exclude_managed_names: Option<&std::collections::HashSet<String>>,
 ) -> Vec<DetectedSkill> {
-    if exclude_root.is_none() && exclude_managed_targets.is_none() {
+    if exclude_root.is_none() && exclude_managed_targets.is_none() && exclude_managed_names.is_none()
+    {
         return detected;
     }
     detected
@@ -230,6 +242,11 @@ fn filter_detected(
             }
             if let Some(exclude) = exclude_managed_targets {
                 if exclude.contains(&managed_target_key(skill.tool.as_key(), &skill.path)) {
+                    return false;
+                }
+            }
+            if let Some(names) = exclude_managed_names {
+                if names.contains(&skill.name.to_lowercase()) {
                     return false;
                 }
             }

@@ -20,7 +20,7 @@ fn groups_by_name_and_detects_conflicts_by_fingerprint() {
     fs::create_dir_all(home.path().join(".codex/skills/.system")).unwrap();
     fs::write(home.path().join(".codex/skills/.system/SKILL.md"), b"x").unwrap();
 
-    let plan = build_onboarding_plan_in_home(home.path(), None, None, &[]).unwrap();
+    let plan = build_onboarding_plan_in_home(home.path(), None, None, None, &[]).unwrap();
     assert_eq!(plan.total_tools_scanned, 2);
     assert_eq!(plan.total_skills_found, 2);
     assert_eq!(plan.groups.len(), 1);
@@ -46,7 +46,7 @@ fn excludes_central_repo_path() {
     let link_path = home.path().join(".cursor/skills/skill-a");
     symlink(central.join("skill-a"), &link_path).unwrap();
 
-    let plan = build_onboarding_plan_in_home(home.path(), Some(&central), None, &[]).unwrap();
+    let plan = build_onboarding_plan_in_home(home.path(), Some(&central), None, None, &[]).unwrap();
     assert_eq!(plan.total_skills_found, 0);
 }
 
@@ -65,6 +65,23 @@ fn excludes_managed_skill_targets() {
         &home.path().join(".cursor/skills/foo"),
     ));
 
-    let plan = build_onboarding_plan_in_home(home.path(), None, Some(&exclude), &[]).unwrap();
+    let plan = build_onboarding_plan_in_home(home.path(), None, Some(&exclude), None, &[]).unwrap();
     assert_eq!(plan.total_skills_found, 0);
+}
+
+#[test]
+fn excludes_managed_skill_names() {
+    let home = tempfile::tempdir().unwrap();
+
+    // Cursor installed — skill "foo" exists on disk
+    fs::create_dir_all(home.path().join(".cursor")).unwrap();
+    fs::create_dir_all(home.path().join(".cursor/skills/foo")).unwrap();
+    fs::write(home.path().join(".cursor/skills/foo/a.txt"), b"any").unwrap();
+
+    // Simulate that "foo" is already managed
+    let mut names = std::collections::HashSet::new();
+    names.insert("foo".to_string());
+
+    let plan = build_onboarding_plan_in_home(home.path(), None, None, Some(&names), &[]).unwrap();
+    assert_eq!(plan.total_skills_found, 0, "排除已管理的 skill 名称");
 }

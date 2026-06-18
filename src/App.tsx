@@ -844,6 +844,10 @@ function App() {
     setActiveView('settings')
   }, [])
 
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([loadManagedSkills(), loadPlan(), loadTags()])
+  }, [loadManagedSkills, loadPlan, loadTags])
+
   const loadFeaturedSkills = useCallback(async () => {
     if (featuredSkills.length > 0) return
     setFeaturedLoading(true)
@@ -2523,6 +2527,7 @@ function App() {
         onToggleLanguage={toggleLanguage}
         onOpenSettings={handleOpenSettings}
         onViewChange={handleViewChange}
+        onRefresh={handleRefresh}
         t={t}
       />
 
