@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill, ToolOption } from './types'
 import SkillIcon from './SkillIcon'
+import SkillOriginBadge from './SkillOriginBadge'
 
 type GithubInfo = {
   label: string
@@ -132,6 +133,7 @@ const SkillCard = ({
               ) : null}
             </div>
           ) : null}
+          <SkillOriginBadge skill={skill} t={t} />
         </div>
         {skill.description ? (
           <div className="skill-desc">{skill.description}</div>

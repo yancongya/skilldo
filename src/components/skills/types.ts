@@ -45,6 +45,7 @@ export type ManagedSkill = {
   icon_background?: string | null
   source_type: string
   source_ref?: string | null
+  source_origin?: 'official' | 'git' | 'local' | string
   central_path: string
   created_at: number
   updated_at: number

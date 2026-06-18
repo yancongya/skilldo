@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill } from './types'
 import SkillIcon from './SkillIcon'
+import SkillOriginBadge from './SkillOriginBadge'
 
 type GithubInfo = {
   label: string
@@ -71,9 +72,12 @@ const SkillCardCompact = ({
             <div className="skill-card-compact-name">{skill.name}</div>
             <div className="skill-card-compact-source">{sourceLabel}</div>
           </div>
-          <span className={`compact-scope-chip ${skillScope}`}>
-            {skillScope === 'project' ? projectCount : t('scope.globalBadge')}
-          </span>
+          <div className="skill-card-compact-badges">
+            <SkillOriginBadge skill={skill} t={t} compact />
+            <span className={`compact-scope-chip ${skillScope}`}>
+              {skillScope === 'project' ? projectCount : t('scope.globalBadge')}
+            </span>
+          </div>
         </div>
         <div className="skill-card-compact-desc">{description}</div>
         <div className="skill-card-compact-bottom">

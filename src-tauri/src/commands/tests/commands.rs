@@ -165,6 +165,7 @@ fn get_managed_skills_impl_maps_targets() {
 
     let out = get_managed_skills_impl(&store).unwrap();
     assert_eq!(out.len(), 1);
+    assert_eq!(out[0].source_origin, "local");
     assert_eq!(out[0].tags.len(), 1);
     assert_eq!(out[0].tags[0].name, "Frontend");
     assert_eq!(out[0].targets.len(), 1);

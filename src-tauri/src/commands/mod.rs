@@ -35,6 +35,18 @@ use crate::core::tool_adapters::{
 
 const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
 const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
+const OFFICIAL_SOURCE_PATTERNS: &[&str] = &[
+    "github.com/anthropics/skills",
+    "github.com/openai/skills",
+    "github.com/openai/codex",
+    "github.com/openai/openai-cookbook",
+    ".codex/vendor_imports/skills",
+    ".codex/plugins/cache/openai-bundled",
+    ".codex/plugins/cache/openai-primary-runtime",
+    ".claude/skills",
+    ".codex/skills",
+    ".codex/skills/.system",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,6 +94,102 @@ fn custom_tool_dir(tool_key: &str) -> Option<PathBuf> {
         .strip_prefix("custom:")
         .filter(|path| !path.trim().is_empty())
         .map(PathBuf::from)
+}
+
+fn normalize_source_ref(source: &str) -> String {
+    source
+        .trim()
+        .to_lowercase()
+        .trim_start_matches("git+")
+        .trim_end_matches(".git")
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.")
+        .replace('\\', "/")
+}
+
+fn is_official_source(source: &str) -> bool {
+    let normalized = normalize_source_ref(source);
+    OFFICIAL_SOURCE_PATTERNS
+        .iter()
+        .any(|pattern| normalized.contains(&pattern.to_lowercase()))
+}
+
+fn find_git_root(path: &Path) -> Option<PathBuf> {
+    let start = if path.is_dir() {
+        path.to_path_buf()
+    } else {
+        path.parent()?.to_path_buf()
+    };
+
+    for ancestor in start.ancestors() {
+        let dot_git = ancestor.join(".git");
+        if dot_git.exists() {
+            return Some(ancestor.to_path_buf());
+        }
+    }
+    None
+}
+
+fn git_remote_origin(git_root: &Path) -> Option<String> {
+    let dot_git = git_root.join(".git");
+    let config_path = if dot_git.is_dir() {
+        dot_git.join("config")
+    } else {
+        let content = std::fs::read_to_string(&dot_git).ok()?;
+        let gitdir = content.trim().strip_prefix("gitdir:")?.trim();
+        let path = PathBuf::from(gitdir);
+        let resolved = if path.is_absolute() {
+            path
+        } else {
+            git_root.join(path)
+        };
+        resolved.join("config")
+    };
+    let config = std::fs::read_to_string(config_path).ok()?;
+    let mut in_origin = false;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("[remote ") {
+            in_origin = trimmed.contains("\"origin\"");
+            continue;
+        }
+        if in_origin && trimmed.starts_with("url") {
+            return trimmed
+                .split_once('=')
+                .map(|(_, value)| value.trim().to_string());
+        }
+    }
+    None
+}
+
+fn infer_source_origin(source_type: &str, source_ref: Option<&str>, central_path: &str) -> String {
+    if let Some(source) = source_ref {
+        if is_official_source(source) {
+            return "official".to_string();
+        }
+    }
+    if is_official_source(central_path) {
+        return "official".to_string();
+    }
+
+    if source_type.to_lowercase().contains("git") {
+        return "git".to_string();
+    }
+
+    for path in [source_ref, Some(central_path)].into_iter().flatten() {
+        let path = PathBuf::from(path);
+        if let Some(git_root) = find_git_root(&path) {
+            if let Some(remote) = git_remote_origin(&git_root) {
+                if is_official_source(&remote) {
+                    return "official".to_string();
+                }
+            }
+            return "git".to_string();
+        }
+    }
+
+    "local".to_string()
 }
 use uuid::Uuid;
 
@@ -1186,6 +1294,7 @@ pub struct ManagedSkillDto {
     pub description: Option<String>,
     pub source_type: String,
     pub source_ref: Option<String>,
+    pub source_origin: String,
     pub central_path: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -1430,6 +1539,11 @@ fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, S
                 id: skill.id,
                 name: skill.name,
                 description: skill.description,
+                source_origin: infer_source_origin(
+                    &skill.source_type,
+                    skill.source_ref.as_deref(),
+                    &skill.central_path,
+                ),
                 source_type: skill.source_type,
                 source_ref: skill.source_ref,
                 central_path: skill.central_path,
