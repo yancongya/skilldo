@@ -1,6 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
@@ -53,6 +53,35 @@ fn resolve_tool_global_dir(adapter_key: &str, store: &SkillStore) -> anyhow::Res
         .ok_or_else(|| anyhow::anyhow!("unknown tool: {}", adapter_key))?;
     let path = resolve_default_path(&adapter)?;
     Ok(path.to_string_lossy().to_string())
+}
+
+fn has_tool_dir_override(adapter_key: &str, store: &SkillStore) -> anyhow::Result<bool> {
+    let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, adapter_key);
+    Ok(store.get_setting(&override_key)?.is_some())
+}
+
+fn is_tool_available(
+    adapter: &crate::core::tool_adapters::ToolAdapter,
+    adapter_key: &str,
+    store: &SkillStore,
+) -> anyhow::Result<bool> {
+    if is_tool_installed(adapter)? {
+        return Ok(true);
+    }
+
+    if !has_tool_dir_override(adapter_key, store)? {
+        return Ok(false);
+    }
+
+    let skills_dir = resolve_tool_global_dir(adapter_key, store)?;
+    Ok(Path::new(&skills_dir).exists())
+}
+
+fn custom_tool_dir(tool_key: &str) -> Option<PathBuf> {
+    tool_key
+        .strip_prefix("custom:")
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
 }
 use uuid::Uuid;
 
@@ -152,8 +181,8 @@ pub async fn get_tool_status(store: State<'_, SkillStore>) -> Result<ToolStatusD
         let mut installed: Vec<String> = Vec::new();
 
         for adapter in &adapters {
-            let ok = is_tool_installed(adapter)?;
             let key = adapter.id.as_key().to_string();
+            let ok = is_tool_available(adapter, &key, &store)?;
             let skills_dir = resolve_tool_global_dir(&key, &store)?;
             tools.push(ToolInfoDto {
                 key: key.clone(),
@@ -216,14 +245,13 @@ pub async fn get_tool_skills_dir_overrides(
         let adapters = crate::core::tool_adapters::default_tool_adapters();
         let mut result = Vec::new();
         for adapter in &adapters {
-            if !is_tool_installed(adapter)? {
+            let key = adapter.id.as_key().to_string();
+            let has_override = has_tool_dir_override(&key, &store)?;
+            if !is_tool_installed(adapter)? && !has_override {
                 continue;
             }
-            let key = adapter.id.as_key().to_string();
             let default_dir = resolve_default_path(adapter)?.to_string_lossy().to_string();
             let current_dir = resolve_tool_global_dir(&key, &store)?;
-            let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, key);
-            let has_override = store.get_setting(&override_key)?.is_some();
             result.push(ToolDirOverrideDto {
                 tool_key: key,
                 label: adapter.display_name.to_string(),
@@ -305,15 +333,15 @@ pub async fn browse_directory_show_hidden(
             let _ = tx.send(result);
         })
         .map_err(|e| format!("failed to dispatch to main thread: {e}"))?;
-    rx.recv().map_err(|_| "main thread task cancelled".to_string())?
+    rx.recv()
+        .map_err(|_| "main thread task cancelled".to_string())?
 }
 
 #[cfg(target_os = "macos")]
 fn browse_directory_hidden_impl() -> Result<Option<String>, String> {
-    use objc2_app_kit::{NSOpenPanel, NSModalResponseOK};
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
 
-    let mtm = objc2::MainThreadMarker::new()
-        .ok_or_else(|| "not on main thread".to_string())?;
+    let mtm = objc2::MainThreadMarker::new().ok_or_else(|| "not on main thread".to_string())?;
     let panel = NSOpenPanel::openPanel(mtm);
     panel.setCanChooseDirectories(true);
     panel.setCanChooseFiles(false);
@@ -321,7 +349,8 @@ fn browse_directory_hidden_impl() -> Result<Option<String>, String> {
     panel.setShowsHiddenFiles(true);
     let result = panel.runModal();
     if result == NSModalResponseOK {
-        let path = panel.URL()
+        let path = panel
+            .URL()
             .and_then(|url| url.path())
             .map(|s| s.to_string())
             .ok_or_else(|| "could not read selected path".to_string())?;
@@ -765,6 +794,81 @@ pub async fn sync_skill_to_tool(
 ) -> Result<SyncResultDto, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        if let Some(custom_dir) = custom_tool_dir(&tool) {
+            let scope = normalize_scope(scope.as_deref())?;
+            if scope != "global" {
+                anyhow::bail!("PROJECT_SCOPE_UNSUPPORTED|{}", tool);
+            }
+            let tool_root = custom_dir;
+            if let Err(err) = std::fs::create_dir_all(&tool_root) {
+                if err.kind() == std::io::ErrorKind::PermissionDenied {
+                    anyhow::bail!("TOOL_NOT_WRITABLE|{}|{}", tool, tool_root.to_string_lossy());
+                }
+                anyhow::bail!("failed to create skills dir {:?}: {}", tool_root, err);
+            }
+            let target = tool_root.join(&name);
+            if let Some(existing) = store.get_skill_target(&skillId, &tool, scope, None)? {
+                if existing.target_path == target.to_string_lossy() && target.exists() {
+                    return Ok::<_, anyhow::Error>(SyncResultDto {
+                        mode_used: existing.mode,
+                        target_path: existing.target_path,
+                    });
+                }
+            }
+            let overwrite = overwrite.unwrap_or(false)
+                || (overwriteIfSameContent.unwrap_or(false)
+                    && target_has_same_content(sourcePath.as_ref(), &target));
+            let result =
+                sync_dir_for_tool_with_overwrite("custom", sourcePath.as_ref(), &target, overwrite)
+                    .map_err(|err| {
+                        let msg = err.to_string();
+                        if msg.contains("target already exists") {
+                            anyhow::anyhow!("TARGET_EXISTS|{}", target.to_string_lossy())
+                        } else if msg.contains("os error 5")
+                            || msg.contains("Access is denied")
+                            || msg.contains("Permission denied")
+                        {
+                            anyhow::anyhow!(
+                                "TOOL_NOT_WRITABLE|{}|{}",
+                                tool,
+                                tool_root.to_string_lossy()
+                            )
+                        } else {
+                            anyhow::anyhow!(msg)
+                        }
+                    })?;
+            let record = SkillTargetRecord {
+                id: Uuid::new_v4().to_string(),
+                skill_id: skillId,
+                tool,
+                scope: scope.to_string(),
+                project_path: None,
+                target_path: result.target_path.to_string_lossy().to_string(),
+                mode: match result.mode_used {
+                    SyncMode::Auto => "auto",
+                    SyncMode::Symlink => "symlink",
+                    SyncMode::Junction => "junction",
+                    SyncMode::Copy => "copy",
+                }
+                .to_string(),
+                status: "ok".to_string(),
+                last_error: None,
+                synced_at: Some(now_ms()),
+            };
+            store.upsert_skill_target(&record)?;
+
+            return Ok::<_, anyhow::Error>(SyncResultDto {
+                mode_used: match result.mode_used {
+                    SyncMode::Auto => "auto",
+                    SyncMode::Symlink => "symlink",
+                    SyncMode::Junction => "junction",
+                    SyncMode::Copy => "copy",
+                }
+                .to_string(),
+                target_path: result.target_path.to_string_lossy().to_string(),
+            });
+        }
+
         let adapter = adapter_by_key(&tool).ok_or_else(|| anyhow::anyhow!("unknown tool"))?;
         let scope = normalize_scope(scope.as_deref())?;
         if scope == "project" && !supports_project_scope(&adapter) {
@@ -783,7 +887,7 @@ pub async fn sync_skill_to_tool(
             None
         };
 
-        if scope == "global" && !is_tool_installed(&adapter)? {
+        if scope == "global" && !is_tool_available(&adapter, &tool, &store)? {
             anyhow::bail!("TOOL_NOT_INSTALLED|{}", adapter.id.as_key());
         }
         let tool_root = if let Some(project_root) = &project_root {
@@ -847,13 +951,14 @@ pub async fn sync_skill_to_tool(
             crate::core::tool_adapters::adapters_sharing_skills_dir(&adapter)
         };
         for a in group {
-            if !is_tool_installed(&a)? {
+            let key = a.id.as_key().to_string();
+            if !is_tool_available(&a, &key, &store)? {
                 continue;
             }
             let record = SkillTargetRecord {
                 id: Uuid::new_v4().to_string(),
                 skill_id: skillId.clone(),
-                tool: a.id.as_key().to_string(),
+                tool: key,
                 scope: scope.to_string(),
                 project_path: project_path_for_record.clone(),
                 target_path: result.target_path.to_string_lossy().to_string(),
@@ -929,7 +1034,8 @@ pub async fn unsync_skill_from_tool(
             if scope == "global" {
                 let mut any_installed = false;
                 for a in &group {
-                    if is_tool_installed(a)? {
+                    let key = a.id.as_key().to_string();
+                    if is_tool_available(a, &key, &store)? {
                         any_installed = true;
                         break;
                     }

@@ -12,12 +12,10 @@ type SettingsPageProps = {
   storagePath: string
   gitCacheCleanupDays: number
   gitCacheTtlSecs: number
-  themePreference: 'system' | 'light' | 'dark'
   githubToken: string
   toolDirOverrides: ToolDirOverride[]
   onPickStoragePath: () => void
   onToggleLanguage: () => void
-  onThemeChange: (nextTheme: 'system' | 'light' | 'dark') => void
   onGitCacheCleanupDaysChange: (nextDays: number) => void
   onGitCacheTtlSecsChange: (nextSecs: number) => void
   onClearGitCacheNow: () => void
@@ -37,12 +35,10 @@ const SettingsPage = ({
   storagePath,
   gitCacheCleanupDays,
   gitCacheTtlSecs,
-  themePreference,
   githubToken,
   toolDirOverrides,
   onPickStoragePath,
   onToggleLanguage,
-  onThemeChange,
   onGitCacheCleanupDaysChange,
   onGitCacheTtlSecsChange,
   onClearGitCacheNow,
@@ -172,44 +168,6 @@ const SettingsPage = ({
             >
               <path d="M6 9l6 6 6-6" />
             </svg>
-          </div>
-        </div>
-
-        <div className="settings-field">
-          <label className="settings-label" id="settings-theme-label">
-            {t('themeMode')}
-          </label>
-          <div className="settings-theme-options" role="group" aria-labelledby="settings-theme-label">
-            <button
-              type="button"
-              className={`settings-theme-btn ${
-                themePreference === 'system' ? 'active' : ''
-              }`}
-              aria-pressed={themePreference === 'system'}
-              onClick={() => onThemeChange('system')}
-            >
-              {t('themeOptions.system')}
-            </button>
-            <button
-              type="button"
-              className={`settings-theme-btn ${
-                themePreference === 'light' ? 'active' : ''
-              }`}
-              aria-pressed={themePreference === 'light'}
-              onClick={() => onThemeChange('light')}
-            >
-              {t('themeOptions.light')}
-            </button>
-            <button
-              type="button"
-              className={`settings-theme-btn ${
-                themePreference === 'dark' ? 'active' : ''
-              }`}
-              aria-pressed={themePreference === 'dark'}
-              onClick={() => onThemeChange('dark')}
-            >
-              {t('themeOptions.dark')}
-            </button>
           </div>
         </div>
 

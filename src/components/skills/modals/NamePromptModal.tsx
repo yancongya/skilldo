@@ -14,14 +14,13 @@ const NamePromptModal = ({
   onConfirm,
   onCancel,
 }: NamePromptModalProps) => {
-  const [name, setName] = useState('')
+  const defaultName = pendingPath.split('/').pop() || pendingPath.split('\\').pop() || 'custom'
+  const [name, setName] = useState(defaultName)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const defaultName = pendingPath.split('/').pop() || pendingPath.split('\\').pop() || 'custom'
-    setName(defaultName)
     setTimeout(() => inputRef.current?.focus(), 0)
-  }, [pendingPath])
+  }, [])
 
   const handleConfirm = () => {
     const trimmed = name.trim()

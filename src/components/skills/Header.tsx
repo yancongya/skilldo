@@ -1,12 +1,14 @@
 import { memo } from 'react'
-import { Layers, RefreshCw, Search, Settings, Tag } from 'lucide-react'
+import { Layers, Moon, RefreshCw, Search, Settings, Sun, Tag } from 'lucide-react'
 import type { TFunction } from 'i18next'
 
 type HeaderProps = {
   language: string
   loading: boolean
+  resolvedTheme: 'light' | 'dark'
   activeView: 'myskills' | 'explore' | 'detail' | 'settings' | 'tags'
   onToggleLanguage: () => void
+  onToggleTheme: () => void
   onOpenSettings: () => void
   onViewChange: (view: 'myskills' | 'explore' | 'tags') => void
   onRefresh: () => void
@@ -15,8 +17,10 @@ type HeaderProps = {
 
 const Header = ({
   language,
+  resolvedTheme,
   activeView,
   onToggleLanguage,
+  onToggleTheme,
   onOpenSettings,
   onViewChange,
   onRefresh,
@@ -61,6 +65,15 @@ const Header = ({
       <div className="header-actions">
         <button className="icon-btn" type="button" onClick={onRefresh} title={t('refresh')}>
           <RefreshCw size={16} />
+        </button>
+        <button
+          className="icon-btn"
+          type="button"
+          onClick={onToggleTheme}
+          title={resolvedTheme === 'dark' ? t('themeToggle.light') : t('themeToggle.dark')}
+          aria-label={resolvedTheme === 'dark' ? t('themeToggle.light') : t('themeToggle.dark')}
+        >
+          {resolvedTheme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
         <button className="lang-btn" type="button" onClick={onToggleLanguage}>
           {language === 'en' ? t('languageShort.en') : t('languageShort.zh')}

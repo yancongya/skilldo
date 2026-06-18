@@ -223,7 +223,9 @@ fn filter_detected(
     exclude_managed_targets: Option<&std::collections::HashSet<String>>,
     exclude_managed_names: Option<&std::collections::HashSet<String>>,
 ) -> Vec<DetectedSkill> {
-    if exclude_root.is_none() && exclude_managed_targets.is_none() && exclude_managed_names.is_none()
+    if exclude_root.is_none()
+        && exclude_managed_targets.is_none()
+        && exclude_managed_names.is_none()
     {
         return detected;
     }

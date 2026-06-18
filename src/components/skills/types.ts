@@ -23,6 +23,7 @@ export type ToolOption = {
   id: string
   label: string
   supports_project_scope?: boolean
+  custom_path?: string
 }
 
 export type TagDto = {
@@ -39,6 +40,9 @@ export type ManagedSkill = {
   id: string
   name: string
   description?: string | null
+  icon_url?: string | null
+  icon_emoji?: string | null
+  icon_background?: string | null
   source_type: string
   source_ref?: string | null
   central_path: string

@@ -3,6 +3,7 @@ import { MessageCircle } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill, OnboardingPlan, ToolOption } from './types'
 import SkillCard from './SkillCard'
+import SkillCardCompact from './SkillCardCompact'
 
 type GithubInfo = {
   label: string
@@ -14,6 +15,7 @@ type SkillsListProps = {
   visibleSkills: ManagedSkill[]
   installedTools: ToolOption[]
   loading: boolean
+  viewMode: 'list' | 'grid'
   getGithubInfo: (url: string | null | undefined) => GithubInfo | null
   getSkillSourceLabel: (skill: ManagedSkill) => string
   formatRelative: (ms: number | null | undefined) => string
@@ -21,6 +23,7 @@ type SkillsListProps = {
   onUpdateSkill: (skill: ManagedSkill) => void
   onDeleteSkill: (skillId: string) => void
   onToggleTool: (skill: ManagedSkill, toolId: string) => void
+  onToggleAllTools: (skill: ManagedSkill, enabled: boolean) => void
   onOpenScope: (skill: ManagedSkill) => void
   onOpenDetail: (skill: ManagedSkill) => void
   onEditTags: (skill: ManagedSkill) => void
@@ -34,6 +37,7 @@ const SkillsList = ({
   visibleSkills,
   installedTools,
   loading,
+  viewMode,
   getGithubInfo,
   getSkillSourceLabel,
   formatRelative,
@@ -41,6 +45,7 @@ const SkillsList = ({
   onUpdateSkill,
   onDeleteSkill,
   onToggleTool,
+  onToggleAllTools,
   onOpenScope,
   onOpenDetail,
   onEditTags,
@@ -48,8 +53,9 @@ const SkillsList = ({
   getSkillProjects,
   t,
 }: SkillsListProps) => {
+  const isGrid = viewMode === 'grid'
   return (
-    <div className="skills-list">
+    <div className={`skills-list${isGrid ? ' skills-grid' : ''}`}>
       {plan && plan.total_skills_found > 0 ? (
         <div className="discovered-banner">
           <div className="banner-left">
@@ -78,26 +84,46 @@ const SkillsList = ({
         <div className="empty">{t('skillsEmpty')}</div>
       ) : (
         <>
-          {visibleSkills.map((skill) => (
-            <SkillCard
-              key={skill.id}
-              skill={skill}
-              installedTools={installedTools}
-              loading={loading}
-              getGithubInfo={getGithubInfo}
-              getSkillSourceLabel={getSkillSourceLabel}
-              formatRelative={formatRelative}
-              onUpdate={onUpdateSkill}
-              onDelete={onDeleteSkill}
-              onToggleTool={onToggleTool}
-              onOpenScope={onOpenScope}
-              onOpenDetail={onOpenDetail}
-              onEditTags={onEditTags}
-              getSkillScope={getSkillScope}
-              getSkillProjects={getSkillProjects}
-              t={t}
-            />
-          ))}
+          {visibleSkills.map((skill) =>
+            isGrid ? (
+              <SkillCardCompact
+                key={skill.id}
+                skill={skill}
+                loading={loading}
+                getGithubInfo={getGithubInfo}
+                getSkillSourceLabel={getSkillSourceLabel}
+                formatRelative={formatRelative}
+                onUpdate={onUpdateSkill}
+                onDelete={onDeleteSkill}
+                onOpenScope={onOpenScope}
+                onOpenDetail={onOpenDetail}
+                onEditTags={onEditTags}
+                getSkillScope={getSkillScope}
+                getSkillProjects={getSkillProjects}
+                t={t}
+              />
+            ) : (
+              <SkillCard
+                key={skill.id}
+                skill={skill}
+                installedTools={installedTools}
+                loading={loading}
+                getGithubInfo={getGithubInfo}
+                getSkillSourceLabel={getSkillSourceLabel}
+                formatRelative={formatRelative}
+                onUpdate={onUpdateSkill}
+                onDelete={onDeleteSkill}
+                onToggleTool={onToggleTool}
+                onToggleAllTools={onToggleAllTools}
+                onOpenScope={onOpenScope}
+                onOpenDetail={onOpenDetail}
+                onEditTags={onEditTags}
+                getSkillScope={getSkillScope}
+                getSkillProjects={getSkillProjects}
+                t={t}
+              />
+            ),
+          )}
         </>
       )}
     </div>

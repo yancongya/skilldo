@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpDown, Check, ChevronDown, Search, Tags } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronDown, LayoutGrid, LayoutList, Search, Tags } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { TagWithCountDto } from './types'
 
@@ -7,6 +7,7 @@ type FilterBarProps = {
   sortBy: 'updated' | 'name'
   searchQuery: string
   scopeFilter: 'all' | 'global' | 'project'
+  viewMode: 'list' | 'grid'
   tags: TagWithCountDto[]
   selectedTagIds: number[]
   includeUntagged: boolean
@@ -15,6 +16,7 @@ type FilterBarProps = {
   onSortChange: (value: 'updated' | 'name') => void
   onSearchChange: (value: string) => void
   onScopeFilterChange: (value: 'all' | 'global' | 'project') => void
+  onViewModeChange: (mode: 'list' | 'grid') => void
   onToggleTag: (tagId: number) => void
   onToggleUntagged: () => void
   onClearTags: () => void
@@ -26,6 +28,7 @@ const FilterBar = ({
   sortBy,
   searchQuery,
   scopeFilter,
+  viewMode,
   tags,
   selectedTagIds,
   includeUntagged,
@@ -34,6 +37,7 @@ const FilterBar = ({
   onSortChange,
   onSearchChange,
   onScopeFilterChange,
+  onViewModeChange,
   onToggleTag,
   onToggleUntagged,
   onClearTags,
@@ -164,6 +168,24 @@ const FilterBar = ({
               </div>
             </div>
           ) : null}
+        </div>
+        <div className="filter-view-toggle">
+          <button
+            className={`icon-btn${viewMode === 'list' ? ' active' : ''}`}
+            type="button"
+            onClick={() => onViewModeChange('list')}
+            title={t('switchToList')}
+          >
+            <LayoutList size={16} />
+          </button>
+          <button
+            className={`icon-btn${viewMode === 'grid' ? ' active' : ''}`}
+            type="button"
+            onClick={() => onViewModeChange('grid')}
+            title={t('switchToGrid')}
+          >
+            <LayoutGrid size={16} />
+          </button>
         </div>
         <div className="search-container">
           <Search size={16} className="search-icon-abs" />

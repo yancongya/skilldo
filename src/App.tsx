@@ -60,6 +60,7 @@ function App() {
     'system',
   )
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light')
+  const resolvedTheme = themePreference === 'system' ? systemTheme : themePreference
   const [plan, setPlan] = useState<OnboardingPlan | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -106,6 +107,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'updated' | 'name'>('updated')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'global' | 'project'>('all')
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
   const [activeView, setActiveView] = useState<'myskills' | 'explore' | 'detail' | 'settings' | 'tags'>('myskills')
   const [detailSkill, setDetailSkill] = useState<ManagedSkill | null>(null)
   const [tags, setTags] = useState<TagWithCountDto[]>([])
@@ -344,7 +346,7 @@ function App() {
       return
     }
     try {
-      let rawPath: string | undefined = prefilledPath
+      const rawPath: string | undefined = prefilledPath
       if (!rawPath) {
         const filePath = await invokeTauri<string | null>('browse_directory_show_hidden')
         if (!filePath) return
@@ -468,8 +470,6 @@ function App() {
 
   useEffect(() => {
     if (typeof document === 'undefined') return
-    const resolvedTheme =
-      themePreference === 'system' ? systemTheme : themePreference
     document.documentElement.dataset.theme = resolvedTheme
     document.documentElement.style.colorScheme = resolvedTheme
     try {
@@ -477,7 +477,7 @@ function App() {
     } catch {
       // ignore storage failures
     }
-  }, [systemTheme, themePreference, themeStorageKey])
+  }, [resolvedTheme, themePreference, themeStorageKey])
 
   useEffect(() => {
     if (!isTauri) return
@@ -591,13 +591,20 @@ function App() {
   const toolInfos = useMemo(() => toolStatus?.tools ?? [], [toolStatus])
 
   const tools: ToolOption[] = useMemo(() => {
-    return toolInfos.map((info) => ({
+    const adapterTools = toolInfos.map((info) => ({
       id: info.key,
       // Prefer i18n label if present; fallback to backend label.
       label: t(`tools.${info.key}`, { defaultValue: info.label }),
       supports_project_scope: info.supports_project_scope,
     }))
-  }, [t, toolInfos])
+    const customTools = customScanDirs.map((entry) => ({
+      id: `custom:${entry.path}`,
+      label: entry.name,
+      supports_project_scope: false,
+      custom_path: entry.path,
+    }))
+    return [...adapterTools, ...customTools]
+  }, [customScanDirs, t, toolInfos])
 
   const toolLabelById = useMemo(() => {
     const out: Record<string, string> = {}
@@ -628,20 +635,24 @@ function App() {
       const wanted = new Set(toolIds)
       const seen = new Set<string>()
       const out: string[] = []
-      for (const tool of toolInfos) {
-        if (!wanted.has(tool.key)) continue
-        if (seen.has(tool.skills_dir)) continue
-        seen.add(tool.skills_dir)
-        out.push(tool.key)
+      for (const tool of tools) {
+        const dir = tool.custom_path ?? toolInfos.find((info) => info.key === tool.id)?.skills_dir
+        if (!wanted.has(tool.id)) continue
+        if (!dir || seen.has(dir)) continue
+        seen.add(dir)
+        out.push(tool.id)
       }
       return out
     },
-    [toolInfos],
+    [toolInfos, tools],
   )
 
   const installedToolIds = useMemo(
-    () => toolStatus?.installed ?? [],
-    [toolStatus],
+    () => [
+      ...(toolStatus?.installed ?? []),
+      ...customScanDirs.map((entry) => `custom:${entry.path}`),
+    ],
+    [customScanDirs, toolStatus],
   )
   const isInstalled = useCallback(
     (id: string) => installedToolIds.includes(id),
@@ -660,6 +671,22 @@ function App() {
     () => installedToolIds.filter((toolId) => toolSupportsProjectScope(toolId)),
     [installedToolIds, toolSupportsProjectScope],
   )
+
+  useEffect(() => {
+    if (customScanDirs.length === 0) return
+    setSyncTargets((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const entry of customScanDirs) {
+        const id = `custom:${entry.path}`
+        if (next[id] === undefined) {
+          next[id] = true
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [customScanDirs])
 
   const getSkillProjects = useCallback(
     (skill: ManagedSkill) => {
@@ -958,12 +985,12 @@ function App() {
     setActiveView('myskills')
   }, [])
 
-  const handleThemeChange = useCallback(
-    (nextTheme: 'system' | 'light' | 'dark') => {
-      setThemePreference(nextTheme)
-    },
-    [],
-  )
+  const handleToggleTheme = useCallback(() => {
+    setThemePreference((current) => {
+      const currentResolved = current === 'system' ? systemTheme : current
+      return currentResolved === 'dark' ? 'light' : 'dark'
+    })
+  }, [systemTheme])
 
   const handleCloseNewTools = useCallback(() => {
     if (!loading) setShowNewToolsModal(false)
@@ -2421,6 +2448,131 @@ function App() {
     ],
   )
 
+  const runSetAllToolsForSkill = useCallback(
+    async (skill: ManagedSkill, enabled: boolean) => {
+      if (loading) return
+      const skillScope = getSkillScope(skill)
+      const projects = getSkillProjects(skill)
+      if (skillScope === 'project' && projects.length === 0) {
+        setError(t('projectSync.noProjectsForSync'))
+        setScopeModalSkill(skill)
+        return
+      }
+      const candidateIds = installedTools
+        .filter((tool) => skillScope !== 'project' || tool.supports_project_scope !== false)
+        .map((tool) => tool.id)
+      const toolIds = uniqueToolIdsBySkillsDir(candidateIds)
+      if (toolIds.length === 0) return
+
+      setLoading(true)
+      setLoadingStartAt(Date.now())
+      setError(null)
+      try {
+        setActionMessage(
+          enabled
+            ? t('actions.syncing', { name: skill.name, tool: t('allTools') })
+            : t('actions.unsyncing', { name: skill.name, tool: t('allTools') }),
+        )
+        const failures: string[] = []
+        for (const toolId of toolIds) {
+          const toolLabel = tools.find((tool) => tool.id === toolId)?.label ?? toolId
+          const matchingTargets = skill.targets.filter(
+            (target) => target.tool === toolId && (target.scope ?? 'global') === skillScope,
+          )
+          const synced = matchingTargets.length > 0
+          if (enabled && synced) continue
+          if (!enabled && !synced) continue
+          try {
+            if (enabled) {
+              if (skillScope === 'project') {
+                for (const projectPath of projects) {
+                  await invokeTauri('sync_skill_to_tool', {
+                    sourcePath: skill.central_path,
+                    skillId: skill.id,
+                    tool: toolId,
+                    name: skill.name,
+                    overwriteIfSameContent: true,
+                    scope: 'project',
+                    projectPath,
+                  })
+                }
+              } else {
+                await invokeTauri('sync_skill_to_tool', {
+                  sourcePath: skill.central_path,
+                  skillId: skill.id,
+                  tool: toolId,
+                  name: skill.name,
+                  overwriteIfSameContent: true,
+                  scope: 'global',
+                })
+              }
+            } else if (skillScope === 'project') {
+              const targetProjects = Array.from(
+                new Set(
+                  matchingTargets
+                    .map((target) => target.project_path)
+                    .filter((path): path is string => Boolean(path)),
+                ),
+              )
+              for (const projectPath of targetProjects) {
+                await invokeTauri('unsync_skill_from_tool', {
+                  skillId: skill.id,
+                  tool: toolId,
+                  scope: 'project',
+                  projectPath,
+                })
+              }
+            } else {
+              await invokeTauri('unsync_skill_from_tool', {
+                skillId: skill.id,
+                tool: toolId,
+                scope: 'global',
+              })
+            }
+          } catch (err) {
+            const raw = err instanceof Error ? err.message : String(err)
+            if (raw.startsWith('TARGET_EXISTS|')) {
+              failures.push(
+                t('errors.targetExistsDetail', { path: raw.split('|')[1] ?? '' }),
+              )
+            } else if (raw.startsWith('TOOL_NOT_INSTALLED|')) {
+              failures.push(`${toolLabel}: ${t('errors.toolNotInstalled')}`)
+            } else if (raw.startsWith('TOOL_NOT_WRITABLE|')) {
+              const parts = raw.split('|')
+              failures.push(
+                t('errors.toolNotWritable', { tool: parts[1] ?? toolLabel, path: parts[2] ?? '' }),
+              )
+            } else {
+              failures.push(`${toolLabel}: ${raw}`)
+            }
+          }
+        }
+        const statusText = enabled ? t('status.syncEnabled') : t('status.syncDisabled')
+        setActionMessage(statusText)
+        setSuccessToastMessage(statusText)
+        setActionMessage(null)
+        if (failures.length > 0) {
+          setError(failures.slice(0, 3).join('\n'))
+        }
+        await loadManagedSkills()
+      } finally {
+        setLoading(false)
+        setLoadingStartAt(null)
+      }
+    },
+    [
+      getSkillProjects,
+      getSkillScope,
+      installedTools,
+      invokeTauri,
+      loadManagedSkills,
+      loading,
+      t,
+      tools,
+      uniqueToolIdsBySkillsDir,
+    ],
+  )
+
   const handleToggleToolForSkill = useCallback(
     (skill: ManagedSkill, toolId: string) => {
       if (loading) return
@@ -2444,6 +2596,13 @@ function App() {
       void runToggleToolForSkill(skill, toolId)
     },
     [getSkillScope, loading, runToggleToolForSkill, sharedToolIdsByToolId],
+  )
+
+  const handleToggleAllToolsForSkill = useCallback(
+    (skill: ManagedSkill, enabled: boolean) => {
+      void runSetAllToolsForSkill(skill, enabled)
+    },
+    [runSetAllToolsForSkill],
   )
 
   const handleUpdateManaged = useCallback(
@@ -2523,8 +2682,10 @@ function App() {
       <Header
         language={language}
         loading={loading}
+        resolvedTheme={resolvedTheme}
         activeView={activeView}
         onToggleLanguage={toggleLanguage}
+        onToggleTheme={handleToggleTheme}
         onOpenSettings={handleOpenSettings}
         onViewChange={handleViewChange}
         onRefresh={handleRefresh}
@@ -2546,6 +2707,7 @@ function App() {
               sortBy={sortBy}
               searchQuery={searchQuery}
               scopeFilter={scopeFilter}
+              viewMode={viewMode}
               tags={tags}
               selectedTagIds={selectedTagIds}
               includeUntagged={includeUntagged}
@@ -2554,6 +2716,7 @@ function App() {
               onSortChange={handleSortChange}
               onSearchChange={handleSearchChange}
               onScopeFilterChange={handleScopeFilterChange}
+              onViewModeChange={setViewMode}
               onToggleTag={handleToggleTagFilter}
               onToggleUntagged={handleToggleUntaggedFilter}
               onClearTags={handleClearTagFilters}
@@ -2565,6 +2728,7 @@ function App() {
               visibleSkills={visibleSkills}
               installedTools={installedTools}
               loading={loading}
+              viewMode={viewMode}
               getGithubInfo={getGithubInfo}
               getSkillSourceLabel={getSkillSourceLabel}
               formatRelative={formatRelative}
@@ -2572,6 +2736,7 @@ function App() {
               onUpdateSkill={handleUpdateSkill}
               onDeleteSkill={handleDeletePrompt}
               onToggleTool={handleToggleToolForSkill}
+              onToggleAllTools={handleToggleAllToolsForSkill}
               onOpenScope={handleOpenScope}
               onOpenDetail={handleOpenDetail}
               onEditTags={handleOpenEditTags}
@@ -2601,10 +2766,8 @@ function App() {
             storagePath={storagePath}
             gitCacheCleanupDays={gitCacheCleanupDays}
             gitCacheTtlSecs={gitCacheTtlSecs}
-            themePreference={themePreference}
             onPickStoragePath={handlePickStoragePath}
             onToggleLanguage={toggleLanguage}
-            onThemeChange={handleThemeChange}
             onGitCacheCleanupDaysChange={handleGitCacheCleanupDaysChange}
             onGitCacheTtlSecsChange={handleGitCacheTtlSecsChange}
             onClearGitCacheNow={handleClearGitCacheNow}

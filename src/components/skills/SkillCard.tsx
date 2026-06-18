@@ -1,8 +1,9 @@
 import { memo, useState } from 'react'
-import { Box, Copy, Folder, Github, RefreshCw, Tag, Trash2 } from 'lucide-react'
+import { Copy, RefreshCw, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill, ToolOption } from './types'
+import SkillIcon from './SkillIcon'
 
 type GithubInfo = {
   label: string
@@ -19,6 +20,7 @@ type SkillCardProps = {
   onUpdate: (skill: ManagedSkill) => void
   onDelete: (skillId: string) => void
   onToggleTool: (skill: ManagedSkill, toolId: string) => void
+  onToggleAllTools: (skill: ManagedSkill, enabled: boolean) => void
   onOpenScope: (skill: ManagedSkill) => void
   onOpenDetail: (skill: ManagedSkill) => void
   onEditTags: (skill: ManagedSkill) => void
@@ -39,6 +41,7 @@ const SkillCard = ({
   onUpdate,
   onDelete,
   onToggleTool,
+  onToggleAllTools,
   onOpenScope,
   onOpenDetail,
   onEditTags,
@@ -46,14 +49,6 @@ const SkillCard = ({
   getSkillProjects,
   t,
 }: SkillCardProps) => {
-  const typeKey = skill.source_type.toLowerCase()
-  const iconNode = typeKey.includes('git') ? (
-    <Github size={20} />
-  ) : typeKey.includes('local') ? (
-    <Folder size={20} />
-  ) : (
-    <Box size={20} />
-  )
   const github = getGithubInfo(skill.source_ref)
   const copyValue = (github?.href ?? skill.source_ref ?? '').trim()
   const skillScope = getSkillScope(skill)
@@ -84,14 +79,27 @@ const SkillCard = ({
   }
 
   const [expanded, setExpanded] = useState(false)
-  const needsCollapse = syncedTools.length > MAX_VISIBLE_BADGES
-  const visibleSynced = expanded ? syncedTools : syncedTools.slice(0, MAX_VISIBLE_BADGES)
-  const remainingCount = syncedTools.length - MAX_VISIBLE_BADGES
-  const showUnsyncedTools = expanded || !needsCollapse
+  const visibleSynced = syncedTools.slice(0, MAX_VISIBLE_BADGES)
+  const hiddenToolCount = installedTools.length - visibleSynced.length
+  const displaySyncedTools = expanded ? syncedTools : visibleSynced
+  const displayUnsyncedTools = expanded ? unsyncedTools : []
+  const eligibleBulkTools =
+    skillScope === 'project' && projectCount === 0
+      ? []
+      : installedTools.filter(
+          (tool) => skillScope !== 'project' || tool.supports_project_scope !== false,
+        )
+  const allEligibleSynced =
+    eligibleBulkTools.length > 0 &&
+    eligibleBulkTools.every((tool) =>
+      skill.targets.some(
+        (target) => target.tool === tool.id && (target.scope ?? 'global') === skillScope,
+      ),
+    )
 
   return (
     <div className="skill-card">
-      <div className="skill-icon">{iconNode}</div>
+      <SkillIcon skill={skill} size="lg" />
       <div className="skill-main">
         <div className="skill-header-row">
           <button
@@ -176,46 +184,50 @@ const SkillCard = ({
               : t('scope.globalBadge')}
           </button>
         </div>
-        <div className={`tool-matrix${!expanded && needsCollapse ? ' collapsed' : ''}`}>
-          {visibleSynced.map(({ tool, target }) => (
-            <button
-              key={`${skill.id}-${tool.id}`}
-              type="button"
-              className="tool-pill active"
-              title={`${tool.label} (${target.mode ?? t('unknown')})`}
-              onClick={() => void onToggleTool(skill, tool.id)}
-            >
-              <span className="status-badge" />
-              {tool.label}
-            </button>
-          ))}
-          {needsCollapse && !expanded ? (
-            <button
-              type="button"
-              className="tool-pill more-badge"
-              onClick={() => setExpanded(true)}
-            >
-              {t('moreTools', { count: remainingCount })}
-            </button>
-          ) : null}
-          {showUnsyncedTools &&
-            unsyncedTools.map((tool) => {
-              const disabled = false
-              return (
-                <button
-                  key={`${skill.id}-${tool.id}`}
-                  type="button"
-                  className={`tool-pill ${disabled ? 'disabled' : 'inactive'}`}
-                  title={tool.label}
-                  onClick={() => {
-                    if (!disabled) void onToggleTool(skill, tool.id)
-                  }}
-                  disabled={disabled}
-                >
-                  {tool.label}
-                </button>
-              )
-            })}
+        <div
+          className={`tool-matrix-wrap${expanded ? ' expanded' : ''}`}
+          title={t('bulkToggleToolsHint')}
+          onDoubleClick={(event) => {
+            if (loading) return
+            if ((event.target as HTMLElement).closest('.tool-pill')) return
+            if (eligibleBulkTools.length === 0) return
+            onToggleAllTools(skill, !allEligibleSynced)
+          }}
+        >
+          <div className="tool-matrix">
+            {displaySyncedTools.map(({ tool, target }) => (
+              <button
+                key={`${skill.id}-${tool.id}`}
+                type="button"
+                className="tool-pill active"
+                title={`${tool.label} (${target.mode ?? t('unknown')})`}
+                onClick={() => void onToggleTool(skill, tool.id)}
+              >
+                <span className="status-badge" />
+                {tool.label}
+              </button>
+            ))}
+            {displayUnsyncedTools.map((tool) => (
+              <button
+                key={`${skill.id}-${tool.id}`}
+                type="button"
+                className="tool-pill inactive"
+                title={tool.label}
+                onClick={() => void onToggleTool(skill, tool.id)}
+              >
+                {tool.label}
+              </button>
+            ))}
+            {hiddenToolCount > 0 ? (
+              <button
+                type="button"
+                className="tool-pill more-badge"
+                onClick={() => setExpanded((current) => !current)}
+              >
+                {expanded ? t('collapseTools') : t('moreTools', { count: hiddenToolCount })}
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
       <div className="skill-actions-col">
