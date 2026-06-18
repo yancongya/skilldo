@@ -95,11 +95,8 @@
 .brand-text {
   font-weight: 700;
   font-size: 20px;
-  letter-spacing: -0.03em;
-  background: linear-gradient(to right, #2563eb, #9333ea, #ea580c);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.025em;
+  color: var(--accent-primary);
 }
 
 .brand-subtitle {
@@ -170,7 +167,7 @@
 }
 
 .tag-filter-btn.active {
-  border-color: rgba(37, 99, 235, 0.45);
+  border-color: var(--accent-ring);
   color: var(--accent-primary);
   background: var(--accent-soft-bg);
 }
@@ -348,7 +345,7 @@
   outline: none;
   border-color: var(--accent-primary);
   background: var(--bg-app);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
 .search-icon-abs {
@@ -515,7 +512,7 @@
 
 .skill-tag-pill:hover {
   color: var(--accent-primary);
-  border-color: rgba(37, 99, 235, 0.35);
+  border-color: var(--accent-ring);
   background: var(--accent-soft-bg);
 }
 
@@ -568,15 +565,15 @@
 }
 
 .scope-badge.project {
-  border-color: #2563eb;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.08);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: var(--accent-soft-bg);
 }
 
 .scope-badge.global {
   border-color: var(--status-success);
   color: var(--status-success);
-  background: rgba(34, 197, 94, 0.08);
+  background: var(--success-soft-bg);
 }
 
 .repo-pill {
@@ -603,7 +600,7 @@
 .repo-pill.copyable:hover {
   color: var(--text-primary);
   border-color: var(--border-strong);
-  background: #eef2ff;
+  background: var(--accent-soft-bg);
 }
 
 .repo-pill:disabled {
@@ -768,7 +765,7 @@
 
 .add-tag-pill:hover {
   color: var(--accent-primary);
-  border-color: rgba(37, 99, 235, 0.35);
+  border-color: var(--accent-ring);
   background: var(--accent-soft-bg);
 }
 
@@ -887,13 +884,13 @@
 .btn-primary {
   background: var(--accent-primary);
   color: var(--accent-primary-fg);
-  box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover {
   background: var(--accent-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 6px 8px -1px rgba(37, 99, 235, 0.3);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-secondary {
@@ -981,7 +978,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(17, 24, 39, 0.45);
+  background: var(--modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1125,10 +1122,10 @@
 
 .scope-inline-warning {
   padding: 10px 12px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid var(--warning-soft-border);
   border-radius: 8px;
-  background: rgba(245, 158, 11, 0.08);
-  color: #92400e;
+  background: var(--warning-soft-bg);
+  color: var(--status-warning);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1337,14 +1334,22 @@
   background: var(--accent-primary);
   width: 60%;
   border-radius: 999px;
-  animation: shimmer 1.5s infinite linear;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: linear-gradient(
     90deg,
-    var(--accent-primary) 0%,
-    #60a5fa 50%,
-    var(--accent-primary) 100%
+    transparent 0%,
+    rgba(255, 255, 255, 0.25) 50%,
+    transparent 100%
   );
   background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
 }
 
 @keyframes shimmer {
@@ -1421,7 +1426,7 @@
 .input:focus {
   border-color: var(--accent-primary);
   outline: none;
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
 .input-row {
@@ -2020,7 +2025,7 @@
 .settings-select:focus {
   outline: none;
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
 .settings-select-caret {
@@ -2090,7 +2095,7 @@
 .settings-input:focus {
   outline: none;
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
 .settings-browse {
@@ -2474,7 +2479,7 @@
 .explore-search-input:focus {
   outline: none;
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-soft-bg);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .explore-search-input::placeholder {
