@@ -45,7 +45,17 @@ export type ManagedSkill = {
   icon_background?: string | null
   source_type: string
   source_ref?: string | null
-  source_origin?: 'official' | 'git' | 'local' | string
+  source_origin?: 'official' | 'my_git' | 'third_party_git' | 'local' | string
+  origin_kind?: string
+  origin_role?: string
+  origin_provider?: string | null
+  origin_remote_url?: string | null
+  origin_owner?: string | null
+  origin_repo?: string | null
+  update_strategy?: string
+  publish_strategy?: string
+  origin_manual_override?: boolean
+  source_origin_reason?: string | null
   central_path: string
   created_at: number
   updated_at: number
@@ -138,4 +148,10 @@ export type ToolDirOverride = {
 export type CustomScanDirEntry = {
   name: string
   path: string
+}
+
+export type OriginRules = {
+  myGitOwners: string[]
+  myGitRepos: string[]
+  officialGitRepos: string[]
 }

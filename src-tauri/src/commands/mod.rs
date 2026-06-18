@@ -21,7 +21,7 @@ use crate::core::installer::{
     update_managed_skill_from_source, GitSkillCandidate, InstallResult, LocalSkillCandidate,
 };
 use crate::core::onboarding::{build_onboarding_plan, OnboardingPlan};
-use crate::core::skill_store::{SkillStore, SkillTargetRecord};
+use crate::core::skill_store::{SkillOriginRecord, SkillStore, SkillTargetRecord};
 use crate::core::skills_search::{
     search_skills_online as search_skills_online_core, OnlineSkillResult,
 };
@@ -35,6 +35,7 @@ use crate::core::tool_adapters::{
 
 const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
 const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
+const ORIGIN_RULES_KEY: &str = "origin_rules_v1";
 const OFFICIAL_SOURCE_PATTERNS: &[&str] = &[
     "github.com/anthropics/skills",
     "github.com/openai/skills",
@@ -53,6 +54,60 @@ const OFFICIAL_SOURCE_PATTERNS: &[&str] = &[
 pub struct CustomScanDirEntry {
     pub name: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginRules {
+    pub my_git_owners: Vec<String>,
+    pub my_git_repos: Vec<String>,
+    pub official_git_repos: Vec<String>,
+}
+
+fn normalize_rule_item(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("www.")
+        .trim_end_matches(".git")
+        .to_lowercase()
+}
+
+fn normalize_rules(mut rules: OriginRules) -> OriginRules {
+    rules.my_git_owners = rules
+        .my_git_owners
+        .into_iter()
+        .map(|item| normalize_rule_item(&item))
+        .filter(|item| !item.is_empty())
+        .collect();
+    rules.my_git_repos = rules
+        .my_git_repos
+        .into_iter()
+        .map(|item| normalize_rule_item(&item))
+        .filter(|item| !item.is_empty())
+        .collect();
+    rules.official_git_repos = rules
+        .official_git_repos
+        .into_iter()
+        .map(|item| normalize_rule_item(&item))
+        .filter(|item| !item.is_empty())
+        .collect();
+    rules.my_git_owners.sort();
+    rules.my_git_owners.dedup();
+    rules.my_git_repos.sort();
+    rules.my_git_repos.dedup();
+    rules.official_git_repos.sort();
+    rules.official_git_repos.dedup();
+    rules
+}
+
+fn get_origin_rules_impl(store: &SkillStore) -> anyhow::Result<OriginRules> {
+    let raw = store.get_setting(ORIGIN_RULES_KEY)?;
+    let rules = raw
+        .and_then(|json| serde_json::from_str::<OriginRules>(&json).ok())
+        .unwrap_or_default();
+    Ok(normalize_rules(rules))
 }
 
 fn resolve_tool_global_dir(adapter_key: &str, store: &SkillStore) -> anyhow::Result<String> {
@@ -115,6 +170,28 @@ fn is_official_source(source: &str) -> bool {
         .any(|pattern| normalized.contains(&pattern.to_lowercase()))
 }
 
+fn matches_repo_rule(source: &str, rules: &[String]) -> bool {
+    let normalized = normalize_source_ref(source);
+    rules.iter().any(|rule| normalized.contains(rule))
+}
+
+fn matches_my_git_rule(owner: &Option<String>, repo: &Option<String>, rules: &OriginRules) -> bool {
+    let owner = owner.as_ref().map(|value| value.to_lowercase());
+    let repo = repo.as_ref().map(|value| value.to_lowercase());
+    if let Some(owner) = &owner {
+        if rules.my_git_owners.iter().any(|rule| rule == owner) {
+            return true;
+        }
+    }
+    if let (Some(owner), Some(repo)) = (&owner, &repo) {
+        let full = format!("{owner}/{repo}");
+        if rules.my_git_repos.iter().any(|rule| rule == &full) {
+            return true;
+        }
+    }
+    false
+}
+
 fn find_git_root(path: &Path) -> Option<PathBuf> {
     let start = if path.is_dir() {
         path.to_path_buf()
@@ -163,33 +240,160 @@ fn git_remote_origin(git_root: &Path) -> Option<String> {
     None
 }
 
-fn infer_source_origin(source_type: &str, source_ref: Option<&str>, central_path: &str) -> String {
+#[derive(Clone, Debug)]
+struct InferredOrigin {
+    origin_kind: String,
+    origin_role: String,
+    provider: Option<String>,
+    remote_url: Option<String>,
+    owner: Option<String>,
+    repo: Option<String>,
+    update_strategy: String,
+    publish_strategy: String,
+    reason: String,
+}
+
+fn parse_github_owner_repo(source: &str) -> (Option<String>, Option<String>) {
+    let normalized = normalize_source_ref(source);
+    let Some(rest) = normalized.split_once("github.com/").map(|(_, rest)| rest) else {
+        return (None, None);
+    };
+    let mut parts = rest.split('/');
+    let owner = parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let repo = parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches(".git").to_string());
+    (owner, repo)
+}
+
+fn infer_source_origin(
+    source_type: &str,
+    source_ref: Option<&str>,
+    central_path: &str,
+    rules: &OriginRules,
+) -> InferredOrigin {
     if let Some(source) = source_ref {
-        if is_official_source(source) {
-            return "official".to_string();
+        if is_official_source(source) || matches_repo_rule(source, &rules.official_git_repos) {
+            let (owner, repo) = parse_github_owner_repo(source);
+            return InferredOrigin {
+                origin_kind: "official".to_string(),
+                origin_role: "official".to_string(),
+                provider: Some("official".to_string()),
+                remote_url: Some(source.to_string()),
+                owner,
+                repo,
+                update_strategy: "provider_refresh".to_string(),
+                publish_strategy: "none".to_string(),
+                reason: "source_ref matched official source rule".to_string(),
+            };
         }
     }
     if is_official_source(central_path) {
-        return "official".to_string();
+        return InferredOrigin {
+            origin_kind: "official".to_string(),
+            origin_role: "official".to_string(),
+            provider: Some("official".to_string()),
+            remote_url: None,
+            owner: None,
+            repo: None,
+            update_strategy: "provider_refresh".to_string(),
+            publish_strategy: "none".to_string(),
+            reason: "central_path matched official source rule".to_string(),
+        };
     }
 
     if source_type.to_lowercase().contains("git") {
-        return "git".to_string();
+        let remote = source_ref.map(str::to_string);
+        let (owner, repo) = source_ref
+            .map(parse_github_owner_repo)
+            .unwrap_or((None, None));
+        let mine = matches_my_git_rule(&owner, &repo, rules);
+        return InferredOrigin {
+            origin_kind: "git".to_string(),
+            origin_role: if mine { "mine" } else { "third_party" }.to_string(),
+            provider: Some("git".to_string()),
+            remote_url: remote,
+            owner,
+            repo,
+            update_strategy: "git_pull".to_string(),
+            publish_strategy: if mine { "git_push" } else { "none" }.to_string(),
+            reason: if mine {
+                "source_type is git and matched my Git rules"
+            } else {
+                "source_type is git"
+            }
+            .to_string(),
+        };
     }
 
     for path in [source_ref, Some(central_path)].into_iter().flatten() {
         let path = PathBuf::from(path);
         if let Some(git_root) = find_git_root(&path) {
             if let Some(remote) = git_remote_origin(&git_root) {
-                if is_official_source(&remote) {
-                    return "official".to_string();
+                if is_official_source(&remote)
+                    || matches_repo_rule(&remote, &rules.official_git_repos)
+                {
+                    let (owner, repo) = parse_github_owner_repo(&remote);
+                    return InferredOrigin {
+                        origin_kind: "official".to_string(),
+                        origin_role: "official".to_string(),
+                        provider: Some("official".to_string()),
+                        remote_url: Some(remote),
+                        owner,
+                        repo,
+                        update_strategy: "provider_refresh".to_string(),
+                        publish_strategy: "none".to_string(),
+                        reason: "git remote matched official source rule".to_string(),
+                    };
                 }
+                let (owner, repo) = parse_github_owner_repo(&remote);
+                let mine = matches_my_git_rule(&owner, &repo, rules);
+                return InferredOrigin {
+                    origin_kind: "git".to_string(),
+                    origin_role: if mine { "mine" } else { "third_party" }.to_string(),
+                    provider: Some("git".to_string()),
+                    remote_url: Some(remote),
+                    owner,
+                    repo,
+                    update_strategy: "git_pull".to_string(),
+                    publish_strategy: if mine { "git_push" } else { "none" }.to_string(),
+                    reason: if mine {
+                        "source path git remote matched my Git rules"
+                    } else {
+                        "source path is inside a git repository"
+                    }
+                    .to_string(),
+                };
             }
-            return "git".to_string();
+            return InferredOrigin {
+                origin_kind: "git".to_string(),
+                origin_role: "third_party".to_string(),
+                provider: Some("git".to_string()),
+                remote_url: None,
+                owner: None,
+                repo: None,
+                update_strategy: "git_pull".to_string(),
+                publish_strategy: "none".to_string(),
+                reason: "source path is inside a git repository without origin remote".to_string(),
+            };
         }
     }
 
-    "local".to_string()
+    InferredOrigin {
+        origin_kind: "local".to_string(),
+        origin_role: "mine".to_string(),
+        provider: Some("local".to_string()),
+        remote_url: None,
+        owner: None,
+        repo: None,
+        update_strategy: "local_copy".to_string(),
+        publish_strategy: "none".to_string(),
+        reason: "no git or official source metadata found".to_string(),
+    }
 }
 use uuid::Uuid;
 
@@ -763,7 +967,7 @@ pub async fn install_local(
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let result = install_local_skill(&app, &store, sourcePath.as_ref(), name)?;
-        Ok::<_, anyhow::Error>(to_install_dto(result))
+        to_install_dto_with_origin(&store, result)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -796,7 +1000,7 @@ pub async fn install_local_selection(
         let base = std::path::PathBuf::from(basePath);
         let result =
             install_local_skill_from_selection(&app, &store, base.as_ref(), &subpath, name)?;
-        Ok::<_, anyhow::Error>(to_install_dto(result))
+        to_install_dto_with_origin(&store, result)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -817,7 +1021,7 @@ pub async fn install_git(
     let cancel_token = Arc::clone(cancel.inner());
     tauri::async_runtime::spawn_blocking(move || {
         let result = install_git_skill(&app, &store, &repoUrl, name, Some(&cancel_token))?;
-        Ok::<_, anyhow::Error>(to_install_dto(result))
+        to_install_dto_with_origin(&store, result)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -850,7 +1054,7 @@ pub async fn install_git_selection(
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let result = install_git_skill_from_selection(&app, &store, &repoUrl, &subpath, name)?;
-        Ok::<_, anyhow::Error>(to_install_dto(result))
+        to_install_dto_with_origin(&store, result)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1264,6 +1468,152 @@ pub async fn set_github_token(store: State<'_, SkillStore>, token: String) -> Re
 }
 
 #[tauri::command]
+pub fn get_origin_rules(store: State<'_, SkillStore>) -> Result<OriginRules, String> {
+    get_origin_rules_impl(store.inner()).map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn set_origin_rules(
+    store: State<'_, SkillStore>,
+    rules: OriginRules,
+) -> Result<OriginRules, String> {
+    let normalized = normalize_rules(rules);
+    let json = serde_json::to_string(&normalized).map_err(|err| err.to_string())?;
+    store
+        .set_setting(ORIGIN_RULES_KEY, &json)
+        .map_err(format_anyhow_error)?;
+    Ok(normalized)
+}
+
+fn manual_origin_record(
+    skill: &crate::core::skill_store::SkillRecord,
+    existing: Option<SkillOriginRecord>,
+    source_origin: &str,
+) -> anyhow::Result<SkillOriginRecord> {
+    let mut base = existing.unwrap_or_else(|| {
+        let rules = OriginRules::default();
+        let inferred = infer_source_origin(
+            &skill.source_type,
+            skill.source_ref.as_deref(),
+            &skill.central_path,
+            &rules,
+        );
+        SkillOriginRecord {
+            skill_id: skill.id.clone(),
+            origin_kind: inferred.origin_kind,
+            origin_role: inferred.origin_role,
+            provider: inferred.provider,
+            remote_url: inferred.remote_url,
+            owner: inferred.owner,
+            repo: inferred.repo,
+            branch: None,
+            subpath: skill.source_subpath.clone(),
+            update_strategy: inferred.update_strategy,
+            publish_strategy: inferred.publish_strategy,
+            manual_override: false,
+            reason: Some(inferred.reason),
+            updated_at: now_ms(),
+        }
+    });
+
+    match source_origin {
+        "official" => {
+            base.origin_kind = "official".to_string();
+            base.origin_role = "official".to_string();
+            base.provider = Some("official".to_string());
+            base.update_strategy = "provider_refresh".to_string();
+            base.publish_strategy = "none".to_string();
+        }
+        "my_git" => {
+            base.origin_kind = "git".to_string();
+            base.origin_role = "mine".to_string();
+            base.provider = Some("git".to_string());
+            base.update_strategy = "git_pull".to_string();
+            base.publish_strategy = "git_push".to_string();
+        }
+        "third_party_git" => {
+            base.origin_kind = "git".to_string();
+            base.origin_role = "third_party".to_string();
+            base.provider = Some("git".to_string());
+            base.update_strategy = "git_pull".to_string();
+            base.publish_strategy = "none".to_string();
+        }
+        "local" => {
+            base.origin_kind = "local".to_string();
+            base.origin_role = "mine".to_string();
+            base.provider = Some("local".to_string());
+            base.update_strategy = "local_copy".to_string();
+            base.publish_strategy = "none".to_string();
+        }
+        other => anyhow::bail!("invalid source_origin: {}", other),
+    }
+    base.manual_override = true;
+    base.reason = Some("manual override".to_string());
+    base.updated_at = now_ms();
+    Ok(base)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn set_skill_origin_override(
+    store: State<'_, SkillStore>,
+    skillId: String,
+    sourceOrigin: String,
+) -> Result<(), String> {
+    let skill = store
+        .get_skill_by_id(&skillId)
+        .map_err(format_anyhow_error)?
+        .ok_or_else(|| "skill not found".to_string())?;
+    let existing = store
+        .get_skill_origin(&skillId)
+        .map_err(format_anyhow_error)?;
+    let record =
+        manual_origin_record(&skill, existing, &sourceOrigin).map_err(format_anyhow_error)?;
+    store
+        .upsert_skill_origin(&record)
+        .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub fn reset_skill_origin_override(
+    store: State<'_, SkillStore>,
+    skillId: String,
+) -> Result<(), String> {
+    let skill = store
+        .get_skill_by_id(&skillId)
+        .map_err(format_anyhow_error)?
+        .ok_or_else(|| "skill not found".to_string())?;
+    let rules = get_origin_rules_impl(store.inner()).map_err(format_anyhow_error)?;
+    let inferred = infer_source_origin(
+        &skill.source_type,
+        skill.source_ref.as_deref(),
+        &skill.central_path,
+        &rules,
+    );
+    let record = SkillOriginRecord {
+        skill_id: skill.id,
+        origin_kind: inferred.origin_kind,
+        origin_role: inferred.origin_role,
+        provider: inferred.provider,
+        remote_url: inferred.remote_url,
+        owner: inferred.owner,
+        repo: inferred.repo,
+        branch: None,
+        subpath: skill.source_subpath,
+        update_strategy: inferred.update_strategy,
+        publish_strategy: inferred.publish_strategy,
+        manual_override: false,
+        reason: Some(inferred.reason),
+        updated_at: now_ms(),
+    };
+    store
+        .upsert_skill_origin(&record)
+        .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
 #[allow(non_snake_case)]
 pub async fn import_existing_skill(
     app: tauri::AppHandle,
@@ -1280,7 +1630,7 @@ pub async fn import_existing_skill(
             anyhow::bail!("SKILL_INVALID|missing_skill_md");
         }
         let result = install_local_skill(&app, &store, source, name)?;
-        Ok::<_, anyhow::Error>(to_install_dto(result))
+        to_install_dto_with_origin(&store, result)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1295,6 +1645,16 @@ pub struct ManagedSkillDto {
     pub source_type: String,
     pub source_ref: Option<String>,
     pub source_origin: String,
+    pub origin_kind: String,
+    pub origin_role: String,
+    pub origin_provider: Option<String>,
+    pub origin_remote_url: Option<String>,
+    pub origin_owner: Option<String>,
+    pub origin_repo: Option<String>,
+    pub update_strategy: String,
+    pub publish_strategy: String,
+    pub origin_manual_override: bool,
+    pub source_origin_reason: Option<String>,
     pub central_path: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -1499,6 +1859,38 @@ fn to_install_dto(result: InstallResult) -> InstallResultDto {
     }
 }
 
+fn to_install_dto_with_origin(
+    store: &SkillStore,
+    result: InstallResult,
+) -> anyhow::Result<InstallResultDto> {
+    if let Some(skill) = store.get_skill_by_id(&result.skill_id)? {
+        let rules = get_origin_rules_impl(store)?;
+        let inferred = infer_source_origin(
+            &skill.source_type,
+            skill.source_ref.as_deref(),
+            &skill.central_path,
+            &rules,
+        );
+        store.upsert_skill_origin(&SkillOriginRecord {
+            skill_id: skill.id,
+            origin_kind: inferred.origin_kind,
+            origin_role: inferred.origin_role,
+            provider: inferred.provider,
+            remote_url: inferred.remote_url,
+            owner: inferred.owner,
+            repo: inferred.repo,
+            branch: None,
+            subpath: skill.source_subpath,
+            update_strategy: inferred.update_strategy,
+            publish_strategy: inferred.publish_strategy,
+            manual_override: false,
+            reason: Some(inferred.reason),
+            updated_at: now_ms(),
+        })?;
+    }
+    Ok(to_install_dto(result))
+}
+
 fn now_ms() -> i64 {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -1508,9 +1900,47 @@ fn now_ms() -> i64 {
 
 fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, String> {
     let skills = store.list_skills().map_err(|err| err.to_string())?;
+    let rules = get_origin_rules_impl(store).map_err(|err| err.to_string())?;
     Ok(skills
         .into_iter()
         .map(|skill| {
+            let origin = match store.get_skill_origin(&skill.id) {
+                Ok(Some(origin)) if origin.manual_override => origin,
+                _ => {
+                    let inferred = infer_source_origin(
+                        &skill.source_type,
+                        skill.source_ref.as_deref(),
+                        &skill.central_path,
+                        &rules,
+                    );
+                    let record = SkillOriginRecord {
+                        skill_id: skill.id.clone(),
+                        origin_kind: inferred.origin_kind,
+                        origin_role: inferred.origin_role,
+                        provider: inferred.provider,
+                        remote_url: inferred.remote_url,
+                        owner: inferred.owner,
+                        repo: inferred.repo,
+                        branch: None,
+                        subpath: skill.source_subpath.clone(),
+                        update_strategy: inferred.update_strategy,
+                        publish_strategy: inferred.publish_strategy,
+                        manual_override: false,
+                        reason: Some(inferred.reason),
+                        updated_at: now_ms(),
+                    };
+                    let _ = store.upsert_skill_origin(&record);
+                    record
+                }
+            };
+            let source_origin = match (origin.origin_kind.as_str(), origin.origin_role.as_str()) {
+                ("official", _) | (_, "official") => "official",
+                ("git", "mine") => "my_git",
+                ("git", _) => "third_party_git",
+                ("local", _) => "local",
+                _ => "local",
+            }
+            .to_string();
             let targets = store
                 .list_skill_targets(&skill.id)
                 .unwrap_or_default()
@@ -1539,11 +1969,17 @@ fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, S
                 id: skill.id,
                 name: skill.name,
                 description: skill.description,
-                source_origin: infer_source_origin(
-                    &skill.source_type,
-                    skill.source_ref.as_deref(),
-                    &skill.central_path,
-                ),
+                source_origin,
+                origin_kind: origin.origin_kind,
+                origin_role: origin.origin_role,
+                origin_provider: origin.provider,
+                origin_remote_url: origin.remote_url,
+                origin_owner: origin.owner,
+                origin_repo: origin.repo,
+                update_strategy: origin.update_strategy,
+                publish_strategy: origin.publish_strategy,
+                origin_manual_override: origin.manual_override,
+                source_origin_reason: origin.reason,
                 source_type: skill.source_type,
                 source_ref: skill.source_ref,
                 central_path: skill.central_path,

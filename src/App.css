@@ -615,14 +615,24 @@
   color: var(--accent-primary);
 }
 
-.skill-origin-badge.git {
+.skill-origin-badge.my-git {
   border-color: color-mix(in srgb, #8b5cf6 34%, var(--border-subtle));
   background: color-mix(in srgb, #8b5cf6 12%, var(--bg-panel));
   color: #7c3aed;
 }
 
-:root[data-theme='dark'] .skill-origin-badge.git {
+:root[data-theme='dark'] .skill-origin-badge.my-git {
   color: #c4b5fd;
+}
+
+.skill-origin-badge.third-party-git {
+  border-color: color-mix(in srgb, #64748b 32%, var(--border-subtle));
+  background: color-mix(in srgb, #64748b 10%, var(--bg-panel));
+  color: #475569;
+}
+
+:root[data-theme='dark'] .skill-origin-badge.third-party-git {
+  color: #cbd5e1;
 }
 
 .skill-origin-badge.local {
@@ -2472,6 +2482,15 @@
   box-shadow: 0 0 0 2px var(--accent-ring);
 }
 
+.settings-textarea {
+  min-height: 74px;
+  height: auto;
+  resize: vertical;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.4;
+}
+
 .settings-browse {
   height: 40px;
   padding: 0 14px;
@@ -3147,6 +3166,23 @@
   display: flex;
   align-items: center;
   gap: 5px;
+}
+
+.detail-origin-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.detail-origin-select {
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-ui);
 }
 
 .detail-meta-dot {

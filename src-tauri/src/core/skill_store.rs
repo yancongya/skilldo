@@ -8,7 +8,7 @@ const DB_FILE_NAME: &str = "skills_hub.db";
 const LEGACY_APP_IDENTIFIERS: &[&str] = &["com.tauri.dev", "com.tauri.dev.skillshub"];
 
 // Schema versioning: bump when making changes and add a migration step.
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 // Minimal schema for MVP: skills, skill_targets, settings, discovered_skills(optional).
 const SCHEMA_V1: &str = r#"
@@ -78,6 +78,24 @@ CREATE TABLE IF NOT EXISTS skill_tag_links (
   FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE,
   FOREIGN KEY(tag_id) REFERENCES skill_tags(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS skill_origins (
+  skill_id TEXT PRIMARY KEY,
+  origin_kind TEXT NOT NULL,
+  origin_role TEXT NOT NULL,
+  provider TEXT NULL,
+  remote_url TEXT NULL,
+  owner TEXT NULL,
+  repo TEXT NULL,
+  branch TEXT NULL,
+  subpath TEXT NULL,
+  update_strategy TEXT NOT NULL,
+  publish_strategy TEXT NOT NULL,
+  manual_override INTEGER NOT NULL DEFAULT 0,
+  reason TEXT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE
+);
 "#;
 
 #[derive(Clone, Debug)]
@@ -115,6 +133,24 @@ pub struct SkillTargetRecord {
     pub status: String,
     pub last_error: Option<String>,
     pub synced_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkillOriginRecord {
+    pub skill_id: String,
+    pub origin_kind: String,
+    pub origin_role: String,
+    pub provider: Option<String>,
+    pub remote_url: Option<String>,
+    pub owner: Option<String>,
+    pub repo: Option<String>,
+    pub branch: Option<String>,
+    pub subpath: Option<String>,
+    pub update_strategy: String,
+    pub publish_strategy: String,
+    pub manual_override: bool,
+    pub reason: Option<String>,
+    pub updated_at: i64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -167,6 +203,9 @@ impl SkillStore {
                 }
                 if user_version < 5 {
                     migrate_tags_to_v5(conn)?;
+                }
+                if user_version < 6 {
+                    migrate_skill_origins_to_v6(conn)?;
                 }
                 conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             } else if user_version > SCHEMA_VERSION {
@@ -291,6 +330,84 @@ impl SkillStore {
                 ],
             )?;
             Ok(())
+        })
+    }
+
+    pub fn upsert_skill_origin(&self, record: &SkillOriginRecord) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO skill_origins (
+                  skill_id, origin_kind, origin_role, provider, remote_url, owner, repo, branch,
+                  subpath, update_strategy, publish_strategy, manual_override, reason, updated_at
+                ) VALUES (
+                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14
+                )
+                ON CONFLICT(skill_id) DO UPDATE SET
+                  origin_kind = excluded.origin_kind,
+                  origin_role = excluded.origin_role,
+                  provider = excluded.provider,
+                  remote_url = excluded.remote_url,
+                  owner = excluded.owner,
+                  repo = excluded.repo,
+                  branch = excluded.branch,
+                  subpath = excluded.subpath,
+                  update_strategy = excluded.update_strategy,
+                  publish_strategy = excluded.publish_strategy,
+                  manual_override = excluded.manual_override,
+                  reason = excluded.reason,
+                  updated_at = excluded.updated_at",
+                params![
+                    record.skill_id,
+                    record.origin_kind,
+                    record.origin_role,
+                    record.provider,
+                    record.remote_url,
+                    record.owner,
+                    record.repo,
+                    record.branch,
+                    record.subpath,
+                    record.update_strategy,
+                    record.publish_strategy,
+                    if record.manual_override { 1 } else { 0 },
+                    record.reason,
+                    record.updated_at
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn get_skill_origin(&self, skill_id: &str) -> Result<Option<SkillOriginRecord>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT skill_id, origin_kind, origin_role, provider, remote_url, owner, repo,
+                        branch, subpath, update_strategy, publish_strategy, manual_override,
+                        reason, updated_at
+                 FROM skill_origins
+                 WHERE skill_id = ?1
+                 LIMIT 1",
+            )?;
+            let mut rows = stmt.query(params![skill_id])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(SkillOriginRecord {
+                    skill_id: row.get(0)?,
+                    origin_kind: row.get(1)?,
+                    origin_role: row.get(2)?,
+                    provider: row.get(3)?,
+                    remote_url: row.get(4)?,
+                    owner: row.get(5)?,
+                    repo: row.get(6)?,
+                    branch: row.get(7)?,
+                    subpath: row.get(8)?,
+                    update_strategy: row.get(9)?,
+                    publish_strategy: row.get(10)?,
+                    manual_override: row.get::<_, i64>(11)? != 0,
+                    reason: row.get(12)?,
+                    updated_at: row.get(13)?,
+                }))
+            } else {
+                Ok(None)
+            }
         })
     }
 
@@ -687,6 +804,29 @@ fn migrate_tags_to_v5(conn: &Connection) -> Result<()> {
            PRIMARY KEY (skill_id, tag_id),
            FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE,
            FOREIGN KEY(tag_id) REFERENCES skill_tags(id) ON DELETE CASCADE
+         );",
+    )?;
+    Ok(())
+}
+
+fn migrate_skill_origins_to_v6(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS skill_origins (
+           skill_id TEXT PRIMARY KEY,
+           origin_kind TEXT NOT NULL,
+           origin_role TEXT NOT NULL,
+           provider TEXT NULL,
+           remote_url TEXT NULL,
+           owner TEXT NULL,
+           repo TEXT NULL,
+           branch TEXT NULL,
+           subpath TEXT NULL,
+           update_strategy TEXT NOT NULL,
+           publish_strategy TEXT NOT NULL,
+           manual_override INTEGER NOT NULL DEFAULT 0,
+           reason TEXT NULL,
+           updated_at INTEGER NOT NULL,
+           FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE
          );",
     )?;
     Ok(())

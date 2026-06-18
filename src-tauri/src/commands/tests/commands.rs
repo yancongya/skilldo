@@ -173,3 +173,41 @@ fn get_managed_skills_impl_maps_targets() {
     assert_eq!(out[0].targets[0].scope, "global");
     assert!(out[0].targets[0].project_path.is_none());
 }
+
+#[test]
+fn origin_rules_classify_my_git_owner() {
+    let rules = OriginRules {
+        my_git_owners: vec!["yancongya".to_string()],
+        my_git_repos: vec![],
+        official_git_repos: vec![],
+    };
+    let rules = normalize_rules(rules);
+    let inferred = infer_source_origin(
+        "git",
+        Some("https://github.com/yancongya/example-skill.git"),
+        "/tmp/central",
+        &rules,
+    );
+    assert_eq!(inferred.origin_kind, "git");
+    assert_eq!(inferred.origin_role, "mine");
+    assert_eq!(inferred.publish_strategy, "git_push");
+}
+
+#[test]
+fn origin_rules_classify_official_repo() {
+    let rules = OriginRules {
+        my_git_owners: vec!["openai".to_string()],
+        my_git_repos: vec![],
+        official_git_repos: vec!["example/official-skills".to_string()],
+    };
+    let rules = normalize_rules(rules);
+    let inferred = infer_source_origin(
+        "git",
+        Some("https://github.com/example/official-skills.git"),
+        "/tmp/central",
+        &rules,
+    );
+    assert_eq!(inferred.origin_kind, "official");
+    assert_eq!(inferred.origin_role, "official");
+    assert_eq!(inferred.publish_strategy, "none");
+}

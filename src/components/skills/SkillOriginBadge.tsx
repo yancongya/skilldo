@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next'
 import type { ManagedSkill } from './types'
 
-type SkillOriginKind = 'official' | 'git' | 'local'
+type SkillOriginKind = 'official' | 'my-git' | 'third-party-git' | 'local'
 
 type SkillOrigin = {
   kind: SkillOriginKind
@@ -39,9 +39,31 @@ const getSkillOrigin = (skill: ManagedSkill, t: TFunction): SkillOrigin => {
 
   if (backendOrigin === 'git') {
     return {
-      kind: 'git',
-      label: t('origin.git'),
-      title: t('origin.gitTitle', { source: sourceTitle }),
+      kind: 'third-party-git',
+      label: t('origin.thirdPartyGit'),
+      title: t('origin.thirdPartyGitTitle', { source: sourceTitle }),
+    }
+  }
+
+  if (backendOrigin === 'my_git') {
+    return {
+      kind: 'my-git',
+      label: t('origin.myGit'),
+      title: t('origin.myGitTitle', {
+        source: sourceTitle,
+        reason: skill.source_origin_reason ?? '',
+      }),
+    }
+  }
+
+  if (backendOrigin === 'third_party_git') {
+    return {
+      kind: 'third-party-git',
+      label: t('origin.thirdPartyGit'),
+      title: t('origin.thirdPartyGitTitle', {
+        source: sourceTitle,
+        reason: skill.source_origin_reason ?? '',
+      }),
     }
   }
 
@@ -56,11 +78,11 @@ const getSkillOrigin = (skill: ManagedSkill, t: TFunction): SkillOrigin => {
   if (sourceType.includes('git')) {
     const official = OFFICIAL_GIT_REPOS.some((repo) => source.includes(repo))
     return {
-      kind: official ? 'official' : 'git',
-      label: official ? t('origin.official') : t('origin.git'),
+      kind: official ? 'official' : 'third-party-git',
+      label: official ? t('origin.official') : t('origin.thirdPartyGit'),
       title: official
         ? t('origin.officialTitle', { source: sourceTitle })
-        : t('origin.gitTitle', { source: sourceTitle }),
+        : t('origin.thirdPartyGitTitle', { source: sourceTitle, reason: '' }),
     }
   }
 

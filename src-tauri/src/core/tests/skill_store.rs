@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::core::skill_store::{SkillRecord, SkillStore, SkillTargetRecord};
+use crate::core::skill_store::{SkillOriginRecord, SkillRecord, SkillStore, SkillTargetRecord};
 use rusqlite::Connection;
 
 fn make_store() -> (tempfile::TempDir, SkillStore) {
@@ -478,6 +478,37 @@ fn update_skill_description_backfills() {
             .as_deref(),
         Some("backfilled")
     );
+}
+
+#[test]
+fn skill_origin_roundtrip_and_cascades() {
+    let (_dir, store) = make_store();
+    let skill = make_skill("origin-skill", "Origin", "/central/origin", 1);
+    store.upsert_skill(&skill).unwrap();
+
+    let origin = SkillOriginRecord {
+        skill_id: "origin-skill".to_string(),
+        origin_kind: "git".to_string(),
+        origin_role: "mine".to_string(),
+        provider: Some("git".to_string()),
+        remote_url: Some("https://github.com/me/repo.git".to_string()),
+        owner: Some("me".to_string()),
+        repo: Some("repo".to_string()),
+        branch: Some("main".to_string()),
+        subpath: Some("skills/foo".to_string()),
+        update_strategy: "git_pull".to_string(),
+        publish_strategy: "git_push".to_string(),
+        manual_override: true,
+        reason: Some("test".to_string()),
+        updated_at: 42,
+    };
+    store.upsert_skill_origin(&origin).unwrap();
+
+    let got = store.get_skill_origin("origin-skill").unwrap().unwrap();
+    assert_eq!(got, origin);
+
+    store.delete_skill("origin-skill").unwrap();
+    assert!(store.get_skill_origin("origin-skill").unwrap().is_none());
 }
 
 #[test]

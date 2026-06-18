@@ -25,6 +25,7 @@ import type { ManagedSkill, SkillFileEntry } from './types'
 type SkillDetailViewProps = {
   skill: ManagedSkill
   onBack: () => void
+  onOriginOverride: (skill: ManagedSkill, sourceOrigin: string) => void
   invokeTauri: <T>(command: string, args?: Record<string, unknown>) => Promise<T>
   formatRelative: (ms: number | null | undefined) => string
   t: TFunction
@@ -397,6 +398,7 @@ FileContentRenderer.displayName = 'FileContentRenderer'
 const SkillDetailView = ({
   skill,
   onBack,
+  onOriginOverride,
   invokeTauri,
   formatRelative,
   t,
@@ -492,6 +494,7 @@ const SkillDetailView = ({
   const SourceIcon = skill.source_type.toLowerCase().includes('git')
     ? GitBranch
     : Folder
+  const originValue = skill.origin_manual_override ? (skill.source_origin ?? 'local') : 'auto'
 
   return (
     <div className="detail-view">
@@ -523,6 +526,22 @@ const SkillDetailView = ({
             <File size={13} />
             {t('detail.fileCount', { count: files.length })}
           </span>
+          <span className="detail-meta-dot">&middot;</span>
+          <label className="detail-origin-select-label">
+            {t('origin.overrideLabel')}
+            <select
+              className="detail-origin-select"
+              value={originValue}
+              onChange={(event) => onOriginOverride(skill, event.target.value)}
+              title={skill.source_origin_reason ?? undefined}
+            >
+              <option value="auto">{t('origin.auto')}</option>
+              <option value="official">{t('origin.official')}</option>
+              <option value="my_git">{t('origin.myGit')}</option>
+              <option value="third_party_git">{t('origin.thirdPartyGit')}</option>
+              <option value="local">{t('origin.local')}</option>
+            </select>
+          </label>
         </div>
       </div>
 

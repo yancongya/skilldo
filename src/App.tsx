@@ -31,6 +31,7 @@ import type {
   ManagedSkill,
   OnboardingPlan,
   OnlineSkillDto,
+  OriginRules,
   TagWithCountDto,
   ToolOption,
   ToolStatusDto,
@@ -289,8 +290,10 @@ function App() {
     try {
       const result = await invokeTauri<ManagedSkill[]>('get_managed_skills')
       setManagedSkills(result)
+      return result
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      return []
     }
   }, [invokeTauri])
 
@@ -510,6 +513,13 @@ function App() {
     if (!isTauri) return
     invokeTauri<string>('get_github_token')
       .then((token) => setGithubToken(token))
+      .catch(() => {})
+  }, [isTauri, invokeTauri])
+
+  useEffect(() => {
+    if (!isTauri) return
+    invokeTauri<OriginRules>('get_origin_rules')
+      .then((rules) => setOriginRules(rules))
       .catch(() => {})
   }, [isTauri, invokeTauri])
 
@@ -762,6 +772,11 @@ function App() {
   const [gitCacheCleanupDays, setGitCacheCleanupDays] = useState<number>(30)
   const [gitCacheTtlSecs, setGitCacheTtlSecs] = useState<number>(60)
   const [githubToken, setGithubToken] = useState<string>('')
+  const [originRules, setOriginRules] = useState<OriginRules>({
+    myGitOwners: [],
+    myGitRepos: [],
+    officialGitRepos: [],
+  })
   const handlePickStoragePath = useCallback(async () => {
     try {
       if (!isTauri) {
@@ -826,6 +841,21 @@ function App() {
       }
     },
     [invokeTauri, isTauri],
+  )
+  const handleOriginRulesChange = useCallback(
+    async (rules: OriginRules) => {
+      setOriginRules(rules)
+      if (!isTauri) return
+      try {
+        const updated = await invokeTauri<OriginRules>('set_origin_rules', { rules })
+        setOriginRules(updated)
+        await loadManagedSkills()
+        setSuccessToastMessage(t('settingsSaved'))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    },
+    [invokeTauri, isTauri, loadManagedSkills, t],
   )
   const handleClearGitCacheNow = useCallback(async () => {
     if (!isTauri) {
@@ -905,6 +935,28 @@ function App() {
     setDetailSkill(skill)
     setActiveView('detail')
   }, [])
+
+  const handleSetSkillOriginOverride = useCallback(
+    async (skill: ManagedSkill, sourceOrigin: string) => {
+      if (!isTauri) return
+      try {
+        if (sourceOrigin === 'auto') {
+          await invokeTauri('reset_skill_origin_override', { skillId: skill.id })
+        } else {
+          await invokeTauri('set_skill_origin_override', {
+            skillId: skill.id,
+            sourceOrigin,
+          })
+        }
+        const updatedSkills = await loadManagedSkills()
+        setDetailSkill(updatedSkills.find((item) => item.id === skill.id) ?? skill)
+        setSuccessToastMessage(t('settingsSaved'))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    },
+    [invokeTauri, isTauri, loadManagedSkills, t],
+  )
 
   const handleBackToList = useCallback(() => {
     setDetailSkill(null)
@@ -2697,6 +2749,7 @@ function App() {
           <SkillDetailView
             skill={detailSkill}
             onBack={handleBackToList}
+            onOriginOverride={handleSetSkillOriginOverride}
             invokeTauri={invokeTauri}
             formatRelative={formatRelative}
             t={t}
@@ -2773,6 +2826,8 @@ function App() {
             onClearGitCacheNow={handleClearGitCacheNow}
             githubToken={githubToken}
             onGithubTokenChange={handleGithubTokenChange}
+            originRules={originRules}
+            onOriginRulesChange={handleOriginRulesChange}
             onBack={handleCloseSettings}
             toolDirOverrides={toolDirOverrides}
             onSetToolDirOverride={handleSetToolDirOverride}

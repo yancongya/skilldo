@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, FolderOpen, RotateCcw } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { Update } from '@tauri-apps/plugin-updater'
-import type { CustomScanDirEntry, ToolDirOverride } from './types'
+import type { CustomScanDirEntry, OriginRules, ToolDirOverride } from './types'
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'done' | 'error'
 
@@ -13,6 +13,7 @@ type SettingsPageProps = {
   gitCacheCleanupDays: number
   gitCacheTtlSecs: number
   githubToken: string
+  originRules: OriginRules
   toolDirOverrides: ToolDirOverride[]
   onPickStoragePath: () => void
   onToggleLanguage: () => void
@@ -20,6 +21,7 @@ type SettingsPageProps = {
   onGitCacheTtlSecsChange: (nextSecs: number) => void
   onClearGitCacheNow: () => void
   onGithubTokenChange: (token: string) => void
+  onOriginRulesChange: (rules: OriginRules) => void
   onSetToolDirOverride: (toolKey: string, path: string) => void
   onResetToolDirOverride: (toolKey: string) => void
   customScanDirs: CustomScanDirEntry[]
@@ -36,6 +38,7 @@ const SettingsPage = ({
   gitCacheCleanupDays,
   gitCacheTtlSecs,
   githubToken,
+  originRules,
   toolDirOverrides,
   onPickStoragePath,
   onToggleLanguage,
@@ -43,6 +46,7 @@ const SettingsPage = ({
   onGitCacheTtlSecsChange,
   onClearGitCacheNow,
   onGithubTokenChange,
+  onOriginRulesChange,
   onSetToolDirOverride,
   onResetToolDirOverride,
   customScanDirs,
@@ -55,6 +59,31 @@ const SettingsPage = ({
   useEffect(() => {
     setLocalToken(githubToken)
   }, [githubToken])
+
+  const joinRules = (items: string[]) => items.join('\n')
+  const parseRules = (value: string) =>
+    value
+      .split(/[,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+  const [myGitOwnersText, setMyGitOwnersText] = useState(joinRules(originRules.myGitOwners))
+  const [myGitReposText, setMyGitReposText] = useState(joinRules(originRules.myGitRepos))
+  const [officialGitReposText, setOfficialGitReposText] = useState(joinRules(originRules.officialGitRepos))
+
+  useEffect(() => {
+    setMyGitOwnersText(joinRules(originRules.myGitOwners))
+    setMyGitReposText(joinRules(originRules.myGitRepos))
+    setOfficialGitReposText(joinRules(originRules.officialGitRepos))
+  }, [originRules])
+
+  const handleSaveOriginRules = useCallback(() => {
+    onOriginRulesChange({
+      myGitOwners: parseRules(myGitOwnersText),
+      myGitRepos: parseRules(myGitReposText),
+      officialGitRepos: parseRules(officialGitReposText),
+    })
+  }, [myGitOwnersText, myGitReposText, officialGitReposText, onOriginRulesChange])
 
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
@@ -269,6 +298,52 @@ const SettingsPage = ({
           </div>
           <div className="settings-helper">{t('githubTokenHint')}</div>
         </div>
+
+        <div className="settings-section-divider" />
+        <div className="settings-section-title">{t('originRulesTitle')}</div>
+        <div className="settings-helper" style={{ marginBottom: 12 }}>{t('originRulesHint')}</div>
+        <div className="settings-field">
+          <label className="settings-label" htmlFor="settings-origin-my-owners">
+            {t('originRules.myGitOwners')}
+          </label>
+          <textarea
+            id="settings-origin-my-owners"
+            className="settings-input settings-textarea mono"
+            value={myGitOwnersText}
+            onChange={(event) => setMyGitOwnersText(event.target.value)}
+            placeholder="yancongya&#10;tanyancong"
+          />
+          <div className="settings-helper">{t('originRules.myGitOwnersHint')}</div>
+        </div>
+        <div className="settings-field">
+          <label className="settings-label" htmlFor="settings-origin-my-repos">
+            {t('originRules.myGitRepos')}
+          </label>
+          <textarea
+            id="settings-origin-my-repos"
+            className="settings-input settings-textarea mono"
+            value={myGitReposText}
+            onChange={(event) => setMyGitReposText(event.target.value)}
+            placeholder="yancongya/OH-WorkSpace"
+          />
+          <div className="settings-helper">{t('originRules.myGitReposHint')}</div>
+        </div>
+        <div className="settings-field">
+          <label className="settings-label" htmlFor="settings-origin-official-repos">
+            {t('originRules.officialGitRepos')}
+          </label>
+          <textarea
+            id="settings-origin-official-repos"
+            className="settings-input settings-textarea mono"
+            value={officialGitReposText}
+            onChange={(event) => setOfficialGitReposText(event.target.value)}
+            placeholder="openai/skills&#10;anthropics/skills"
+          />
+          <div className="settings-helper">{t('originRules.officialGitReposHint')}</div>
+        </div>
+        <button className="btn btn-primary btn-sm" type="button" onClick={handleSaveOriginRules}>
+          {t('save')}
+        </button>
 
         <div className="settings-section-divider" />
         <div className="settings-section-title">{t('toolDirOverrideTitle')}</div>
