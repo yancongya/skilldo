@@ -33,6 +33,7 @@ import type {
   TagWithCountDto,
   ToolOption,
   ToolStatusDto,
+  ToolDirOverride,
   UpdateResultDto,
 } from './components/skills/types'
 
@@ -122,6 +123,7 @@ function App() {
   const [scopeModalSkill, setScopeModalSkill] = useState<ManagedSkill | null>(null)
   const [recentProjects, setRecentProjects] = useState<string[]>([])
   const [skillScopeState, setSkillScopeState] = useState<SkillScopeState>({})
+  const [toolDirOverrides, setToolDirOverrides] = useState<ToolDirOverride[]>([])
 
   const isTauri =
     typeof window !== 'undefined' &&
@@ -295,12 +297,41 @@ function App() {
     }
   }, [invokeTauri])
 
+  const loadToolDirOverrides = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      const result = await invokeTauri<ToolDirOverride[]>('get_tool_skills_dir_overrides')
+      setToolDirOverrides(result)
+    } catch {
+      // non-fatal
+    }
+  }, [invokeTauri, isTauri])
+  const handleSetToolDirOverride = useCallback(async (toolKey: string, path: string) => {
+    try {
+      await invokeTauri('set_tool_skills_dir_override', { toolKey, path })
+      await loadToolDirOverrides()
+      setSuccessToastMessage(t('settingsSaved'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [invokeTauri, loadToolDirOverrides, t])
+  const handleResetToolDirOverride = useCallback(async (toolKey: string) => {
+    try {
+      await invokeTauri('reset_tool_skills_dir_override', { toolKey })
+      await loadToolDirOverrides()
+      setSuccessToastMessage(t('settingsSaved'))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [invokeTauri, loadToolDirOverrides, t])
+
   useEffect(() => {
     if (isTauri) {
       loadManagedSkills()
       loadTags()
+      loadToolDirOverrides()
     }
-  }, [isTauri, loadManagedSkills, loadTags])
+  }, [isTauri, loadManagedSkills, loadTags, loadToolDirOverrides])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -2512,6 +2543,9 @@ function App() {
             githubToken={githubToken}
             onGithubTokenChange={handleGithubTokenChange}
             onBack={handleCloseSettings}
+            toolDirOverrides={toolDirOverrides}
+            onSetToolDirOverride={handleSetToolDirOverride}
+            onResetToolDirOverride={handleResetToolDirOverride}
             t={t}
           />
         ) : (

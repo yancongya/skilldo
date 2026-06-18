@@ -203,6 +203,13 @@ impl SkillStore {
         })
     }
 
+    pub fn delete_setting(&self, key: &str) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+            Ok(())
+        })
+    }
+
     #[allow(dead_code)]
     pub fn set_onboarding_completed(&self, completed: bool) -> Result<()> {
         self.set_setting(

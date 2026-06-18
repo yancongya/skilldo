@@ -121,3 +121,11 @@ export type SkillFileEntry = {
   path: string
   size: number
 }
+
+export type ToolDirOverride = {
+  tool_key: string
+  label: string
+  default_dir: string
+  current_dir: string
+  has_override: boolean
+}

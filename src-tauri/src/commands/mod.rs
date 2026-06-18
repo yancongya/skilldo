@@ -1,8 +1,8 @@
 use anyhow::Context;
 use serde::Serialize;
-use tauri::State;
-
+use std::path::PathBuf;
 use std::sync::Arc;
+use tauri::State;
 
 use crate::core::cache_cleanup::{
     cleanup_git_cache_dirs, get_git_cache_cleanup_days as get_git_cache_cleanup_days_core,
@@ -32,6 +32,20 @@ use crate::core::tool_adapters::{
     adapter_by_key, adapters_sharing_project_skills_dir, is_tool_installed, resolve_default_path,
     resolve_project_path, supports_project_scope,
 };
+
+const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
+
+fn resolve_tool_global_dir(adapter_key: &str, store: &SkillStore) -> anyhow::Result<String> {
+    let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, adapter_key);
+    if let Some(override_path) = store.get_setting(&override_key)? {
+        let expanded = expand_home_path(&override_path)?;
+        return Ok(expanded.to_string_lossy().to_string());
+    }
+    let adapter = adapter_by_key(adapter_key)
+        .ok_or_else(|| anyhow::anyhow!("unknown tool: {}", adapter_key))?;
+    let path = resolve_default_path(&adapter)?;
+    Ok(path.to_string_lossy().to_string())
+}
 use uuid::Uuid;
 
 const RECENT_PROJECTS_SETTING: &str = "recent_projects_v1";
@@ -132,7 +146,7 @@ pub async fn get_tool_status(store: State<'_, SkillStore>) -> Result<ToolStatusD
         for adapter in &adapters {
             let ok = is_tool_installed(adapter)?;
             let key = adapter.id.as_key().to_string();
-            let skills_dir = resolve_default_path(adapter)?.to_string_lossy().to_string();
+            let skills_dir = resolve_tool_global_dir(&key, &store)?;
             tools.push(ToolInfoDto {
                 key: key.clone(),
                 label: adapter.display_name.to_string(),
@@ -170,6 +184,84 @@ pub async fn get_tool_status(store: State<'_, SkillStore>) -> Result<ToolStatusD
             installed,
             newly_installed,
         })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[derive(Debug, Serialize)]
+pub struct ToolDirOverrideDto {
+    pub tool_key: String,
+    pub label: String,
+    pub default_dir: String,
+    pub current_dir: String,
+    pub has_override: bool,
+}
+
+#[tauri::command]
+pub async fn get_tool_skills_dir_overrides(
+    store: State<'_, SkillStore>,
+) -> Result<Vec<ToolDirOverrideDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let adapters = crate::core::tool_adapters::default_tool_adapters();
+        let mut result = Vec::new();
+        for adapter in &adapters {
+            if !is_tool_installed(adapter)? {
+                continue;
+            }
+            let key = adapter.id.as_key().to_string();
+            let default_dir = resolve_default_path(adapter)?.to_string_lossy().to_string();
+            let current_dir = resolve_tool_global_dir(&key, &store)?;
+            let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, key);
+            let has_override = store.get_setting(&override_key)?.is_some();
+            result.push(ToolDirOverrideDto {
+                tool_key: key,
+                label: adapter.display_name.to_string(),
+                default_dir,
+                current_dir,
+                has_override,
+            });
+        }
+        Ok::<_, anyhow::Error>(result)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn set_tool_skills_dir_override(
+    store: State<'_, SkillStore>,
+    tool_key: String,
+    path: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let expanded = expand_home_path(&path)?;
+        if !expanded.is_absolute() {
+            anyhow::bail!("path must be absolute");
+        }
+        let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, tool_key);
+        store.set_setting(&override_key, &path)?;
+        Ok::<_, anyhow::Error>(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn reset_tool_skills_dir_override(
+    store: State<'_, SkillStore>,
+    tool_key: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, tool_key);
+        store.delete_setting(&key)?;
+        Ok::<_, anyhow::Error>(())
     })
     .await
     .map_err(|err| err.to_string())?
@@ -575,7 +667,8 @@ pub async fn sync_skill_to_tool(
         let tool_root = if let Some(project_root) = &project_root {
             resolve_project_path(&adapter, project_root)?
         } else {
-            resolve_default_path(&adapter)?
+            let override_dir = resolve_tool_global_dir(&tool, &store)?;
+            PathBuf::from(override_dir)
         };
         // Pre-check: ensure the skills directory is writable (fixes #20 — Windows OS error 5).
         if let Err(err) = std::fs::create_dir_all(&tool_root) {

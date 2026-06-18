@@ -107,7 +107,10 @@ pub fn run() {
             commands::search_skills_online,
             commands::list_skill_files,
             commands::read_skill_file,
-            commands::cancel_current_operation
+            commands::cancel_current_operation,
+            commands::get_tool_skills_dir_overrides,
+            commands::set_tool_skills_dir_override,
+            commands::reset_tool_skills_dir_override
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

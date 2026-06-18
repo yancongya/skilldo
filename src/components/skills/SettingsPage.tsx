@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, FolderOpen, RotateCcw } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { Update } from '@tauri-apps/plugin-updater'
+import type { ToolDirOverride } from './types'
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'done' | 'error'
 
@@ -13,6 +14,7 @@ type SettingsPageProps = {
   gitCacheTtlSecs: number
   themePreference: 'system' | 'light' | 'dark'
   githubToken: string
+  toolDirOverrides: ToolDirOverride[]
   onPickStoragePath: () => void
   onToggleLanguage: () => void
   onThemeChange: (nextTheme: 'system' | 'light' | 'dark') => void
@@ -20,6 +22,8 @@ type SettingsPageProps = {
   onGitCacheTtlSecsChange: (nextSecs: number) => void
   onClearGitCacheNow: () => void
   onGithubTokenChange: (token: string) => void
+  onSetToolDirOverride: (toolKey: string, path: string) => void
+  onResetToolDirOverride: (toolKey: string) => void
   onBack: () => void
   t: TFunction
 }
@@ -31,14 +35,17 @@ const SettingsPage = ({
   gitCacheCleanupDays,
   gitCacheTtlSecs,
   themePreference,
+  githubToken,
+  toolDirOverrides,
   onPickStoragePath,
   onToggleLanguage,
   onThemeChange,
   onGitCacheCleanupDaysChange,
   onGitCacheTtlSecsChange,
   onClearGitCacheNow,
-  githubToken,
   onGithubTokenChange,
+  onSetToolDirOverride,
+  onResetToolDirOverride,
   onBack,
   t,
 }: SettingsPageProps) => {
@@ -290,6 +297,20 @@ const SettingsPage = ({
           <div className="settings-helper">{t('githubTokenHint')}</div>
         </div>
 
+        <div className="settings-section-divider" />
+        <div className="settings-section-title">{t('toolDirOverrideTitle')}</div>
+        <div className="settings-helper" style={{ marginBottom: 12 }}>{t('toolDirOverrideHint')}</div>
+        {toolDirOverrides.map((tdo) => (
+          <ToolDirRow
+            key={tdo.tool_key}
+            tdo={tdo}
+            isTauri={isTauri}
+            onSet={onSetToolDirOverride}
+            onReset={onResetToolDirOverride}
+            t={t}
+          />
+        ))}
+
         <div className="settings-field settings-update-section">
           <label className="settings-label">{t('appUpdates')}</label>
           <div className="settings-version-row">
@@ -349,5 +370,101 @@ const SettingsPage = ({
     </div>
   )
 }
+
+const ToolDirRow = memo(function ToolDirRow({
+  tdo,
+  isTauri,
+  onSet,
+  onReset,
+  t,
+}: {
+  tdo: ToolDirOverride
+  isTauri: boolean
+  onSet: (toolKey: string, path: string) => void
+  onReset: (toolKey: string) => void
+  t: TFunction
+}) {
+  const [editing, setEditing] = useState(false)
+  const [inputVal, setInputVal] = useState(tdo.current_dir)
+
+  const handleRevealInFinder = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      const { revealItemInDir } = await import('@tauri-apps/plugin-opener')
+      await revealItemInDir(tdo.current_dir)
+    } catch {
+      // ignore
+    }
+  }, [isTauri, tdo.current_dir])
+
+  const handleSave = useCallback(() => {
+    if (inputVal.trim()) {
+      onSet(tdo.tool_key, inputVal.trim())
+    }
+    setEditing(false)
+  }, [inputVal, tdo.tool_key, onSet])
+
+  const handleCancel = useCallback(() => {
+    setInputVal(tdo.current_dir)
+    setEditing(false)
+  }, [tdo.current_dir])
+
+  return (
+    <div className="settings-tool-dir-row">
+      {editing ? (
+        <div className="settings-tool-dir-edit-row">
+          <input
+            className="settings-input mono"
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            placeholder={tdo.default_dir}
+            autoFocus
+          />
+          <button className="btn btn-primary btn-sm" type="button" onClick={handleSave}>
+            {t('save')}
+          </button>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={handleCancel}>
+            {t('cancel')}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="settings-tool-dir-top">
+            <span className="settings-tool-dir-label">{tdo.label || tdo.tool_key}</span>
+            {tdo.has_override && <span className="settings-tool-dir-badge">{t('customDir')}</span>}
+            <div className="settings-tool-dir-actions">
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={handleRevealInFinder}
+                title={t('openInFinder')}
+              >
+                <FolderOpen size={14} />
+                <span>{t('preview')}</span>
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={() => setEditing(true)}
+              >
+                {t('edit')}
+              </button>
+              {tdo.has_override && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  onClick={() => onReset(tdo.tool_key)}
+                >
+                  <RotateCcw size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="settings-tool-dir-path mono">{tdo.current_dir}</div>
+        </>
+      )}
+    </div>
+  )
+})
 
 export default memo(SettingsPage)
