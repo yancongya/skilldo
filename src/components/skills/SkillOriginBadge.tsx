@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next'
 import type { ManagedSkill } from './types'
 
-type SkillOriginKind = 'official' | 'my-git' | 'third-party-git' | 'local'
+type SkillOriginKind = 'official' | 'git' | 'package' | 'owned-git' | 'local'
 
 type SkillOrigin = {
   kind: SkillOriginKind
@@ -37,30 +37,33 @@ const getSkillOrigin = (skill: ManagedSkill, t: TFunction): SkillOrigin => {
     }
   }
 
-  if (backendOrigin === 'git') {
+  if (backendOrigin === 'git' || backendOrigin === 'third_party_git') {
     return {
-      kind: 'third-party-git',
-      label: t('origin.thirdPartyGit'),
-      title: t('origin.thirdPartyGitTitle', { source: sourceTitle }),
-    }
-  }
-
-  if (backendOrigin === 'my_git') {
-    return {
-      kind: 'my-git',
-      label: t('origin.myGit'),
-      title: t('origin.myGitTitle', {
+      kind: 'git',
+      label: t('origin.gitRepo'),
+      title: t('origin.gitRepoTitle', {
         source: sourceTitle,
         reason: skill.source_origin_reason ?? '',
       }),
     }
   }
 
-  if (backendOrigin === 'third_party_git') {
+  if (backendOrigin === 'my_git') {
     return {
-      kind: 'third-party-git',
-      label: t('origin.thirdPartyGit'),
-      title: t('origin.thirdPartyGitTitle', {
+      kind: 'owned-git',
+      label: t('origin.ownedGit'),
+      title: t('origin.ownedGitTitle', {
+        source: sourceTitle,
+        reason: skill.source_origin_reason ?? '',
+      }),
+    }
+  }
+
+  if (backendOrigin === 'package') {
+    return {
+      kind: 'package',
+      label: t('origin.packageSource'),
+      title: t('origin.packageSourceTitle', {
         source: sourceTitle,
         reason: skill.source_origin_reason ?? '',
       }),
@@ -78,11 +81,11 @@ const getSkillOrigin = (skill: ManagedSkill, t: TFunction): SkillOrigin => {
   if (sourceType.includes('git')) {
     const official = OFFICIAL_GIT_REPOS.some((repo) => source.includes(repo))
     return {
-      kind: official ? 'official' : 'third-party-git',
-      label: official ? t('origin.official') : t('origin.thirdPartyGit'),
+      kind: official ? 'official' : 'git',
+      label: official ? t('origin.official') : t('origin.gitRepo'),
       title: official
         ? t('origin.officialTitle', { source: sourceTitle })
-        : t('origin.thirdPartyGitTitle', { source: sourceTitle, reason: '' }),
+        : t('origin.gitRepoTitle', { source: sourceTitle, reason: '' }),
     }
   }
 

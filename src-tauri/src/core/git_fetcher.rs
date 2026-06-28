@@ -265,6 +265,113 @@ pub fn clone_or_pull_sparse(
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+pub struct GitPublishResult {
+    pub commit: Option<String>,
+    pub pushed: bool,
+}
+
+pub fn commit_all_and_push(
+    repo_dir: &Path,
+    branch: Option<&str>,
+    message: &str,
+) -> Result<GitPublishResult> {
+    if resolve_git_bin().is_none() {
+        anyhow::bail!("system git is required for publishing skills");
+    }
+
+    let out = run_cmd_with_timeout(
+        {
+            let mut cmd = git_cmd();
+            cmd.arg("-C").arg(repo_dir).args(["add", "-A"]);
+            cmd
+        },
+        git_fetch_timeout(),
+        format!("git add in {:?}", repo_dir),
+        None,
+    )?;
+    if !out.status.success() {
+        anyhow::bail!("git add failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    let out = run_cmd_with_timeout(
+        {
+            let mut cmd = git_cmd();
+            cmd.arg("-C")
+                .arg(repo_dir)
+                .args(["diff", "--cached", "--quiet"]);
+            cmd
+        },
+        git_fetch_timeout(),
+        format!("git diff --cached in {:?}", repo_dir),
+        None,
+    )?;
+    if out.status.success() {
+        return Ok(GitPublishResult {
+            commit: None,
+            pushed: false,
+        });
+    }
+
+    let out = run_cmd_with_timeout(
+        {
+            let mut cmd = git_cmd();
+            cmd.arg("-C").arg(repo_dir).args(["commit", "-m", message]);
+            cmd
+        },
+        git_timeout(),
+        format!("git commit in {:?}", repo_dir),
+        None,
+    )?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let out = run_cmd_with_timeout(
+        {
+            let mut cmd = git_cmd();
+            cmd.arg("-C").arg(repo_dir).args(["rev-parse", "HEAD"]);
+            cmd
+        },
+        git_fetch_timeout(),
+        format!("git rev-parse HEAD in {:?}", repo_dir),
+        None,
+    )?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git rev-parse failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let commit = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+    let out = run_cmd_with_timeout(
+        {
+            let mut cmd = git_cmd();
+            cmd.arg("-C").arg(repo_dir).arg("push").arg("origin");
+            if let Some(branch) = branch {
+                cmd.arg(format!("HEAD:{branch}"));
+            } else {
+                cmd.arg("HEAD");
+            }
+            cmd
+        },
+        git_timeout(),
+        format!("git push in {:?}", repo_dir),
+        None,
+    )?;
+    if !out.status.success() {
+        anyhow::bail!("git push failed: {}", String::from_utf8_lossy(&out.stderr));
+    }
+
+    Ok(GitPublishResult {
+        commit: Some(commit),
+        pushed: true,
+    })
+}
+
 fn git_timeout() -> Duration {
     let secs = std::env::var("SKILLS_HUB_GIT_TIMEOUT_SECS")
         .ok()

@@ -7,23 +7,29 @@ type AddSkillModalProps = {
   open: boolean
   loading: boolean
   canClose: boolean
-  addModalTab: 'local' | 'git'
+  addModalTab: 'local' | 'git' | 'package'
   localPath: string
   localName: string
   gitUrl: string
   gitName: string
+  packageName: string
+  packageCommand: string
+  packageSkillName: string
   tags: TagWithCountDto[]
   selectedTagIds: number[]
   syncTargets: Record<string, boolean>
   installedTools: ToolOption[]
   toolStatus: ToolStatusDto | null
   onRequestClose: () => void
-  onTabChange: (tab: 'local' | 'git') => void
+  onTabChange: (tab: 'local' | 'git' | 'package') => void
   onLocalPathChange: (value: string) => void
   onPickLocalPath: () => void
   onLocalNameChange: (value: string) => void
   onGitUrlChange: (value: string) => void
   onGitNameChange: (value: string) => void
+  onPackageNameChange: (value: string) => void
+  onPackageCommandChange: (value: string) => void
+  onPackageSkillNameChange: (value: string) => void
   onToggleTag: (tagId: number) => void
   onSyncTargetChange: (toolId: string, checked: boolean) => void
   onSubmit: () => void
@@ -39,6 +45,9 @@ const AddSkillModal = ({
   localName,
   gitUrl,
   gitName,
+  packageName,
+  packageCommand,
+  packageSkillName,
   tags,
   selectedTagIds,
   syncTargets,
@@ -51,6 +60,9 @@ const AddSkillModal = ({
   onLocalNameChange,
   onGitUrlChange,
   onGitNameChange,
+  onPackageNameChange,
+  onPackageCommandChange,
+  onPackageSkillNameChange,
   onToggleTag,
   onSyncTargetChange,
   onSubmit,
@@ -92,6 +104,13 @@ const AddSkillModal = ({
             >
               {t('gitTab')}
             </button>
+            <button
+              className={`tab-item${addModalTab === 'package' ? ' active' : ''}`}
+              type="button"
+              onClick={() => onTabChange('package')}
+            >
+              {t('packageTab')}
+            </button>
           </div>
 
           {addModalTab === 'local' ? (
@@ -125,7 +144,7 @@ const AddSkillModal = ({
                 />
               </div>
             </>
-          ) : (
+          ) : addModalTab === 'git' ? (
             <>
               <div className="form-group">
                 <label className="label">{t('repositoryUrl')}</label>
@@ -143,6 +162,37 @@ const AddSkillModal = ({
                   placeholder={t('optionalNamePlaceholder')}
                   value={gitName}
                   onChange={(event) => onGitNameChange(event.target.value)}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label className="label">{t('packageName')}</label>
+                <input
+                  className="input"
+                  placeholder={t('packageNamePlaceholder')}
+                  value={packageName}
+                  onChange={(event) => onPackageNameChange(event.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="label">{t('packageCommand')}</label>
+                <input
+                  className="input"
+                  placeholder={t('packageCommandPlaceholder')}
+                  value={packageCommand}
+                  onChange={(event) => onPackageCommandChange(event.target.value)}
+                />
+                <div className="helper-text">{t('packageCommandHint')}</div>
+              </div>
+              <div className="form-group">
+                <label className="label">{t('optionalNamePlaceholder')}</label>
+                <input
+                  className="input"
+                  placeholder={t('optionalNamePlaceholder')}
+                  value={packageSkillName}
+                  onChange={(event) => onPackageSkillNameChange(event.target.value)}
                 />
               </div>
             </>

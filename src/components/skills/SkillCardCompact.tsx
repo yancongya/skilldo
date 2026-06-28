@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { Copy, RefreshCw, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
-import type { ManagedSkill } from './types'
+import type { ManagedSkill, UpdateCheckResultDto } from './types'
 import SkillIcon from './SkillIcon'
 import SkillOriginBadge from './SkillOriginBadge'
 
@@ -14,6 +14,7 @@ type GithubInfo = {
 type SkillCardCompactProps = {
   skill: ManagedSkill
   loading: boolean
+  updateCheck?: UpdateCheckResultDto
   getGithubInfo: (url: string | null | undefined) => GithubInfo | null
   getSkillSourceLabel: (skill: ManagedSkill) => string
   formatRelative: (ms: number | null | undefined) => string
@@ -30,6 +31,7 @@ type SkillCardCompactProps = {
 const SkillCardCompact = ({
   skill,
   loading,
+  updateCheck,
   getGithubInfo,
   getSkillSourceLabel,
   formatRelative,
@@ -74,6 +76,9 @@ const SkillCardCompact = ({
           </div>
           <div className="skill-card-compact-badges">
             <SkillOriginBadge skill={skill} t={t} compact />
+            {updateCheck?.has_update ? (
+              <span className="compact-update-chip">{t('updateAvailableShort')}</span>
+            ) : null}
             <span className={`compact-scope-chip ${skillScope}`}>
               {skillScope === 'project' ? projectCount : t('scope.globalBadge')}
             </span>
@@ -84,14 +89,6 @@ const SkillCardCompact = ({
           <span>{formatRelative(skill.updated_at)}</span>
           {skill.tags[0] ? <span>#{skill.tags[0].name}</span> : null}
         </div>
-      </button>
-      <button
-        className="skill-card-compact-hover"
-        type="button"
-        onClick={() => onOpenDetail(skill)}
-        aria-label={skill.name}
-      >
-        {description}
       </button>
       <div className="skill-card-compact-actions">
         <button
@@ -134,6 +131,7 @@ const SkillCardCompact = ({
           onClick={() => onUpdate(skill)}
           disabled={loading}
           aria-label={t('update')}
+          title={updateCheck?.has_update ? t('detail.updateFromSource') : t('update')}
         >
           <RefreshCw size={13} />
         </button>

@@ -1,6 +1,31 @@
 use std::fs;
 
-use crate::core::git_fetcher::{clone_or_pull, clone_or_pull_sparse};
+use std::process::Command;
+
+use crate::core::git_fetcher::{clone_or_pull, clone_or_pull_sparse, commit_all_and_push};
+
+fn git_available() -> bool {
+    Command::new("git")
+        .arg("--version")
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+fn run_git(args: &[&str], cwd: Option<&std::path::Path>) {
+    let mut cmd = Command::new("git");
+    cmd.args(args);
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
 
 fn commit_file(repo: &git2::Repository, path: &str, content: &[u8], msg: &str) -> git2::Oid {
     let workdir = repo.workdir().expect("workdir");
@@ -83,4 +108,68 @@ fn sparse_clone_only_materializes_requested_subpath() {
         !dest.join("skills/b/SKILL.md").exists(),
         "未请求的子目录不应被检出到工作区"
     );
+}
+
+#[test]
+fn commit_all_and_push_pushes_changes_to_origin() {
+    if !git_available() {
+        return;
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let origin = root.path().join("origin.git");
+    let seed = root.path().join("seed");
+    let work = root.path().join("work");
+    let verify = root.path().join("verify");
+
+    run_git(&["init", "--bare", origin.to_string_lossy().as_ref()], None);
+    run_git(
+        &[
+            "clone",
+            origin.to_string_lossy().as_ref(),
+            seed.to_string_lossy().as_ref(),
+        ],
+        None,
+    );
+    run_git(&["config", "user.name", "Skills Hub"], Some(&seed));
+    run_git(&["config", "user.email", "skills@example.com"], Some(&seed));
+    fs::write(seed.join("SKILL.md"), b"---\nname: Test\n---\nold\n").unwrap();
+    run_git(&["add", "SKILL.md"], Some(&seed));
+    run_git(&["commit", "-m", "seed"], Some(&seed));
+    run_git(&["push", "origin", "HEAD:main"], Some(&seed));
+
+    run_git(
+        &[
+            "clone",
+            origin.to_string_lossy().as_ref(),
+            work.to_string_lossy().as_ref(),
+        ],
+        None,
+    );
+    run_git(&["checkout", "main"], Some(&work));
+    run_git(&["config", "user.name", "Skills Hub"], Some(&work));
+    run_git(&["config", "user.email", "skills@example.com"], Some(&work));
+    fs::write(work.join("SKILL.md"), b"---\nname: Test\n---\nnew\n").unwrap();
+
+    let result = commit_all_and_push(&work, Some("main"), "update skill").unwrap();
+    assert!(result.pushed);
+    assert!(result.commit.is_some());
+
+    run_git(
+        &[
+            "clone",
+            origin.to_string_lossy().as_ref(),
+            verify.to_string_lossy().as_ref(),
+        ],
+        None,
+    );
+    run_git(&["checkout", "main"], Some(&verify));
+    assert_eq!(
+        fs::read_to_string(verify.join("SKILL.md")).unwrap(),
+        "---\nname: Test\n---\nnew\n"
+    );
+
+    let no_changes = commit_all_and_push(&work, Some("main"), "update skill").unwrap();
+    assert!(!no_changes.pushed);
+    assert!(no_changes.commit.is_none());
 }

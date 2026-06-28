@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpDown, Check, ChevronDown, LayoutGrid, LayoutList, Search, Tags } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronDown, LayoutGrid, LayoutList, RefreshCw, Search, Tags } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { TagWithCountDto } from './types'
 
@@ -13,10 +13,13 @@ type FilterBarProps = {
   includeUntagged: boolean
   untaggedCount: number
   totalCount: number
+  pendingUpdateCount: number
+  checkingUpdates: boolean
   onSortChange: (value: 'updated' | 'name') => void
   onSearchChange: (value: string) => void
   onScopeFilterChange: (value: 'all' | 'global' | 'project') => void
   onViewModeChange: (mode: 'list' | 'grid') => void
+  onCheckUpdates: () => void
   onToggleTag: (tagId: number) => void
   onToggleUntagged: () => void
   onClearTags: () => void
@@ -34,10 +37,13 @@ const FilterBar = ({
   includeUntagged,
   untaggedCount,
   totalCount,
+  pendingUpdateCount,
+  checkingUpdates,
   onSortChange,
   onSearchChange,
   onScopeFilterChange,
   onViewModeChange,
+  onCheckUpdates,
   onToggleTag,
   onToggleUntagged,
   onClearTags,
@@ -77,6 +83,20 @@ const FilterBar = ({
         {t('allSkills')}（{totalCount}）
       </div>
       <div className="filter-actions">
+        <button
+          className={`btn btn-secondary check-skills-update-btn${pendingUpdateCount > 0 ? ' active' : ''}`}
+          type="button"
+          onClick={onCheckUpdates}
+          disabled={checkingUpdates}
+          title={t('skillsUpdateCheckHint')}
+        >
+          <RefreshCw size={14} />
+          {checkingUpdates
+            ? t('checkingUpdates')
+            : pendingUpdateCount > 0
+              ? t('skillsUpdatesFound', { count: pendingUpdateCount })
+              : t('checkSkillUpdates')}
+        </button>
         <button className="btn btn-secondary sort-btn" type="button">
           {scopeOptions.find((option) => option.value === scopeFilter)?.label ?? t('scope.all')}
           <ChevronDown size={12} />

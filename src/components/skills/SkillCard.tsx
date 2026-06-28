@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 import { Copy, RefreshCw, Tag, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
-import type { ManagedSkill, ToolOption } from './types'
+import type { ManagedSkill, ToolOption, UpdateCheckResultDto } from './types'
 import SkillIcon from './SkillIcon'
 import SkillOriginBadge from './SkillOriginBadge'
 
@@ -15,6 +15,7 @@ type SkillCardProps = {
   skill: ManagedSkill
   installedTools: ToolOption[]
   loading: boolean
+  updateCheck?: UpdateCheckResultDto
   getGithubInfo: (url: string | null | undefined) => GithubInfo | null
   getSkillSourceLabel: (skill: ManagedSkill) => string
   formatRelative: (ms: number | null | undefined) => string
@@ -36,6 +37,7 @@ const SkillCard = ({
   skill,
   installedTools,
   loading,
+  updateCheck,
   getGithubInfo,
   getSkillSourceLabel,
   formatRelative,
@@ -134,6 +136,9 @@ const SkillCard = ({
             </div>
           ) : null}
           <SkillOriginBadge skill={skill} t={t} />
+          {updateCheck?.has_update ? (
+            <span className="skill-update-badge">{t('updateAvailableShort')}</span>
+          ) : null}
         </div>
         {skill.description ? (
           <div className="skill-desc">{skill.description}</div>
@@ -249,6 +254,7 @@ const SkillCard = ({
           onClick={() => onUpdate(skill)}
           disabled={loading}
           aria-label={t('update')}
+          title={updateCheck?.has_update ? t('detail.updateFromSource') : t('update')}
         >
           <RefreshCw size={16} />
         </button>

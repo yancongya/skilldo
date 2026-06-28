@@ -37,6 +37,81 @@ fn schema_is_idempotent() {
 }
 
 #[test]
+fn schema_repairs_missing_origin_table_at_current_version() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("test.db");
+    let conn = Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE skills (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NULL,
+          source_type TEXT NOT NULL,
+          source_ref TEXT NULL,
+          source_subpath TEXT NULL,
+          source_revision TEXT NULL,
+          central_path TEXT NOT NULL UNIQUE,
+          content_hash TEXT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          last_sync_at INTEGER NULL,
+          last_seen_at INTEGER NOT NULL,
+          status TEXT NOT NULL
+        );
+        CREATE TABLE skill_targets (
+          id TEXT PRIMARY KEY,
+          skill_id TEXT NOT NULL,
+          tool TEXT NOT NULL,
+          scope TEXT NOT NULL DEFAULT 'global',
+          project_path TEXT NULL,
+          target_path TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          status TEXT NOT NULL,
+          last_error TEXT NULL,
+          synced_at INTEGER NULL
+        );
+        CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE discovered_skills (
+          id TEXT PRIMARY KEY,
+          tool TEXT NOT NULL,
+          found_path TEXT NOT NULL,
+          name_guess TEXT NULL,
+          fingerprint TEXT NULL,
+          found_at INTEGER NOT NULL,
+          imported_skill_id TEXT NULL
+        );
+        CREATE TABLE skill_tags (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE skill_tag_links (
+          skill_id TEXT NOT NULL,
+          tag_id INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (skill_id, tag_id)
+        );
+        PRAGMA user_version = 6;",
+    )
+    .unwrap();
+    drop(conn);
+
+    let store = SkillStore::new(db.clone());
+    store.ensure_schema().unwrap();
+
+    let conn = Connection::open(&db).unwrap();
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'skill_origins'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
 fn migrates_v3_targets_to_global_scope() {
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("test.db");

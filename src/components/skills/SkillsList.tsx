@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { MessageCircle } from 'lucide-react'
 import type { TFunction } from 'i18next'
-import type { ManagedSkill, OnboardingPlan, ToolOption } from './types'
+import type { ManagedSkill, OnboardingPlan, ToolOption, UpdateCheckResultDto } from './types'
 import SkillCard from './SkillCard'
 import SkillCardCompact from './SkillCardCompact'
 
@@ -16,6 +16,7 @@ type SkillsListProps = {
   installedTools: ToolOption[]
   loading: boolean
   viewMode: 'list' | 'grid'
+  updateChecks: Record<string, UpdateCheckResultDto>
   getGithubInfo: (url: string | null | undefined) => GithubInfo | null
   getSkillSourceLabel: (skill: ManagedSkill) => string
   formatRelative: (ms: number | null | undefined) => string
@@ -38,6 +39,7 @@ const SkillsList = ({
   installedTools,
   loading,
   viewMode,
+  updateChecks,
   getGithubInfo,
   getSkillSourceLabel,
   formatRelative,
@@ -90,6 +92,7 @@ const SkillsList = ({
                 key={skill.id}
                 skill={skill}
                 loading={loading}
+                updateCheck={updateChecks[skill.id]}
                 getGithubInfo={getGithubInfo}
                 getSkillSourceLabel={getSkillSourceLabel}
                 formatRelative={formatRelative}
@@ -108,6 +111,7 @@ const SkillsList = ({
                 skill={skill}
                 installedTools={installedTools}
                 loading={loading}
+                updateCheck={updateChecks[skill.id]}
                 getGithubInfo={getGithubInfo}
                 getSkillSourceLabel={getSkillSourceLabel}
                 formatRelative={formatRelative}

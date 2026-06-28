@@ -23,6 +23,7 @@ import ScopeSyncModal from './components/skills/modals/ScopeSyncModal'
 import SharedDirModal from './components/skills/modals/SharedDirModal'
 import NamePromptModal from './components/skills/modals/NamePromptModal'
 import SettingsPage from './components/skills/SettingsPage'
+import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
   FeaturedSkillDto,
   GitSkillCandidate,
@@ -32,11 +33,13 @@ import type {
   OnboardingPlan,
   OnlineSkillDto,
   OriginRules,
+  PublishResultDto,
   TagWithCountDto,
   ToolOption,
   ToolStatusDto,
   ToolDirOverride,
   CustomScanDirEntry,
+  UpdateCheckResultDto,
   UpdateResultDto,
 } from './components/skills/types'
 
@@ -57,9 +60,7 @@ function App() {
   const toggleLanguage = useCallback(() => {
     void i18n.changeLanguage(language === 'en' ? 'zh' : 'en')
   }, [i18n, language])
-  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>(
-    'system',
-  )
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>('light')
   const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light')
   const resolvedTheme = themePreference === 'system' ? systemTheme : themePreference
   const [plan, setPlan] = useState<OnboardingPlan | null>(null)
@@ -77,6 +78,9 @@ function App() {
   const [localName, setLocalName] = useState('')
   const [gitUrl, setGitUrl] = useState('')
   const [gitName, setGitName] = useState('')
+  const [packageName, setPackageName] = useState('')
+  const [packageCommand, setPackageCommand] = useState('')
+  const [packageSkillName, setPackageSkillName] = useState('')
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [gitCandidates, setGitCandidates] = useState<GitSkillCandidate[]>([])
   const [gitCandidatesRepoUrl, setGitCandidatesRepoUrl] = useState<string>('')
@@ -108,7 +112,10 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'updated' | 'name'>('updated')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'global' | 'project'>('all')
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
+  const [skillUpdateChecks, setSkillUpdateChecks] = useState<Record<string, UpdateCheckResultDto>>({})
+  const [checkingSkillUpdates, setCheckingSkillUpdates] = useState(false)
+  const [showSkillUpdatesPanel, setShowSkillUpdatesPanel] = useState(false)
   const [activeView, setActiveView] = useState<'myskills' | 'explore' | 'detail' | 'settings' | 'tags'>('myskills')
   const [detailSkill, setDetailSkill] = useState<ManagedSkill | null>(null)
   const [tags, setTags] = useState<TagWithCountDto[]>([])
@@ -116,7 +123,7 @@ function App() {
   const [includeUntagged, setIncludeUntagged] = useState(false)
   const [tagEditorSkill, setTagEditorSkill] = useState<ManagedSkill | null>(null)
   const [pendingDeleteTag, setPendingDeleteTag] = useState<TagWithCountDto | null>(null)
-  const [addModalTab, setAddModalTab] = useState<'local' | 'git'>('git')
+  const [addModalTab, setAddModalTab] = useState<'local' | 'git' | 'package'>('git')
   const [addModalTagIds, setAddModalTagIds] = useState<number[]>([])
   const [featuredSkills, setFeaturedSkills] = useState<FeaturedSkillDto[]>([])
   const [featuredLoading, setFeaturedLoading] = useState(false)
@@ -529,34 +536,6 @@ function App() {
     }
   }, [isTauri, loadPlan])
 
-  useEffect(() => {
-    if (!isTauri) return
-    const ignoredVersion = localStorage.getItem('skills-ignored-update-version')
-    import('@tauri-apps/plugin-updater')
-      .then(({ check }) => check())
-      .then(async (update) => {
-        if (update && update.version !== ignoredVersion) {
-          updateObjRef.current = update
-          setUpdateAvailableVersion(update.version)
-          // Fetch full release notes from GitHub API
-          try {
-            const res = await fetch(
-              `https://api.github.com/repos/qufei1993/skills-hub/releases/tags/v${update.version}`,
-            )
-            if (res.ok) {
-              const data = await res.json()
-              setUpdateBody(data.body ?? update.body ?? null)
-            } else {
-              setUpdateBody(update.body ?? null)
-            }
-          } catch {
-            setUpdateBody(update.body ?? null)
-          }
-        }
-      })
-      .catch(() => {})
-  }, [isTauri])
-
   const handleDismissUpdate = useCallback(() => {
     setUpdateAvailableVersion(null)
     setUpdateBody(null)
@@ -766,6 +745,10 @@ function App() {
   const untaggedCount = useMemo(
     () => managedSkills.filter((skill) => skill.tags.length === 0).length,
     [managedSkills],
+  )
+  const pendingSkillUpdateCount = useMemo(
+    () => Object.values(skillUpdateChecks).filter((item) => item.has_update).length,
+    [skillUpdateChecks],
   )
 
   const [storagePath, setStoragePath] = useState<string>(t('notAvailable'))
@@ -1817,6 +1800,80 @@ function App() {
     }
   }
 
+  const handleCreatePackage = async () => {
+    if (!packageName.trim()) {
+      setError(t('errors.requirePackageName'))
+      return
+    }
+    setLoading(true)
+    setLoadingStartAt(Date.now())
+    setError(null)
+    setActionMessage(t('actions.creatingPackageSkill'))
+    try {
+      const created = await invokeTauri<InstallResultDto>('install_package', {
+        packageName: packageName.trim(),
+        command: packageCommand.trim() || undefined,
+        name: packageSkillName.trim() || undefined,
+      })
+      await applySelectedAddModalTags(created.skill_id, created.name)
+      const selectedInstalledIds = tools
+        .filter((tool) => syncTargets[tool.id] && isInstalled(tool.id))
+        .map((tool) => tool.id)
+      const targets = uniqueToolIdsBySkillsDir(selectedInstalledIds)
+        .map((id) => tools.find((tool) => tool.id === id))
+        .filter(Boolean) as ToolOption[]
+      if (targets.length === 0) {
+        setError(t('errors.noSyncTargets'))
+      } else {
+        const collectedErrors: { title: string; message: string }[] = []
+        for (let i = 0; i < targets.length; i++) {
+          const tool = targets[i]
+          setActionMessage(
+            t('actions.syncStep', {
+              index: i + 1,
+              total: targets.length,
+              name: created.name,
+              tool: tool.label,
+            }),
+          )
+          try {
+            await invokeTauri('sync_skill_to_tool', {
+              sourcePath: created.central_path,
+              skillId: created.skill_id,
+              tool: tool.id,
+              name: created.name,
+              overwriteIfSameContent: true,
+            })
+          } catch (err) {
+            const raw = err instanceof Error ? err.message : String(err)
+            collectedErrors.push({
+              title: t('errors.syncFailedTitle', {
+                name: created.name,
+                tool: tool.label,
+              }),
+              message: raw,
+            })
+          }
+        }
+        if (collectedErrors.length > 0) showActionErrors(collectedErrors)
+      }
+      setPackageName('')
+      setPackageCommand('')
+      setPackageSkillName('')
+      setActionMessage(t('status.packageSkillCreated'))
+      setSuccessToastMessage(t('status.packageSkillCreated'))
+      setActionMessage(null)
+      setShowAddModal(false)
+      await loadManagedSkills()
+      await loadTags()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+      setLoadingStartAt(null)
+    }
+  }
+
   const [exploreInstallTrigger, setExploreInstallTrigger] = useState(0)
   const exploreInstallUrlRef = useRef<string | null>(null)
 
@@ -2659,24 +2716,94 @@ function App() {
 
   const handleUpdateManaged = useCallback(
     async (skill: ManagedSkill) => {
+      setLoading(true)
+      setLoadingStartAt(Date.now())
+      setError(null)
+      try {
+        setActionMessage(t('actions.updating', { name: skill.name }))
+        await invokeTauri<UpdateResultDto>('update_managed_skill', { skillId: skill.id })
+        const updatedText = t('status.updated', { name: skill.name })
+        setActionMessage(updatedText)
+        setSuccessToastMessage(updatedText)
+        setActionMessage(null)
+        const updatedSkills = await loadManagedSkills()
+        setSkillUpdateChecks((prev) => {
+          const next = { ...prev }
+          delete next[skill.id]
+          return next
+        })
+        setDetailSkill((current) =>
+          current?.id === skill.id ? updatedSkills.find((item) => item.id === skill.id) ?? current : current,
+        )
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err)
+        setError(raw)
+      } finally {
+        setLoading(false)
+        setLoadingStartAt(null)
+      }
+    },
+    [invokeTauri, loadManagedSkills, t],
+  )
+
+  const handleCheckSkillUpdates = useCallback(async () => {
+    const existingCount = Object.values(skillUpdateChecks).filter((item) => item.has_update).length
+    if (existingCount > 0) {
+      setShowSkillUpdatesPanel(true)
+      return
+    }
+    setCheckingSkillUpdates(true)
     setLoading(true)
     setLoadingStartAt(Date.now())
     setError(null)
     try {
-      setActionMessage(t('actions.updating', { name: skill.name }))
-      await invokeTauri<UpdateResultDto>('update_managed_skill', { skillId: skill.id })
-      const updatedText = t('status.updated', { name: skill.name })
-      setActionMessage(updatedText)
-      setSuccessToastMessage(updatedText)
+      setActionMessage(t('actions.checkingSkillUpdates'))
+      const results = await invokeTauri<UpdateCheckResultDto[]>('check_all_managed_skill_updates_cmd')
+      const next = results.reduce<Record<string, UpdateCheckResultDto>>((acc, item) => {
+        acc[item.skill_id] = item
+        return acc
+      }, {})
+      setSkillUpdateChecks(next)
+      const count = results.filter((item) => item.has_update).length
+      setShowSkillUpdatesPanel(true)
+      const statusText = t('status.skillUpdatesChecked', { count })
+      setActionMessage(statusText)
+      setSuccessToastMessage(statusText)
       setActionMessage(null)
-      await loadManagedSkills()
     } catch (err) {
       const raw = err instanceof Error ? err.message : String(err)
       setError(raw)
     } finally {
+      setCheckingSkillUpdates(false)
       setLoading(false)
       setLoadingStartAt(null)
     }
+  }, [invokeTauri, skillUpdateChecks, t])
+
+  const handlePublishSkill = useCallback(
+    async (skill: ManagedSkill) => {
+      setLoading(true)
+      setLoadingStartAt(Date.now())
+      setError(null)
+      try {
+        setActionMessage(t('actions.publishing', { name: skill.name }))
+        const result = await invokeTauri<PublishResultDto>('publish_managed_skill', {
+          skillId: skill.id,
+        })
+        const publishedText = result.pushed
+          ? t('status.published', { name: skill.name })
+          : t('status.publishNoChanges', { name: skill.name })
+        setActionMessage(publishedText)
+        setSuccessToastMessage(publishedText)
+        setActionMessage(null)
+        await loadManagedSkills()
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err)
+        setError(raw)
+      } finally {
+        setLoading(false)
+        setLoadingStartAt(null)
+      }
     },
     [invokeTauri, loadManagedSkills, t],
   )
@@ -2686,6 +2813,48 @@ function App() {
       void handleUpdateManaged(skill)
     },
     [handleUpdateManaged],
+  )
+
+  const handleUpdateAllSkillUpdates = useCallback(
+    async (skills: ManagedSkill[]) => {
+      if (skills.length === 0) return
+      setLoading(true)
+      setLoadingStartAt(Date.now())
+      setError(null)
+      try {
+        for (let index = 0; index < skills.length; index++) {
+          const skill = skills[index]
+          setActionMessage(
+            t('actions.updateSkillStep', {
+              index: index + 1,
+              total: skills.length,
+              name: skill.name,
+            }),
+          )
+          await invokeTauri<UpdateResultDto>('update_managed_skill', { skillId: skill.id })
+          setSkillUpdateChecks((prev) => {
+            const next = { ...prev }
+            delete next[skill.id]
+            return next
+          })
+        }
+        const statusText = t('status.allSkillUpdatesApplied', { count: skills.length })
+        setActionMessage(statusText)
+        setSuccessToastMessage(statusText)
+        setActionMessage(null)
+        const updatedSkills = await loadManagedSkills()
+        setDetailSkill((current) =>
+          current ? updatedSkills.find((item) => item.id === current.id) ?? current : current,
+        )
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err)
+        setError(raw)
+      } finally {
+        setLoading(false)
+        setLoadingStartAt(null)
+      }
+    },
+    [invokeTauri, loadManagedSkills, t],
   )
 
   const handleSharedCancel = useCallback(() => {
@@ -2750,6 +2919,8 @@ function App() {
             skill={detailSkill}
             onBack={handleBackToList}
             onOriginOverride={handleSetSkillOriginOverride}
+            onUpdateSkill={handleUpdateSkill}
+            onPublishSkill={handlePublishSkill}
             invokeTauri={invokeTauri}
             formatRelative={formatRelative}
             t={t}
@@ -2766,10 +2937,13 @@ function App() {
               includeUntagged={includeUntagged}
               untaggedCount={untaggedCount}
               totalCount={visibleSkills.length}
+              pendingUpdateCount={pendingSkillUpdateCount}
+              checkingUpdates={checkingSkillUpdates}
               onSortChange={handleSortChange}
               onSearchChange={handleSearchChange}
               onScopeFilterChange={handleScopeFilterChange}
               onViewModeChange={setViewMode}
+              onCheckUpdates={handleCheckSkillUpdates}
               onToggleTag={handleToggleTagFilter}
               onToggleUntagged={handleToggleUntaggedFilter}
               onClearTags={handleClearTagFilters}
@@ -2782,6 +2956,7 @@ function App() {
               installedTools={installedTools}
               loading={loading}
               viewMode={viewMode}
+              updateChecks={skillUpdateChecks}
               getGithubInfo={getGithubInfo}
               getSkillSourceLabel={getSkillSourceLabel}
               formatRelative={formatRelative}
@@ -2863,6 +3038,9 @@ function App() {
         localName={localName}
         gitUrl={gitUrl}
         gitName={gitName}
+        packageName={packageName}
+        packageCommand={packageCommand}
+        packageSkillName={packageSkillName}
         tags={tags}
         selectedTagIds={addModalTagIds}
         syncTargets={syncTargets}
@@ -2875,9 +3053,18 @@ function App() {
         onLocalNameChange={setLocalName}
         onGitUrlChange={setGitUrl}
         onGitNameChange={setGitName}
+        onPackageNameChange={setPackageName}
+        onPackageCommandChange={setPackageCommand}
+        onPackageSkillNameChange={setPackageSkillName}
         onToggleTag={handleToggleAddModalTag}
         onSyncTargetChange={handleSyncTargetChange}
-        onSubmit={addModalTab === 'local' ? handleCreateLocal : handleCreateGit}
+        onSubmit={
+          addModalTab === 'local'
+            ? handleCreateLocal
+            : addModalTab === 'git'
+              ? handleCreateGit
+              : handleCreatePackage
+        }
         t={t}
       />
 
@@ -2953,6 +3140,18 @@ function App() {
         toolsLabelText={newlyInstalledToolsText}
         onLater={handleCloseNewTools}
         onSyncAll={handleSyncAllNewTools}
+        t={t}
+      />
+
+      <SkillUpdatesPanel
+        open={showSkillUpdatesPanel}
+        skills={managedSkills}
+        updateChecks={skillUpdateChecks}
+        loading={loading}
+        onRequestClose={() => setShowSkillUpdatesPanel(false)}
+        onUpdateSkill={handleUpdateSkill}
+        onUpdateAll={handleUpdateAllSkillUpdates}
+        onPublishSkill={handlePublishSkill}
         t={t}
       />
 

@@ -216,6 +216,10 @@ impl SkillStore {
                 );
             }
 
+            // Some pre-release builds wrote user_version=6 before the origin table existed.
+            // Keep this repair idempotent so existing user databases can self-heal on startup.
+            migrate_skill_origins_to_v6(conn)?;
+
             Ok(())
         })
     }

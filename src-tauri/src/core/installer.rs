@@ -3,6 +3,7 @@ use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 use tauri::Manager;
 use uuid::Uuid;
 
@@ -10,7 +11,7 @@ use super::cache_cleanup::get_git_cache_ttl_secs;
 use super::cancel_token::CancelToken;
 use super::central_repo::{ensure_central_repo, resolve_central_repo_path};
 use super::content_hash::hash_dir;
-use super::git_fetcher::{clone_or_pull, clone_or_pull_sparse};
+use super::git_fetcher::{clone_or_pull, clone_or_pull_sparse, commit_all_and_push};
 use super::github_download::{download_github_directory, parse_github_api_params};
 use super::skill_store::{SkillRecord, SkillStore};
 use super::sync_engine::copy_dir_recursive;
@@ -291,6 +292,170 @@ pub fn install_git_skill<R: tauri::Runtime>(
         status: "ok".to_string(),
     };
 
+    store.upsert_skill(&record)?;
+
+    Ok(InstallResult {
+        skill_id: record.id,
+        name: record.name,
+        central_path,
+        content_hash,
+    })
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct PackageSourceRef {
+    package: String,
+    command: Option<String>,
+}
+
+fn package_source_ref(package: &str, command: Option<&str>) -> Result<String> {
+    Ok(serde_json::to_string(&PackageSourceRef {
+        package: package.trim().to_string(),
+        command: command
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+    })?)
+}
+
+fn parse_package_source_ref(source_ref: &str) -> Result<PackageSourceRef> {
+    if source_ref.trim_start().starts_with('{') {
+        Ok(serde_json::from_str(source_ref)?)
+    } else {
+        Ok(PackageSourceRef {
+            package: source_ref.trim().to_string(),
+            command: None,
+        })
+    }
+}
+
+fn render_package_command(package: &str, command: Option<&str>, dest: &Path) -> String {
+    let dest_str = dest.to_string_lossy();
+    let package = package.trim();
+    let template = command
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("npx --yes {package} {{dest}}"));
+    template
+        .replace("{package}", package)
+        .replace("{dest}", dest_str.as_ref())
+}
+
+fn run_package_command(package: &str, command: Option<&str>, dest: &Path) -> Result<()> {
+    std::fs::create_dir_all(dest).with_context(|| format!("create package output {:?}", dest))?;
+    let rendered = render_package_command(package, command, dest);
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut command = Command::new("cmd");
+        command.args(["/C", &rendered]);
+        command
+    } else {
+        let mut command = Command::new("sh");
+        command.args(["-c", &rendered]);
+        command
+    };
+    let output = cmd
+        .env("SKILLS_HUB_PACKAGE_DIR", dest)
+        .env("SKILLS_HUB_PACKAGE_NAME", package)
+        .output()
+        .with_context(|| format!("run package command: {rendered}"))?;
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "package command failed: {}\nstdout:\n{}\nstderr:\n{}",
+            rendered,
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+    Ok(())
+}
+
+fn resolve_single_generated_skill(
+    output_dir: &Path,
+    requested_subpath: Option<&str>,
+) -> Result<(PathBuf, Option<String>)> {
+    if let Some(subpath) = requested_subpath.filter(|value| !value.trim().is_empty()) {
+        let source = output_dir.join(subpath);
+        ensure_installable_skill_dir(&source)?;
+        return Ok((source, Some(subpath.to_string())));
+    }
+    if is_skill_dir(output_dir) {
+        return Ok((output_dir.to_path_buf(), Some(".".to_string())));
+    }
+    let candidates = collect_skill_dirs(output_dir);
+    if candidates.is_empty() {
+        anyhow::bail!(
+            "No skills found from package command output: {:?}",
+            output_dir
+        );
+    }
+    if candidates.len() > 1 {
+        anyhow::bail!(
+            "MULTI_SKILLS|Package command generated multiple skills. Use a command that writes one skill, or add a specific output path."
+        );
+    }
+    let source = candidates[0].clone();
+    let rel = source
+        .strip_prefix(output_dir)
+        .unwrap_or(&source)
+        .to_string_lossy()
+        .to_string();
+    Ok((source, Some(rel)))
+}
+
+pub fn install_package_skill<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &SkillStore,
+    package: &str,
+    command: Option<&str>,
+    name: Option<String>,
+) -> Result<InstallResult> {
+    let package = package.trim();
+    if package.is_empty() {
+        anyhow::bail!("package name is required");
+    }
+
+    let output_dir = std::env::temp_dir().join(format!("skills-hub-package-{}", Uuid::new_v4()));
+    run_package_command(package, command, &output_dir)?;
+    let (source_dir, source_subpath) = resolve_single_generated_skill(&output_dir, None)?;
+
+    let (metadata_name, description) = extract_skill_info(&source_dir, &output_dir);
+    let name = name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(metadata_name);
+
+    let central_dir = resolve_central_repo_path(app, store)?;
+    ensure_central_repo(&central_dir)?;
+    let central_path = central_dir.join(&name);
+    if central_path.exists() {
+        let _ = std::fs::remove_dir_all(&output_dir);
+        anyhow::bail!("skill already exists in central repo: {:?}", central_path);
+    }
+    copy_dir_recursive(&source_dir, &central_path)
+        .with_context(|| format!("copy {:?} -> {:?}", source_dir, central_path))?;
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    let now = now_ms();
+    let content_hash = compute_content_hash(&central_path);
+    let record = SkillRecord {
+        id: Uuid::new_v4().to_string(),
+        name,
+        description,
+        source_type: "package".to_string(),
+        source_ref: Some(package_source_ref(package, command)?),
+        source_subpath,
+        source_revision: None,
+        central_path: central_path.to_string_lossy().to_string(),
+        content_hash: content_hash.clone(),
+        created_at: now,
+        updated_at: now,
+        last_sync_at: None,
+        last_seen_at: now,
+        status: "ok".to_string(),
+    };
     store.upsert_skill(&record)?;
 
     Ok(InstallResult {
@@ -636,6 +801,209 @@ pub struct UpdateResult {
     pub updated_targets: Vec<String>,
 }
 
+pub struct PublishResult {
+    pub skill_id: String,
+    pub name: String,
+    pub commit: Option<String>,
+    pub pushed: bool,
+}
+
+pub struct UpdateCheckResult {
+    pub skill_id: String,
+    pub name: String,
+    pub checkable: bool,
+    pub has_update: bool,
+    pub current_revision: Option<String>,
+    pub latest_revision: Option<String>,
+    pub current_hash: Option<String>,
+    pub latest_hash: Option<String>,
+    pub message: Option<String>,
+}
+
+pub fn check_managed_skill_update<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &SkillStore,
+    skill_id: &str,
+) -> Result<UpdateCheckResult> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+    check_skill_record_update(app, store, &record)
+}
+
+pub fn check_all_managed_skill_updates<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &SkillStore,
+) -> Result<Vec<UpdateCheckResult>> {
+    let skills = store.list_skills()?;
+    let mut out = Vec::with_capacity(skills.len());
+    for skill in skills {
+        match check_skill_record_update(app, store, &skill) {
+            Ok(result) => out.push(result),
+            Err(err) => out.push(UpdateCheckResult {
+                skill_id: skill.id,
+                name: skill.name,
+                checkable: false,
+                has_update: false,
+                current_revision: skill.source_revision,
+                latest_revision: None,
+                current_hash: skill.content_hash,
+                latest_hash: None,
+                message: Some(err.to_string()),
+            }),
+        }
+    }
+    Ok(out)
+}
+
+fn check_skill_record_update<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &SkillStore,
+    record: &SkillRecord,
+) -> Result<UpdateCheckResult> {
+    let central_path = PathBuf::from(&record.central_path);
+    if !central_path.exists() {
+        return Ok(UpdateCheckResult {
+            skill_id: record.id.clone(),
+            name: record.name.clone(),
+            checkable: false,
+            has_update: false,
+            current_revision: record.source_revision.clone(),
+            latest_revision: None,
+            current_hash: record.content_hash.clone(),
+            latest_hash: None,
+            message: Some(format!("central path not found: {:?}", central_path)),
+        });
+    }
+
+    let current_hash = hash_dir(&central_path).ok().or(record.content_hash.clone());
+    let mut latest_revision = None;
+    let latest_hash;
+    let mut cleanup_dir: Option<PathBuf> = None;
+
+    if record.source_type == "git" {
+        let repo_url = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for git skill"))?;
+        let parsed = parse_github_url(repo_url);
+        let (repo_dir, rev) = if let Some(subpath) = record.source_subpath.as_deref() {
+            clone_to_cache_subpath(
+                app,
+                store,
+                &parsed.clone_url,
+                parsed.branch.as_deref(),
+                subpath,
+                None,
+            )?
+        } else {
+            clone_to_cache(
+                app,
+                store,
+                &parsed.clone_url,
+                parsed.branch.as_deref(),
+                None,
+            )?
+        };
+        latest_revision = Some(rev);
+        let mut resolved_subpath = record
+            .source_subpath
+            .as_deref()
+            .or(parsed.subpath.as_deref())
+            .map(str::to_string);
+        if resolved_subpath.is_none() && count_skills_in_repo(&repo_dir) >= 2 {
+            let candidates = scan_skill_candidates_in_dir(&repo_dir);
+            let skill_name = record.name.to_lowercase();
+            if let Some(matched) = candidates.iter().find(|c| c.0 == record.name).or_else(|| {
+                let fuzzy: Vec<_> = candidates
+                    .iter()
+                    .filter(|c| {
+                        let cn = c.0.to_lowercase();
+                        cn.contains(&skill_name) || skill_name.contains(&cn)
+                    })
+                    .collect();
+                if fuzzy.len() == 1 {
+                    Some(fuzzy[0])
+                } else {
+                    None
+                }
+            }) {
+                resolved_subpath = Some(matched.1.clone());
+                let mut patched = record.clone();
+                patched.source_subpath = Some(matched.1.clone());
+                let _ = store.upsert_skill(&patched);
+            }
+        }
+        let source_dir = resolved_subpath
+            .as_deref()
+            .map(|subpath| repo_dir.join(subpath))
+            .unwrap_or(repo_dir);
+        latest_hash = hash_dir(&source_dir).ok();
+    } else if record.source_type == "local" {
+        let source = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for local skill"))?;
+        let source_path = PathBuf::from(source);
+        if !source_path.exists() {
+            anyhow::bail!("source path not found: {:?}", source_path);
+        }
+        latest_hash = hash_dir(&source_path).ok();
+    } else if record.source_type == "package" {
+        let source_ref = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for package skill"))?;
+        let package = parse_package_source_ref(source_ref)?;
+        let central_parent = central_path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("invalid central path"))?
+            .to_path_buf();
+        let output_dir = central_parent.join(format!(".skills-hub-check-{}", Uuid::new_v4()));
+        run_package_command(&package.package, package.command.as_deref(), &output_dir)?;
+        let (source_dir, _) =
+            resolve_single_generated_skill(&output_dir, record.source_subpath.as_deref())?;
+        latest_hash = hash_dir(&source_dir).ok();
+        cleanup_dir = Some(output_dir);
+    } else {
+        return Ok(UpdateCheckResult {
+            skill_id: record.id.clone(),
+            name: record.name.clone(),
+            checkable: false,
+            has_update: false,
+            current_revision: record.source_revision.clone(),
+            latest_revision: None,
+            current_hash,
+            latest_hash: None,
+            message: Some(format!("unsupported source_type: {}", record.source_type)),
+        });
+    }
+
+    if let Some(path) = cleanup_dir {
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    let has_update = match (&current_hash, &latest_hash) {
+        (Some(current), Some(latest)) => current != latest,
+        _ => match (&record.source_revision, &latest_revision) {
+            (Some(current), Some(latest)) => current != latest,
+            _ => false,
+        },
+    };
+
+    Ok(UpdateCheckResult {
+        skill_id: record.id.clone(),
+        name: record.name.clone(),
+        checkable: true,
+        has_update,
+        current_revision: record.source_revision.clone(),
+        latest_revision,
+        current_hash,
+        latest_hash,
+        message: None,
+    })
+}
+
 pub fn update_managed_skill_from_source<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     store: &SkillStore,
@@ -747,6 +1115,22 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
         }
         copy_dir_recursive(&source_path, &staging_dir)
             .with_context(|| format!("copy {:?} -> {:?}", source_path, staging_dir))?;
+    } else if record.source_type == "package" {
+        let source_ref = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for package skill"))?;
+        let package = parse_package_source_ref(source_ref)?;
+        let output_dir = central_parent.join(format!(".skills-hub-package-{}", Uuid::new_v4()));
+        if output_dir.exists() {
+            let _ = std::fs::remove_dir_all(&output_dir);
+        }
+        run_package_command(&package.package, package.command.as_deref(), &output_dir)?;
+        let (source_dir, _source_subpath) =
+            resolve_single_generated_skill(&output_dir, record.source_subpath.as_deref())?;
+        copy_dir_recursive(&source_dir, &staging_dir)
+            .with_context(|| format!("copy {:?} -> {:?}", source_dir, staging_dir))?;
+        let _ = std::fs::remove_dir_all(&output_dir);
     } else {
         anyhow::bail!("unsupported source_type for update: {}", record.source_type);
     }
@@ -829,6 +1213,92 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
         source_revision: new_revision,
         updated_targets,
     })
+}
+
+pub fn publish_managed_skill_to_remote<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &SkillStore,
+    skill_id: &str,
+    message: Option<&str>,
+) -> Result<PublishResult> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+
+    if record.source_type != "git" {
+        anyhow::bail!("only Git skills can be pushed");
+    }
+
+    let repo_url = record
+        .source_ref
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("missing source_ref for git skill"))?;
+    let parsed = parse_github_url(repo_url);
+    let central_path = PathBuf::from(&record.central_path);
+    if !central_path.exists() {
+        anyhow::bail!("central path not found: {:?}", central_path);
+    }
+
+    let (repo_dir, _) = if let Some(subpath) = record.source_subpath.as_deref() {
+        clone_to_cache_subpath(
+            app,
+            store,
+            &parsed.clone_url,
+            parsed.branch.as_deref(),
+            subpath,
+            None,
+        )?
+    } else {
+        clone_to_cache(
+            app,
+            store,
+            &parsed.clone_url,
+            parsed.branch.as_deref(),
+            None,
+        )?
+    };
+
+    let target_path = record
+        .source_subpath
+        .as_deref()
+        .or(parsed.subpath.as_deref())
+        .map(|subpath| repo_dir.join(subpath))
+        .unwrap_or_else(|| repo_dir.clone());
+    replace_dir_contents_preserving_git(&central_path, &target_path)
+        .with_context(|| format!("copy {:?} -> {:?}", central_path, target_path))?;
+
+    let commit_message = message
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("Update skill {}", record.name));
+    let publish = commit_all_and_push(&repo_dir, parsed.branch.as_deref(), &commit_message)?;
+
+    Ok(PublishResult {
+        skill_id: record.id,
+        name: record.name,
+        commit: publish.commit,
+        pushed: publish.pushed,
+    })
+}
+
+fn replace_dir_contents_preserving_git(source: &Path, target: &Path) -> Result<()> {
+    std::fs::create_dir_all(target).with_context(|| format!("create target dir {:?}", target))?;
+    for entry in
+        std::fs::read_dir(target).with_context(|| format!("read target dir {:?}", target))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if path.file_name().is_some_and(|name| name == ".git") {
+            continue;
+        }
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path).with_context(|| format!("remove dir {:?}", path))?;
+        } else {
+            std::fs::remove_file(&path).with_context(|| format!("remove file {:?}", path))?;
+        }
+    }
+    copy_dir_recursive(source, target)
 }
 
 #[derive(Clone, Debug, serde::Serialize)]

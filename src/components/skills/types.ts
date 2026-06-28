@@ -45,7 +45,7 @@ export type ManagedSkill = {
   icon_background?: string | null
   source_type: string
   source_ref?: string | null
-  source_origin?: 'official' | 'my_git' | 'third_party_git' | 'local' | string
+  source_origin?: 'official' | 'git' | 'package' | 'my_git' | 'third_party_git' | 'local' | string
   origin_kind?: string
   origin_role?: string
   origin_provider?: string | null
@@ -114,6 +114,25 @@ export type UpdateResultDto = {
   content_hash?: string | null
   source_revision?: string | null
   updated_targets: string[]
+}
+
+export type UpdateCheckResultDto = {
+  skill_id: string
+  name: string
+  checkable: boolean
+  has_update: boolean
+  current_revision?: string | null
+  latest_revision?: string | null
+  current_hash?: string | null
+  latest_hash?: string | null
+  message?: string | null
+}
+
+export type PublishResultDto = {
+  skill_id: string
+  name: string
+  commit?: string | null
+  pushed: boolean
 }
 
 export type FeaturedSkillDto = {

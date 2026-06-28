@@ -67,23 +67,19 @@ const SettingsPage = ({
       .map((item) => item.trim())
       .filter(Boolean)
 
-  const [myGitOwnersText, setMyGitOwnersText] = useState(joinRules(originRules.myGitOwners))
-  const [myGitReposText, setMyGitReposText] = useState(joinRules(originRules.myGitRepos))
   const [officialGitReposText, setOfficialGitReposText] = useState(joinRules(originRules.officialGitRepos))
 
   useEffect(() => {
-    setMyGitOwnersText(joinRules(originRules.myGitOwners))
-    setMyGitReposText(joinRules(originRules.myGitRepos))
     setOfficialGitReposText(joinRules(originRules.officialGitRepos))
   }, [originRules])
 
   const handleSaveOriginRules = useCallback(() => {
     onOriginRulesChange({
-      myGitOwners: parseRules(myGitOwnersText),
-      myGitRepos: parseRules(myGitReposText),
+      myGitOwners: originRules.myGitOwners,
+      myGitRepos: originRules.myGitRepos,
       officialGitRepos: parseRules(officialGitReposText),
     })
-  }, [myGitOwnersText, myGitReposText, officialGitReposText, onOriginRulesChange])
+  }, [originRules.myGitOwners, originRules.myGitRepos, officialGitReposText, onOriginRulesChange])
 
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle')
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
@@ -302,32 +298,6 @@ const SettingsPage = ({
         <div className="settings-section-divider" />
         <div className="settings-section-title">{t('originRulesTitle')}</div>
         <div className="settings-helper" style={{ marginBottom: 12 }}>{t('originRulesHint')}</div>
-        <div className="settings-field">
-          <label className="settings-label" htmlFor="settings-origin-my-owners">
-            {t('originRules.myGitOwners')}
-          </label>
-          <textarea
-            id="settings-origin-my-owners"
-            className="settings-input settings-textarea mono"
-            value={myGitOwnersText}
-            onChange={(event) => setMyGitOwnersText(event.target.value)}
-            placeholder="yancongya&#10;tanyancong"
-          />
-          <div className="settings-helper">{t('originRules.myGitOwnersHint')}</div>
-        </div>
-        <div className="settings-field">
-          <label className="settings-label" htmlFor="settings-origin-my-repos">
-            {t('originRules.myGitRepos')}
-          </label>
-          <textarea
-            id="settings-origin-my-repos"
-            className="settings-input settings-textarea mono"
-            value={myGitReposText}
-            onChange={(event) => setMyGitReposText(event.target.value)}
-            placeholder="yancongya/OH-WorkSpace"
-          />
-          <div className="settings-helper">{t('originRules.myGitReposHint')}</div>
-        </div>
         <div className="settings-field">
           <label className="settings-label" htmlFor="settings-origin-official-repos">
             {t('originRules.officialGitRepos')}

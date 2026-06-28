@@ -175,7 +175,93 @@ fn get_managed_skills_impl_maps_targets() {
 }
 
 #[test]
-fn origin_rules_classify_my_git_owner() {
+fn get_managed_skills_backfills_featured_local_skill_to_official_git() {
+    let (dir, store) = make_store();
+    let source_dir = dir.path().join("skill-creator-source");
+    let central_dir = dir.path().join("skill-creator-central");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::create_dir_all(&central_dir).unwrap();
+    let skill = SkillRecord {
+        id: "s1".to_string(),
+        name: "skill-creator".to_string(),
+        description: None,
+        source_type: "local".to_string(),
+        source_ref: Some(source_dir.to_string_lossy().to_string()),
+        source_subpath: None,
+        source_revision: None,
+        central_path: central_dir.to_string_lossy().to_string(),
+        content_hash: None,
+        created_at: 1,
+        updated_at: 1,
+        last_sync_at: None,
+        last_seen_at: 1,
+        status: "ok".to_string(),
+    };
+    store.upsert_skill(&skill).unwrap();
+
+    let out = get_managed_skills_impl(&store).unwrap();
+
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].source_origin, "official");
+    assert_eq!(out[0].update_strategy, "git_pull");
+    assert!(out[0]
+        .origin_remote_url
+        .as_deref()
+        .unwrap_or_default()
+        .contains("github.com"));
+
+    let patched = store.get_skill_by_id("s1").unwrap().unwrap();
+    assert_eq!(patched.source_type, "git");
+    assert!(patched
+        .source_ref
+        .as_deref()
+        .unwrap_or_default()
+        .contains("github.com"));
+}
+
+#[test]
+fn get_managed_skills_backfills_known_npx_installed_official_skill() {
+    let (dir, store) = make_store();
+    let source_dir = dir.path().join("cloudflare-source");
+    let central_dir = dir.path().join("cloudflare-central");
+    std::fs::create_dir_all(&source_dir).unwrap();
+    std::fs::create_dir_all(&central_dir).unwrap();
+    let skill = SkillRecord {
+        id: "s1".to_string(),
+        name: "cloudflare".to_string(),
+        description: None,
+        source_type: "local".to_string(),
+        source_ref: Some(source_dir.to_string_lossy().to_string()),
+        source_subpath: None,
+        source_revision: None,
+        central_path: central_dir.to_string_lossy().to_string(),
+        content_hash: None,
+        created_at: 1,
+        updated_at: 1,
+        last_sync_at: None,
+        last_seen_at: 1,
+        status: "ok".to_string(),
+    };
+    store.upsert_skill(&skill).unwrap();
+
+    let out = get_managed_skills_impl(&store).unwrap();
+
+    assert_eq!(out[0].source_origin, "official");
+    assert_eq!(out[0].update_strategy, "git_pull");
+    assert_eq!(
+        out[0].origin_remote_url.as_deref(),
+        Some("https://github.com/cloudflare/skills/tree/main/skills/cloudflare")
+    );
+    let patched = store.get_skill_by_id("s1").unwrap().unwrap();
+    assert_eq!(patched.source_type, "git");
+    assert_eq!(
+        patched.source_ref.as_deref(),
+        Some("https://github.com/cloudflare/skills/tree/main/skills/cloudflare")
+    );
+}
+
+#[test]
+fn origin_rules_do_not_classify_my_git_owner_automatically() {
     let rules = OriginRules {
         my_git_owners: vec!["yancongya".to_string()],
         my_git_repos: vec![],
@@ -189,8 +275,8 @@ fn origin_rules_classify_my_git_owner() {
         &rules,
     );
     assert_eq!(inferred.origin_kind, "git");
-    assert_eq!(inferred.origin_role, "mine");
-    assert_eq!(inferred.publish_strategy, "git_push");
+    assert_eq!(inferred.origin_role, "repository");
+    assert_eq!(inferred.publish_strategy, "none");
 }
 
 #[test]
@@ -209,5 +295,84 @@ fn origin_rules_classify_official_repo() {
     );
     assert_eq!(inferred.origin_kind, "official");
     assert_eq!(inferred.origin_role, "official");
+    assert_eq!(inferred.publish_strategy, "none");
+}
+
+#[test]
+fn origin_rules_classify_package_source() {
+    let rules = OriginRules::default();
+    let inferred = infer_source_origin(
+        "package",
+        Some(r#"{"package":"@vendor/skills","command":"npx --yes {package} {dest}"}"#),
+        "/tmp/central",
+        &rules,
+    );
+    assert_eq!(inferred.origin_kind, "package");
+    assert_eq!(inferred.origin_role, "repository");
+    assert_eq!(inferred.update_strategy, "package_refresh");
+    assert_eq!(inferred.publish_strategy, "none");
+}
+
+#[test]
+fn origin_rules_do_not_treat_tool_skill_dirs_as_official() {
+    let rules = OriginRules::default();
+    let inferred = infer_source_origin(
+        "local",
+        Some("/Users/example/.claude/skills/turnstile-spin"),
+        "/Users/example/.skillshub/turnstile-spin",
+        &rules,
+    );
+    assert_eq!(inferred.origin_kind, "local");
+    assert_eq!(inferred.origin_role, "mine");
+    assert_eq!(inferred.publish_strategy, "none");
+}
+
+#[test]
+fn origin_rules_classify_local_git_repo_as_repository() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("my-skill");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(
+        repo.join(".git").join("config"),
+        "[remote \"origin\"]\n  url = https://github.com/example/my-skill.git\n",
+    )
+    .unwrap();
+
+    let rules = OriginRules::default();
+    let inferred = infer_source_origin(
+        "local",
+        Some(repo.to_string_lossy().as_ref()),
+        "/tmp/central",
+        &rules,
+    );
+    assert_eq!(inferred.origin_kind, "git");
+    assert_eq!(inferred.origin_role, "repository");
+    assert_eq!(inferred.publish_strategy, "none");
+}
+
+#[test]
+fn origin_rules_do_not_classify_matched_local_git_repo_as_mine() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("my-skill");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(
+        repo.join(".git").join("config"),
+        "[remote \"origin\"]\n  url = https://github.com/example/my-skill.git\n",
+    )
+    .unwrap();
+
+    let rules = normalize_rules(OriginRules {
+        my_git_owners: vec!["example".to_string()],
+        my_git_repos: vec![],
+        official_git_repos: vec![],
+    });
+    let inferred = infer_source_origin(
+        "local",
+        Some(repo.to_string_lossy().as_ref()),
+        "/tmp/central",
+        &rules,
+    );
+    assert_eq!(inferred.origin_kind, "git");
+    assert_eq!(inferred.origin_role, "repository");
     assert_eq!(inferred.publish_strategy, "none");
 }

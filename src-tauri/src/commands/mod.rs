@@ -1,5 +1,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
@@ -16,8 +17,9 @@ use crate::core::content_hash::hash_dir;
 use crate::core::featured_skills::{fetch_featured_skills, FeaturedSkill};
 use crate::core::github_search::{search_github_repos, RepoSummary};
 use crate::core::installer::{
-    install_git_skill, install_git_skill_from_selection, install_local_skill,
-    install_local_skill_from_selection, list_git_skills, list_local_skills,
+    check_all_managed_skill_updates, check_managed_skill_update, install_git_skill,
+    install_git_skill_from_selection, install_local_skill, install_local_skill_from_selection,
+    install_package_skill, list_git_skills, list_local_skills, publish_managed_skill_to_remote,
     update_managed_skill_from_source, GitSkillCandidate, InstallResult, LocalSkillCandidate,
 };
 use crate::core::onboarding::{build_onboarding_plan, OnboardingPlan};
@@ -36,16 +38,68 @@ use crate::core::tool_adapters::{
 const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
 const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
 const ORIGIN_RULES_KEY: &str = "origin_rules_v1";
+const FEATURED_SKILLS_CACHE_KEY: &str = "featured_skills_cache";
+const BUNDLED_FEATURED_SKILLS_JSON: &str = include_str!("../../../featured-skills.json");
+const KNOWN_OFFICIAL_SKILL_SOURCES: &[(&str, &str)] = &[
+    (
+        "agents-sdk",
+        "https://github.com/cloudflare/skills/tree/main/skills/agents-sdk",
+    ),
+    (
+        "cloudflare",
+        "https://github.com/cloudflare/skills/tree/main/skills/cloudflare",
+    ),
+    (
+        "cloudflare-email-service",
+        "https://github.com/cloudflare/skills/tree/main/skills/cloudflare-email-service",
+    ),
+    (
+        "cloudflare-one",
+        "https://github.com/cloudflare/skills/tree/main/skills/cloudflare-one",
+    ),
+    (
+        "cloudflare-one-migrations",
+        "https://github.com/cloudflare/skills/tree/main/skills/cloudflare-one-migrations",
+    ),
+    (
+        "durable-objects",
+        "https://github.com/cloudflare/skills/tree/main/skills/durable-objects",
+    ),
+    (
+        "find-skills",
+        "https://github.com/vercel-labs/skills/tree/main/skills/find-skills",
+    ),
+    (
+        "sandbox-sdk",
+        "https://github.com/cloudflare/skills/tree/main/skills/sandbox-sdk",
+    ),
+    (
+        "turnstile-spin",
+        "https://github.com/cloudflare/skills/tree/main/skills/turnstile-spin",
+    ),
+    (
+        "web-perf",
+        "https://github.com/cloudflare/skills/tree/main/skills/web-perf",
+    ),
+    (
+        "workers-best-practices",
+        "https://github.com/cloudflare/skills/tree/main/skills/workers-best-practices",
+    ),
+    (
+        "wrangler",
+        "https://github.com/cloudflare/skills/tree/main/skills/wrangler",
+    ),
+];
 const OFFICIAL_SOURCE_PATTERNS: &[&str] = &[
     "github.com/anthropics/skills",
     "github.com/openai/skills",
+    "github.com/cloudflare/skills",
+    "github.com/vercel-labs/skills",
     "github.com/openai/codex",
     "github.com/openai/openai-cookbook",
     ".codex/vendor_imports/skills",
     ".codex/plugins/cache/openai-bundled",
     ".codex/plugins/cache/openai-primary-runtime",
-    ".claude/skills",
-    ".codex/skills",
     ".codex/skills/.system",
 ];
 
@@ -59,9 +113,25 @@ pub struct CustomScanDirEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OriginRules {
+    #[serde(default)]
     pub my_git_owners: Vec<String>,
+    #[serde(default)]
     pub my_git_repos: Vec<String>,
+    #[serde(default)]
     pub official_git_repos: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FeaturedSkillsOriginData {
+    skills: Vec<FeaturedSkillOriginEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct FeaturedSkillOriginEntry {
+    slug: String,
+    name: String,
+    #[serde(default)]
+    source_url: String,
 }
 
 fn normalize_rule_item(value: &str) -> String {
@@ -175,21 +245,40 @@ fn matches_repo_rule(source: &str, rules: &[String]) -> bool {
     rules.iter().any(|rule| normalized.contains(rule))
 }
 
-fn matches_my_git_rule(owner: &Option<String>, repo: &Option<String>, rules: &OriginRules) -> bool {
-    let owner = owner.as_ref().map(|value| value.to_lowercase());
-    let repo = repo.as_ref().map(|value| value.to_lowercase());
-    if let Some(owner) = &owner {
-        if rules.my_git_owners.iter().any(|rule| rule == owner) {
-            return true;
+fn normalize_skill_key(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn parse_featured_origin_map(json: &str) -> HashMap<String, String> {
+    let Ok(data) = serde_json::from_str::<FeaturedSkillsOriginData>(json) else {
+        return HashMap::new();
+    };
+
+    let mut out = HashMap::new();
+    for skill in data.skills {
+        if skill.source_url.trim().is_empty() {
+            continue;
+        }
+        out.insert(normalize_skill_key(&skill.name), skill.source_url.clone());
+        out.insert(normalize_skill_key(&skill.slug), skill.source_url);
+    }
+    out
+}
+
+fn featured_origin_map(store: &SkillStore) -> HashMap<String, String> {
+    let mut known = KNOWN_OFFICIAL_SKILL_SOURCES
+        .iter()
+        .map(|(name, source)| (normalize_skill_key(name), (*source).to_string()))
+        .collect::<HashMap<_, _>>();
+    if let Ok(Some(cached)) = store.get_setting(FEATURED_SKILLS_CACHE_KEY) {
+        let cached_map = parse_featured_origin_map(&cached);
+        if !cached_map.is_empty() {
+            known.extend(cached_map);
+            return known;
         }
     }
-    if let (Some(owner), Some(repo)) = (&owner, &repo) {
-        let full = format!("{owner}/{repo}");
-        if rules.my_git_repos.iter().any(|rule| rule == &full) {
-            return true;
-        }
-    }
-    false
+    known.extend(parse_featured_origin_map(BUNDLED_FEATURED_SKILLS_JSON));
+    known
 }
 
 fn find_git_root(path: &Path) -> Option<PathBuf> {
@@ -286,7 +375,7 @@ fn infer_source_origin(
                 remote_url: Some(source.to_string()),
                 owner,
                 repo,
-                update_strategy: "provider_refresh".to_string(),
+                update_strategy: "git_pull".to_string(),
                 publish_strategy: "none".to_string(),
                 reason: "source_ref matched official source rule".to_string(),
             };
@@ -300,7 +389,7 @@ fn infer_source_origin(
             remote_url: None,
             owner: None,
             repo: None,
-            update_strategy: "provider_refresh".to_string(),
+            update_strategy: "local_copy".to_string(),
             publish_strategy: "none".to_string(),
             reason: "central_path matched official source rule".to_string(),
         };
@@ -311,22 +400,30 @@ fn infer_source_origin(
         let (owner, repo) = source_ref
             .map(parse_github_owner_repo)
             .unwrap_or((None, None));
-        let mine = matches_my_git_rule(&owner, &repo, rules);
         return InferredOrigin {
             origin_kind: "git".to_string(),
-            origin_role: if mine { "mine" } else { "third_party" }.to_string(),
+            origin_role: "repository".to_string(),
             provider: Some("git".to_string()),
             remote_url: remote,
             owner,
             repo,
             update_strategy: "git_pull".to_string(),
-            publish_strategy: if mine { "git_push" } else { "none" }.to_string(),
-            reason: if mine {
-                "source_type is git and matched my Git rules"
-            } else {
-                "source_type is git"
-            }
-            .to_string(),
+            publish_strategy: "none".to_string(),
+            reason: "source_type is git".to_string(),
+        };
+    }
+
+    if source_type.to_lowercase().contains("package") {
+        return InferredOrigin {
+            origin_kind: "package".to_string(),
+            origin_role: "repository".to_string(),
+            provider: Some("npm".to_string()),
+            remote_url: source_ref.map(str::to_string),
+            owner: None,
+            repo: None,
+            update_strategy: "package_refresh".to_string(),
+            publish_strategy: "none".to_string(),
+            reason: "source_type is package".to_string(),
         };
     }
 
@@ -345,40 +442,35 @@ fn infer_source_origin(
                         remote_url: Some(remote),
                         owner,
                         repo,
-                        update_strategy: "provider_refresh".to_string(),
+                        update_strategy: "git_pull".to_string(),
                         publish_strategy: "none".to_string(),
                         reason: "git remote matched official source rule".to_string(),
                     };
                 }
                 let (owner, repo) = parse_github_owner_repo(&remote);
-                let mine = matches_my_git_rule(&owner, &repo, rules);
                 return InferredOrigin {
                     origin_kind: "git".to_string(),
-                    origin_role: if mine { "mine" } else { "third_party" }.to_string(),
+                    origin_role: "repository".to_string(),
                     provider: Some("git".to_string()),
                     remote_url: Some(remote),
                     owner,
                     repo,
                     update_strategy: "git_pull".to_string(),
-                    publish_strategy: if mine { "git_push" } else { "none" }.to_string(),
-                    reason: if mine {
-                        "source path git remote matched my Git rules"
-                    } else {
-                        "source path is inside a git repository"
-                    }
-                    .to_string(),
+                    publish_strategy: "none".to_string(),
+                    reason: "local source path is inside a git repository".to_string(),
                 };
             }
             return InferredOrigin {
                 origin_kind: "git".to_string(),
-                origin_role: "third_party".to_string(),
+                origin_role: "repository".to_string(),
                 provider: Some("git".to_string()),
                 remote_url: None,
                 owner: None,
                 repo: None,
                 update_strategy: "git_pull".to_string(),
                 publish_strategy: "none".to_string(),
-                reason: "source path is inside a git repository without origin remote".to_string(),
+                reason: "local source path is inside a git repository without origin remote"
+                    .to_string(),
             };
         }
     }
@@ -1061,6 +1153,25 @@ pub async fn install_git_selection(
     .map_err(format_anyhow_error)
 }
 
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn install_package(
+    app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+    packageName: String,
+    command: Option<String>,
+    name: Option<String>,
+) -> Result<InstallResultDto, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = install_package_skill(&app, &store, &packageName, command.as_deref(), name)?;
+        to_install_dto_with_origin(&store, result)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
 #[derive(Debug, Serialize)]
 pub struct SyncResultDto {
     pub mode_used: String,
@@ -1394,6 +1505,43 @@ pub struct UpdateResultDto {
     pub updated_targets: Vec<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct UpdateCheckResultDto {
+    pub skill_id: String,
+    pub name: String,
+    pub checkable: bool,
+    pub has_update: bool,
+    pub current_revision: Option<String>,
+    pub latest_revision: Option<String>,
+    pub current_hash: Option<String>,
+    pub latest_hash: Option<String>,
+    pub message: Option<String>,
+}
+
+impl From<crate::core::installer::UpdateCheckResult> for UpdateCheckResultDto {
+    fn from(value: crate::core::installer::UpdateCheckResult) -> Self {
+        Self {
+            skill_id: value.skill_id,
+            name: value.name,
+            checkable: value.checkable,
+            has_update: value.has_update,
+            current_revision: value.current_revision,
+            latest_revision: value.latest_revision,
+            current_hash: value.current_hash,
+            latest_hash: value.latest_hash,
+            message: value.message,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PublishResultDto {
+    pub skill_id: String,
+    pub name: String,
+    pub commit: Option<String>,
+    pub pushed: bool,
+}
+
 #[tauri::command]
 #[allow(non_snake_case)]
 pub async fn update_managed_skill(
@@ -1410,6 +1558,64 @@ pub async fn update_managed_skill(
             content_hash: res.content_hash,
             source_revision: res.source_revision,
             updated_targets: res.updated_targets,
+        })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn check_managed_skill_update_cmd(
+    app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+    skillId: String,
+) -> Result<UpdateCheckResultDto, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        check_managed_skill_update(&app, &store, &skillId).map(UpdateCheckResultDto::from)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn check_all_managed_skill_updates_cmd(
+    app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+) -> Result<Vec<UpdateCheckResultDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        check_all_managed_skill_updates(&app, &store)
+            .map(|items| items.into_iter().map(UpdateCheckResultDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn publish_managed_skill(
+    app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+    skillId: String,
+    message: Option<String>,
+) -> Result<PublishResultDto, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let origin = store.get_skill_origin(&skillId)?;
+        if origin.as_ref().map(|item| item.publish_strategy.as_str()) != Some("git_push") {
+            anyhow::bail!("this skill is not configured for Git push");
+        }
+        let res = publish_managed_skill_to_remote(&app, &store, &skillId, message.as_deref())?;
+        Ok::<_, anyhow::Error>(PublishResultDto {
+            skill_id: res.skill_id,
+            name: res.name,
+            commit: res.commit,
+            pushed: res.pushed,
         })
     })
     .await
@@ -1537,6 +1743,13 @@ fn manual_origin_record(
             base.origin_role = "third_party".to_string();
             base.provider = Some("git".to_string());
             base.update_strategy = "git_pull".to_string();
+            base.publish_strategy = "none".to_string();
+        }
+        "package" => {
+            base.origin_kind = "package".to_string();
+            base.origin_role = "repository".to_string();
+            base.provider = Some("npm".to_string());
+            base.update_strategy = "package_refresh".to_string();
             base.publish_strategy = "none".to_string();
         }
         "local" => {
@@ -1901,12 +2114,29 @@ fn now_ms() -> i64 {
 fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, String> {
     let skills = store.list_skills().map_err(|err| err.to_string())?;
     let rules = get_origin_rules_impl(store).map_err(|err| err.to_string())?;
+    let featured_sources = featured_origin_map(store);
     Ok(skills
         .into_iter()
-        .map(|skill| {
+        .map(|mut skill| {
             let origin = match store.get_skill_origin(&skill.id) {
                 Ok(Some(origin)) if origin.manual_override => origin,
                 _ => {
+                    let featured_source = featured_sources
+                        .get(&normalize_skill_key(&skill.name))
+                        .filter(|source| {
+                            skill.source_type == "local"
+                                && !skill.source_ref.as_deref().is_some_and(|source_ref| {
+                                    normalize_source_ref(source_ref)
+                                        == normalize_source_ref(source.as_str())
+                                })
+                        })
+                        .cloned();
+                    if let Some(source_url) = featured_source {
+                        skill.source_type = "git".to_string();
+                        skill.source_ref = Some(source_url);
+                        skill.source_subpath = None;
+                        let _ = store.upsert_skill(&skill);
+                    }
                     let inferred = infer_source_origin(
                         &skill.source_type,
                         skill.source_ref.as_deref(),
@@ -1935,8 +2165,9 @@ fn get_managed_skills_impl(store: &SkillStore) -> Result<Vec<ManagedSkillDto>, S
             };
             let source_origin = match (origin.origin_kind.as_str(), origin.origin_role.as_str()) {
                 ("official", _) | (_, "official") => "official",
-                ("git", "mine") => "my_git",
-                ("git", _) => "third_party_git",
+                ("git", "owned") | ("git", "mine") => "my_git",
+                ("git", _) => "git",
+                ("package", _) => "package",
                 ("local", _) => "local",
                 _ => "local",
             }

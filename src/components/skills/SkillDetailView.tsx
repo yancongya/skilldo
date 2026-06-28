@@ -8,6 +8,8 @@ import {
   Folder,
   FolderOpen,
   GitBranch,
+  RefreshCw,
+  UploadCloud,
 } from 'lucide-react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import {
@@ -26,6 +28,8 @@ type SkillDetailViewProps = {
   skill: ManagedSkill
   onBack: () => void
   onOriginOverride: (skill: ManagedSkill, sourceOrigin: string) => void
+  onUpdateSkill: (skill: ManagedSkill) => void
+  onPublishSkill: (skill: ManagedSkill) => void
   invokeTauri: <T>(command: string, args?: Record<string, unknown>) => Promise<T>
   formatRelative: (ms: number | null | undefined) => string
   t: TFunction
@@ -399,6 +403,8 @@ const SkillDetailView = ({
   skill,
   onBack,
   onOriginOverride,
+  onUpdateSkill,
+  onPublishSkill,
   invokeTauri,
   formatRelative,
   t,
@@ -495,6 +501,8 @@ const SkillDetailView = ({
     ? GitBranch
     : Folder
   const originValue = skill.origin_manual_override ? (skill.source_origin ?? 'local') : 'auto'
+  const canUpdate = skill.update_strategy === 'git_pull' || skill.update_strategy === 'provider_refresh' || skill.update_strategy === 'local_copy' || skill.update_strategy === 'package_refresh'
+  const canPublish = skill.publish_strategy === 'git_push'
 
   return (
     <div className="detail-view">
@@ -503,6 +511,30 @@ const SkillDetailView = ({
           <ArrowLeft size={16} />
           {t('detail.back')}
         </button>
+        <div className="detail-header-actions">
+          {canUpdate ? (
+            <button
+              className="detail-action-btn"
+              type="button"
+              onClick={() => onUpdateSkill(skill)}
+              title={t('detail.updateFromSource')}
+            >
+              <RefreshCw size={15} />
+              {t('update')}
+            </button>
+          ) : null}
+          {canPublish ? (
+            <button
+              className="detail-action-btn primary"
+              type="button"
+              onClick={() => onPublishSkill(skill)}
+              title={t('detail.pushToRemote')}
+            >
+              <UploadCloud size={15} />
+              {t('push')}
+            </button>
+          ) : null}
+        </div>
         <div className="detail-skill-name">{skill.name}</div>
         {skill.description ? (
           <div className="detail-desc">{skill.description}</div>
@@ -537,8 +569,9 @@ const SkillDetailView = ({
             >
               <option value="auto">{t('origin.auto')}</option>
               <option value="official">{t('origin.official')}</option>
-              <option value="my_git">{t('origin.myGit')}</option>
-              <option value="third_party_git">{t('origin.thirdPartyGit')}</option>
+              <option value="third_party_git">{t('origin.gitRepo')}</option>
+              <option value="package">{t('origin.packageSource')}</option>
+              <option value="my_git">{t('origin.ownedGit')}</option>
               <option value="local">{t('origin.local')}</option>
             </select>
           </label>
