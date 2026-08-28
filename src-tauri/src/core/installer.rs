@@ -2279,12 +2279,38 @@ pub fn install_local_skill_cli(
     ensure_central_repo(&central_dir)?;
     let central_path = central_dir.join(&name);
 
-    if central_path.exists() {
-        anyhow::bail!("skill already exists in central repo: {:?}", central_path);
+    // If the source is already inside the central repo (or is the central path
+    // itself), skip copying and register directly.
+    let already_in_central = central_path.exists()
+        || source_path
+            .canonicalize()
+            .ok()
+            .and_then(|s| central_path.canonicalize().ok().map(|c| s == c))
+            .unwrap_or(false);
+    if !already_in_central {
+        copy_dir_recursive(source_path, &central_path)
+            .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
     }
 
-    copy_dir_recursive(source_path, &central_path)
-        .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
+    // Check if this central_path is already registered in the DB (e.g. from a
+    // previous partial install or GUI registration). If so, reuse the existing
+    // record to avoid UNIQUE constraint failures.
+    let cp_str = central_path.to_string_lossy().to_string();
+    let all_skills = store.list_skills()?;
+    if let Some(existing) = all_skills.iter().find(|s| s.central_path == cp_str) {
+        // Touch the existing record to keep it fresh.
+        let mut patched = existing.clone();
+        patched.last_seen_at = now_ms();
+        patched.status = "ok".to_string();
+        store.upsert_skill(&patched)?;
+        let content_hash = compute_content_hash(&central_path);
+        return Ok(InstallResult {
+            skill_id: patched.id,
+            name: patched.name,
+            central_path,
+            content_hash,
+        });
+    }
 
     let now = now_ms();
     let content_hash = compute_content_hash(&central_path);
