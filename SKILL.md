@@ -1,6 +1,6 @@
 ---
 name: skillhub-cli
-description: Manage AI agent skills from the terminal with the Skills Hub CLI (skillhub). List managed skills, check which AI tools are installed, and browse the skill market. Agent-native, structured JSON output.
+description: Manage AI agent skills from the terminal with the Skills Hub CLI (skillhub). Install, sync, update, delete, and push skills across 47+ AI tools. Agent-native, structured JSON output.
 ---
 
 # Skills Hub CLI (`skillhub`)
@@ -11,48 +11,73 @@ The CLI shares the exact same SQLite database as the desktop client, so state st
 
 ## When to use
 
-- Read which skills are currently managed (`skillhub list`)
-- Check which of the 47+ supported AI tools are installed (`skillhub status`)
-- Browse the skill market across configured sources (`skillhub explore`)
-- Inspect configured explore sources (`skillhub sources list`)
+- **Read**: list skills, check tool status, browse the market
+- **Write**: install new skills from git/local, sync to tools, update, delete
+- **Git**: commit and push changes for git-managed skills
 - Drive any of the above from an agent via `--json` for structured parsing
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `skillhub list [--json]` | List managed skills and the tools they are synced to |
-| `skillhub status [--json]` | Show installation status of all supported AI tools |
+| `skillhub list [--json]` | List managed skills and their sync targets |
+| `skillhub status [--json]` | Show installation status of all 47+ supported AI tools |
 | `skillhub explore [--query Q] [--json]` | Browse the skill market across enabled sources |
 | `skillhub sources list [--json]` | List configured explore sources |
+| `skillhub install --url <repo> [--name N] [--yes]` | Install a skill from a git URL or local path |
+| `skillhub sync --skill <name> --tool <key>` | Sync a skill to a specific AI tool |
+| `skillhub unsync --skill <name> --tool <key>` | Remove a skill from a specific tool |
+| `skillhub update --skill <name> [--yes]` | Update a skill from its source (git pull / local copy) |
+| `skillhub update --all [--yes]` | Update all git-managed skills |
+| `skillhub delete --skill <name> [--yes]` | Delete a skill and remove all sync targets |
+| `skillhub push --skill <name> [-m "msg"]` | Commit and push changes for a git-managed skill |
 | `skillhub --help` | Show all commands and flags |
 
 ## Global flags
 
 - `--json` — Emit structured JSON instead of human-readable text. Errors print to stderr with a non-zero exit code.
-- `--db <path>` — Override the SQLite database path (defaults to the shared app data dir). Handy for portable/testing use.
+- `--db <path>` — Override the SQLite database path (defaults to the shared app data dir).
+
+## Skill name resolution
+
+Most commands accept `--skill <name>` which matches by **case-insensitive name** or **exact UUID**. If the name is ambiguous (multiple skills share the same name), the command will list the matching IDs and fail.
 
 ## Output contract (for agents)
 
 - Success: human-readable text by default, or a JSON object/array with `--json`.
-- Failure: message on stderr + non-zero exit code. When `--json` is set, errors from individual explore sources are returned in the `errors` array rather than aborting, so partial results are still usable.
+- Failure: message on stderr + non-zero exit code. When `--json` is set, errors from individual explore sources are returned in the `errors` array rather than aborting.
+- Write commands (`install`, `sync`, `delete`, `push`) default to interactive confirmation. Use `--yes` to skip prompts (agent mode).
 
 ### Examples
 
 ```bash
-# List managed skills as JSON (agent-friendly)
+# Install a skill from GitHub and sync to Claude Code
+skillhub install --url https://github.com/anthropics/skills/tree/main/skills/skill-creator --yes
+skillhub sync --skill skill-creator --tool claude_code
+
+# List all managed skills as JSON
 skillhub list --json
 
 # Check which AI tools are installed
 skillhub status
 
 # Search the skill market
-skillhub explore --query "rag"
+skillhub explore --query "rag" --json
 
-# Inspect the database at a custom location
-skillhub --db /tmp/skills_hub.db list --json
+# Update all git-managed skills
+skillhub update --all --yes
+
+# Push local changes for a skill
+skillhub push --skill my-skill -m "update docs"
+
+# Delete a skill
+skillhub delete --skill old-skill --yes
 ```
+
+## Tool keys
+
+Common tool keys for `--tool`: `claude_code`, `codex`, `opencode`, `gemini_cli`, `cline`, `augment`, `openclaw`, `iflow_cli`, `kiro_cli`, `pi`, `qoder`, `qwen_code`, `antigravity`, `cursor`. Run `skillhub status` for the full list.
 
 ## Discovery
 
-If `skillhub` is on `PATH` (e.g. via `cargo install` or bundled with the desktop app), an agent can invoke it directly after reading this skill. Prefer `--json` for programmatic use and parse the `exit code` to detect failures.
+If `skillhub` is on `PATH` (e.g. via shell function, `cargo install`, or bundled with the desktop app), an agent can invoke it directly after reading this skill. Prefer `--json` for programmatic use and parse the exit code to detect failures.

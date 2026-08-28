@@ -7,6 +7,7 @@ license = ""
 repository = "git@github.com:qufei1993/skills-hub.git"
 edition = "2021"
 rust-version = "1.77.2"
+default-run = "app"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -47,6 +48,10 @@ objc2-foundation = "0.3"
 [dev-dependencies]
 tempfile = "3"
 mockito = "1"
+
+[[bin]]
+name = "app"
+path = "src/main.rs"
 
 [[bin]]
 name = "skillhub"
