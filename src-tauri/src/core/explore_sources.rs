@@ -15,7 +15,7 @@ use super::skills_search::{search_skills_online_with_base, OnlineSkillResult};
 
 const EXPLORE_SOURCES_KEY: &str = "explore_sources_v1";
 const DEFAULT_FEATURED_URL: &str =
-    "https://raw.githubusercontent.com/qufei1993/skills-hub/main/featured-skills.json";
+    "https://raw.githubusercontent.com/yancongya/skills-hub/main/featured-skills.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
