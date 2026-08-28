@@ -76,8 +76,12 @@ const SkillCardCompact = ({
           </div>
           <div className="skill-card-compact-badges">
             <SkillOriginBadge skill={skill} t={t} compact />
-            {updateCheck?.has_update ? (
-              <span className="compact-update-chip">{t('updateAvailableShort')}</span>
+            {updateCheck?.has_update || updateCheck?.has_local_changes ? (
+              <span className="compact-update-chip">
+                {updateCheck.has_local_changes && !updateCheck.has_update
+                  ? t('pushAvailableShort')
+                  : t('updateAvailableShort')}
+              </span>
             ) : null}
             <span className={`compact-scope-chip ${skillScope}`}>
               {skillScope === 'project' ? projectCount : t('scope.globalBadge')}

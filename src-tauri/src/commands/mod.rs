@@ -14,6 +14,10 @@ use crate::core::cache_cleanup::{
 use crate::core::cancel_token::CancelToken;
 use crate::core::central_repo::{ensure_central_repo, resolve_central_repo_path};
 use crate::core::content_hash::hash_dir;
+use crate::core::explore_sources::{
+    get_explore_skills as get_explore_skills_core, get_explore_sources as get_explore_sources_core,
+    save_explore_sources as save_explore_sources_core, ExploreSkill, ExploreSourceConfig,
+};
 use crate::core::featured_skills::{fetch_featured_skills, FeaturedSkill};
 use crate::core::github_search::{search_github_repos, RepoSummary};
 use crate::core::installer::{
@@ -1511,6 +1515,7 @@ pub struct UpdateCheckResultDto {
     pub name: String,
     pub checkable: bool,
     pub has_update: bool,
+    pub has_local_changes: bool,
     pub current_revision: Option<String>,
     pub latest_revision: Option<String>,
     pub current_hash: Option<String>,
@@ -1525,6 +1530,7 @@ impl From<crate::core::installer::UpdateCheckResult> for UpdateCheckResultDto {
             name: value.name,
             checkable: value.checkable,
             has_update: value.has_update,
+            has_local_changes: value.has_local_changes,
             current_revision: value.current_revision,
             latest_revision: value.latest_revision,
             current_hash: value.current_hash,
@@ -2290,6 +2296,128 @@ pub async fn search_skills_online(
     tauri::async_runtime::spawn_blocking(move || {
         let results = search_skills_online_core(&query, limit)?;
         Ok::<_, anyhow::Error>(results.into_iter().map(OnlineSkillDto::from).collect())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreSourceConfigDto {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub endpoint: String,
+    pub enabled: bool,
+    pub builtin: bool,
+}
+
+impl From<ExploreSourceConfig> for ExploreSourceConfigDto {
+    fn from(source: ExploreSourceConfig) -> Self {
+        Self {
+            id: source.id,
+            name: source.name,
+            kind: source.kind,
+            endpoint: source.endpoint,
+            enabled: source.enabled,
+            builtin: source.builtin,
+        }
+    }
+}
+
+impl From<ExploreSourceConfigDto> for ExploreSourceConfig {
+    fn from(source: ExploreSourceConfigDto) -> Self {
+        Self {
+            id: source.id,
+            name: source.name,
+            kind: source.kind,
+            endpoint: source.endpoint,
+            enabled: source.enabled,
+            builtin: source.builtin,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreSkillDto {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub source_url: String,
+    pub source_name: String,
+    pub source_kind: String,
+    pub downloads: u64,
+    pub stars: u64,
+}
+
+impl From<ExploreSkill> for ExploreSkillDto {
+    fn from(skill: ExploreSkill) -> Self {
+        Self {
+            id: skill.id,
+            name: skill.name,
+            summary: skill.summary,
+            source_url: skill.source_url,
+            source_name: skill.source_name,
+            source_kind: skill.source_kind,
+            downloads: skill.downloads,
+            stars: skill.stars,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_explore_sources(
+    store: State<'_, SkillStore>,
+) -> Result<Vec<ExploreSourceConfigDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let sources = get_explore_sources_core(&store)?;
+        Ok::<_, anyhow::Error>(
+            sources
+                .into_iter()
+                .map(ExploreSourceConfigDto::from)
+                .collect(),
+        )
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn save_explore_sources(
+    store: State<'_, SkillStore>,
+    sources: Vec<ExploreSourceConfigDto>,
+) -> Result<Vec<ExploreSourceConfigDto>, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let sources: Vec<ExploreSourceConfig> = sources.into_iter().map(Into::into).collect();
+        let saved = save_explore_sources_core(&store, &sources)?;
+        Ok::<_, anyhow::Error>(
+            saved
+                .into_iter()
+                .map(ExploreSourceConfigDto::from)
+                .collect(),
+        )
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn get_explore_skills(
+    store: State<'_, SkillStore>,
+    query: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<ExploreSkillDto>, String> {
+    let store = store.inner().clone();
+    let limit = limit.unwrap_or(60) as usize;
+    tauri::async_runtime::spawn_blocking(move || {
+        let skills = get_explore_skills_core(&store, query.as_deref(), limit)?;
+        Ok::<_, anyhow::Error>(skills.into_iter().map(ExploreSkillDto::from).collect())
     })
     .await
     .map_err(|err| err.to_string())?

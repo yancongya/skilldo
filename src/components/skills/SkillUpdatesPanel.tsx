@@ -27,7 +27,11 @@ const SkillUpdatesPanel = ({
   onPublishSkill,
   t,
 }: SkillUpdatesPanelProps) => {
-  const updateSkills = skills.filter((skill) => updateChecks[skill.id]?.has_update)
+  const pendingSkills = skills.filter((skill) => {
+    const check = updateChecks[skill.id]
+    return check?.has_update || check?.has_local_changes
+  })
+  const updateSkills = pendingSkills.filter((skill) => updateChecks[skill.id]?.has_update)
   if (!open) return null
 
   return (
@@ -42,7 +46,7 @@ const SkillUpdatesPanel = ({
           <div>
             <div className="modal-title">{t('skillUpdatesTitle')}</div>
             <div className="modal-subtitle">
-              {t('skillUpdatesSubtitle', { count: updateSkills.length })}
+              {t('skillUpdatesSubtitle', { count: pendingSkills.length })}
             </div>
           </div>
           <button
@@ -56,13 +60,15 @@ const SkillUpdatesPanel = ({
           </button>
         </div>
         <div className="modal-body skill-updates-body">
-          {updateSkills.length === 0 ? (
+          {pendingSkills.length === 0 ? (
             <div className="empty">{t('skillUpdatesEmpty')}</div>
           ) : (
             <div className="skill-updates-list">
-              {updateSkills.map((skill) => {
+              {pendingSkills.map((skill) => {
                 const check = updateChecks[skill.id]
                 const canPublish = skill.publish_strategy === 'git_push'
+                const canPull = check?.has_update
+                const canPush = canPublish && check?.has_local_changes
                 return (
                   <div className="skill-update-row" key={skill.id}>
                     <div className="skill-update-main">
@@ -71,7 +77,9 @@ const SkillUpdatesPanel = ({
                         <SkillOriginBadge skill={skill} t={t} compact />
                       </div>
                       <div className="skill-update-meta">
-                        {t(`updateStrategy.${skill.update_strategy ?? 'unknown'}`)}
+                        {canPull
+                          ? t(`updateStrategy.${skill.update_strategy ?? 'unknown'}`)
+                          : t('updateStrategy.git_push')}
                         {check.latest_revision ? (
                           <span className="skill-update-revision">
                             {check.latest_revision.slice(0, 7)}
@@ -80,7 +88,7 @@ const SkillUpdatesPanel = ({
                       </div>
                     </div>
                     <div className="skill-update-actions">
-                      {canPublish ? (
+                      {canPush ? (
                         <button
                           className="btn btn-secondary btn-sm"
                           type="button"
@@ -92,15 +100,17 @@ const SkillUpdatesPanel = ({
                           {t('push')}
                         </button>
                       ) : null}
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        type="button"
-                        onClick={() => onUpdateSkill(skill)}
-                        disabled={loading}
-                      >
-                        <RefreshCw size={14} />
-                        {t('update')}
-                      </button>
+                      {canPull ? (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          type="button"
+                          onClick={() => onUpdateSkill(skill)}
+                          disabled={loading}
+                        >
+                          <RefreshCw size={14} />
+                          {t('update')}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 )

@@ -813,6 +813,7 @@ pub struct UpdateCheckResult {
     pub name: String,
     pub checkable: bool,
     pub has_update: bool,
+    pub has_local_changes: bool,
     pub current_revision: Option<String>,
     pub latest_revision: Option<String>,
     pub current_hash: Option<String>,
@@ -845,6 +846,7 @@ pub fn check_all_managed_skill_updates<R: tauri::Runtime>(
                 name: skill.name,
                 checkable: false,
                 has_update: false,
+                has_local_changes: false,
                 current_revision: skill.source_revision,
                 latest_revision: None,
                 current_hash: skill.content_hash,
@@ -868,6 +870,7 @@ fn check_skill_record_update<R: tauri::Runtime>(
             name: record.name.clone(),
             checkable: false,
             has_update: false,
+            has_local_changes: false,
             current_revision: record.source_revision.clone(),
             latest_revision: None,
             current_hash: record.content_hash.clone(),
@@ -879,6 +882,7 @@ fn check_skill_record_update<R: tauri::Runtime>(
     let current_hash = hash_dir(&central_path).ok().or(record.content_hash.clone());
     let mut latest_revision = None;
     let latest_hash;
+    let mut has_local_changes = false;
     let mut cleanup_dir: Option<PathBuf> = None;
 
     if record.source_type == "git" {
@@ -939,6 +943,17 @@ fn check_skill_record_update<R: tauri::Runtime>(
             .map(|subpath| repo_dir.join(subpath))
             .unwrap_or(repo_dir);
         latest_hash = hash_dir(&source_dir).ok();
+        if store
+            .get_skill_origin(&record.id)?
+            .as_ref()
+            .map(|origin| origin.publish_strategy.as_str())
+            == Some("git_push")
+        {
+            has_local_changes = match (&current_hash, &latest_hash) {
+                (Some(current), Some(latest)) => current != latest,
+                _ => false,
+            };
+        }
     } else if record.source_type == "local" {
         let source = record
             .source_ref
@@ -971,6 +986,7 @@ fn check_skill_record_update<R: tauri::Runtime>(
             name: record.name.clone(),
             checkable: false,
             has_update: false,
+            has_local_changes: false,
             current_revision: record.source_revision.clone(),
             latest_revision: None,
             current_hash,
@@ -983,7 +999,8 @@ fn check_skill_record_update<R: tauri::Runtime>(
         let _ = std::fs::remove_dir_all(path);
     }
 
-    let has_update = match (&current_hash, &latest_hash) {
+    let baseline_hash = record.content_hash.as_ref().or(current_hash.as_ref());
+    let has_update = match (baseline_hash, &latest_hash) {
         (Some(current), Some(latest)) => current != latest,
         _ => match (&record.source_revision, &latest_revision) {
             (Some(current), Some(latest)) => current != latest,
@@ -996,6 +1013,7 @@ fn check_skill_record_update<R: tauri::Runtime>(
         name: record.name.clone(),
         checkable: true,
         has_update,
+        has_local_changes,
         current_revision: record.source_revision.clone(),
         latest_revision,
         current_hash,

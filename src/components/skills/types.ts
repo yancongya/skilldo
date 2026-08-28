@@ -121,6 +121,7 @@ export type UpdateCheckResultDto = {
   name: string
   checkable: boolean
   has_update: boolean
+  has_local_changes: boolean
   current_revision?: string | null
   latest_revision?: string | null
   current_hash?: string | null
@@ -149,6 +150,26 @@ export type OnlineSkillDto = {
   installs: number
   source: string
   source_url: string
+}
+
+export type ExploreSourceConfigDto = {
+  id: string
+  name: string
+  kind: string
+  endpoint: string
+  enabled: boolean
+  builtin: boolean
+}
+
+export type ExploreSkillDto = {
+  id: string
+  name: string
+  summary: string
+  sourceUrl: string
+  sourceName: string
+  sourceKind: string
+  downloads: number
+  stars: number
 }
 
 export type SkillFileEntry = {

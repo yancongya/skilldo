@@ -2,6 +2,7 @@ pub mod cache_cleanup;
 pub mod cancel_token;
 pub mod central_repo;
 pub mod content_hash;
+pub mod explore_sources;
 pub mod featured_skills;
 pub mod git_fetcher;
 pub mod github_download;

@@ -26,6 +26,14 @@ pub fn search_skills_online(query: &str, limit: usize) -> Result<Vec<OnlineSkill
     search_skills_online_inner("https://skills.sh", query, limit)
 }
 
+pub fn search_skills_online_with_base(
+    base_url: &str,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<OnlineSkillResult>> {
+    search_skills_online_inner(base_url, query, limit)
+}
+
 fn search_skills_online_inner(
     base_url: &str,
     query: &str,

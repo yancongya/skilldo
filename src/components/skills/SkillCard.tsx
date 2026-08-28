@@ -136,8 +136,12 @@ const SkillCard = ({
             </div>
           ) : null}
           <SkillOriginBadge skill={skill} t={t} />
-          {updateCheck?.has_update ? (
-            <span className="skill-update-badge">{t('updateAvailableShort')}</span>
+          {updateCheck?.has_update || updateCheck?.has_local_changes ? (
+            <span className="skill-update-badge">
+              {updateCheck.has_local_changes && !updateCheck.has_update
+                ? t('pushAvailableShort')
+                : t('updateAvailableShort')}
+            </span>
           ) : null}
         </div>
         {skill.description ? (

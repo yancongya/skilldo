@@ -1,17 +1,18 @@
-import { memo, useMemo } from 'react'
-import { Plus, Search, Star } from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
+import { Database, Plus, Search, Settings2, Star, X } from 'lucide-react'
 import type { TFunction } from 'i18next'
-import type { FeaturedSkillDto, ManagedSkill, OnlineSkillDto } from './types'
+import type { ExploreSkillDto, ExploreSourceConfigDto, ManagedSkill } from './types'
 
 type ExplorePageProps = {
-  featuredSkills: FeaturedSkillDto[]
-  featuredLoading: boolean
+  skills: ExploreSkillDto[]
+  sources: ExploreSourceConfigDto[]
+  loadingSources: boolean
+  exploreLoading: boolean
   exploreFilter: string
-  searchResults: OnlineSkillDto[]
-  searchLoading: boolean
   managedSkills: ManagedSkill[]
   loading: boolean
   onExploreFilterChange: (value: string) => void
+  onSaveSources: (sources: ExploreSourceConfigDto[]) => void
   onInstallSkill: (sourceUrl: string, skillName?: string) => void
   onOpenManualAdd: () => void
   t: TFunction
@@ -23,58 +24,87 @@ function formatCount(n: number): string {
   return String(n)
 }
 
+function normalizeSource(source: string): string {
+  return source
+    .replace('https://github.com/', '')
+    .replace('http://github.com/', '')
+    .replace(/\.git$/, '')
+    .split('/tree/')[0]
+    .toLowerCase()
+}
+
 const ExplorePage = ({
-  featuredSkills,
-  featuredLoading,
+  skills,
+  sources,
+  loadingSources,
+  exploreLoading,
   exploreFilter,
-  searchResults,
-  searchLoading,
   managedSkills,
   loading,
   onExploreFilterChange,
+  onSaveSources,
   onInstallSkill,
   onOpenManualAdd,
   t,
 }: ExplorePageProps) => {
-  const filteredSkills = useMemo(() => {
-    if (!exploreFilter.trim()) return featuredSkills
-    const lower = exploreFilter.toLowerCase()
-    return featuredSkills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(lower) ||
-        s.summary.toLowerCase().includes(lower),
-    )
-  }, [featuredSkills, exploreFilter])
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(false)
+  const [draftSources, setDraftSources] = useState<ExploreSourceConfigDto[]>([])
 
-  const deduplicatedResults = useMemo(() => {
-    const featuredNames = new Set(filteredSkills.map((s) => s.name.toLowerCase()))
-    return searchResults.filter((s) => !featuredNames.has(s.name.toLowerCase()))
-  }, [searchResults, filteredSkills])
-
-  const isSearchActive = exploreFilter.trim().length >= 2
-
-  // Check if a skill is already installed by matching name + source (case-insensitive)
   const installedSkillKeys = useMemo(() => {
     const keys = new Set<string>()
     for (const skill of managedSkills) {
-      const source = (skill.source_ref ?? '')
-        .replace('https://github.com/', '')
-        .replace(/\.git$/, '')
-        .split('/tree/')[0]
-        .toLowerCase()
-      keys.add(`${skill.name.toLowerCase()}|${source}`)
+      keys.add(`${skill.name.toLowerCase()}|${normalizeSource(skill.source_ref ?? '')}`)
     }
     return keys
   }, [managedSkills])
 
-  const isInstalled = (skillName: string, source: string) => {
-    const normalizedSource = source
-      .replace('https://github.com/', '')
-      .replace(/\.git$/, '')
-      .split('/tree/')[0]
-      .toLowerCase()
-    return installedSkillKeys.has(`${skillName.toLowerCase()}|${normalizedSource}`)
+  const enabledSourceCount = sources.filter((source) => source.enabled).length
+
+  const openSourcePanel = () => {
+    setDraftSources(sources)
+    setSourcePanelOpen(true)
   }
+
+  const closeSourcePanel = () => {
+    if (loadingSources) return
+    setSourcePanelOpen(false)
+  }
+
+  const updateDraftSource = (
+    id: string,
+    patch: Partial<ExploreSourceConfigDto>,
+  ) => {
+    setDraftSources((current) =>
+      current.map((source) => (source.id === id ? { ...source, ...patch } : source)),
+    )
+  }
+
+  const addPrivateSource = () => {
+    const id = `custom-${Date.now()}`
+    setDraftSources((current) => [
+      ...current,
+      {
+        id,
+        name: t('exploreSourceCustomName'),
+        kind: 'json_index',
+        endpoint: '',
+        enabled: true,
+        builtin: false,
+      },
+    ])
+  }
+
+  const removeDraftSource = (id: string) => {
+    setDraftSources((current) => current.filter((source) => source.id !== id))
+  }
+
+  const saveSources = () => {
+    onSaveSources(draftSources)
+    setSourcePanelOpen(false)
+  }
+
+  const isInstalled = (skill: ExploreSkillDto) =>
+    installedSkillKeys.has(`${skill.name.toLowerCase()}|${normalizeSource(skill.sourceUrl)}`)
 
   return (
     <div className="explore-page">
@@ -92,6 +122,16 @@ const ExplorePage = ({
           <button
             className="btn btn-secondary explore-manual-btn"
             type="button"
+            onClick={openSourcePanel}
+            disabled={loading}
+            title={t('exploreSourcesTitle')}
+          >
+            <Settings2 size={15} />
+            {t('exploreSourcesButton', { count: enabledSourceCount })}
+          </button>
+          <button
+            className="btn btn-secondary explore-manual-btn"
+            type="button"
             onClick={onOpenManualAdd}
             disabled={loading}
           >
@@ -99,118 +139,190 @@ const ExplorePage = ({
             {t('manualAdd')}
           </button>
         </div>
-        <div className="explore-source-label">
-          {t('exploreSourceHint')}
-        </div>
+        <div className="explore-source-label">{t('exploreSourceHint')}</div>
       </div>
 
       <div className="explore-scroll">
-        {/* Featured section */}
-        {featuredLoading ? (
+        {exploreLoading ? (
           <div className="explore-loading">{t('exploreLoading')}</div>
-        ) : (
+        ) : skills.length > 0 ? (
           <>
-            {isSearchActive && filteredSkills.length > 0 && (
-              <div className="explore-section-title">{t('exploreFeaturedTitle')}</div>
-            )}
-            {filteredSkills.length > 0 ? (
-              <div className="explore-grid">
-                {filteredSkills.map((skill) => {
-                  const installed = isInstalled(skill.name, skill.source_url)
-                  return (
-                    <div key={skill.slug} className="explore-card">
-                      <div className="explore-card-top">
-                        <div className="explore-card-info">
-                          <div className="explore-card-name">{skill.name}</div>
-                          <div className="explore-card-author">
-                            {skill.source_url
-                              .replace('https://github.com/', '')
-                              .split('/tree/')[0]}
-                          </div>
+            <div className="explore-section-title">
+              {exploreFilter.trim() ? t('exploreSearchResultsTitle') : t('exploreFeaturedTitle')}
+            </div>
+            <div className="explore-grid">
+              {skills.map((skill) => {
+                const installed = isInstalled(skill)
+                return (
+                  <div key={skill.id} className="explore-card">
+                    <div className="explore-card-top">
+                      <div className="explore-card-info">
+                        <div className="explore-card-name">{skill.name}</div>
+                        <div className="explore-card-author">
+                          {skill.sourceName} · {normalizeSource(skill.sourceUrl)}
                         </div>
-                        {installed ? (
-                          <span className="explore-btn-installed">
-                            {t('status.installed')}
-                          </span>
-                        ) : (
-                          <button
-                            className="explore-btn-install"
-                            type="button"
-                            disabled={loading}
-                            onClick={() => onInstallSkill(skill.source_url)}
-                          >
-                            {t('install')}
-                          </button>
-                        )}
                       </div>
+                      {installed ? (
+                        <span className="explore-btn-installed">{t('status.installed')}</span>
+                      ) : (
+                        <button
+                          className="explore-btn-install"
+                          type="button"
+                          disabled={loading}
+                          onClick={() => onInstallSkill(skill.sourceUrl, skill.name)}
+                        >
+                          {t('install')}
+                        </button>
+                      )}
+                    </div>
+                    {skill.summary ? (
                       <div className="explore-card-desc">{skill.summary}</div>
-                      <div className="explore-card-bottom">
-                        <div className="explore-card-stats">
+                    ) : null}
+                    <div className="explore-card-bottom">
+                      <div className="explore-card-stats">
+                        {skill.stars > 0 ? (
                           <span className="explore-stat">
                             <Star size={12} />
                             {formatCount(skill.stars)}
                           </span>
-                        </div>
+                        ) : null}
+                        {skill.downloads > 0 ? (
+                          <span className="explore-stat">
+                            <Database size={12} />
+                            {formatCount(skill.downloads)}
+                          </span>
+                        ) : null}
+                        <span className="explore-source-chip">{skill.sourceKind}</span>
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            ) : !isSearchActive ? (
-              <div className="explore-empty">{t('exploreEmpty')}</div>
-            ) : null}
-
-            {/* Online search results */}
-            {isSearchActive && (
-              <>
-                <div className="explore-section-title">{t('exploreOnlineTitle')}</div>
-                {searchLoading ? (
-                  <div className="explore-loading">{t('searchLoading')}</div>
-                ) : deduplicatedResults.length > 0 ? (
-                  <div className="explore-grid">
-                    {deduplicatedResults.map((skill) => {
-                      const installed = isInstalled(skill.name, skill.source_url)
-                      return (
-                        <div key={skill.source} className="explore-card">
-                          <div className="explore-card-top">
-                            <div className="explore-card-info">
-                              <div className="explore-card-name">{skill.name}</div>
-                              <div className="explore-card-author">{skill.source}</div>
-                            </div>
-                            {installed ? (
-                              <span className="explore-btn-installed">
-                                {t('status.installed')}
-                              </span>
-                            ) : (
-                              <button
-                                className="explore-btn-install"
-                                type="button"
-                                disabled={loading}
-                                onClick={() => onInstallSkill(skill.source_url, skill.name)}
-                              >
-                                {t('install')}
-                              </button>
-                            )}
-                          </div>
-                          <div className="explore-card-bottom">
-                            <div className="explore-card-stats">
-                              <span className="explore-stat">
-                                {formatCount(skill.installs)} installs
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
                   </div>
-                ) : (
-                  <div className="explore-empty">{t('searchEmpty')}</div>
-                )}
-              </>
-            )}
+                )
+              })}
+            </div>
           </>
+        ) : (
+          <div className="explore-empty">
+            {exploreFilter.trim() ? t('searchEmpty') : t('exploreEmpty')}
+          </div>
         )}
       </div>
+
+      {sourcePanelOpen ? (
+        <div className="modal-backdrop" onClick={closeSourcePanel}>
+          <section
+            className="modal modal-lg explore-sources-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">{t('exploreSourcesTitle')}</div>
+                <div className="modal-subtitle">{t('exploreSourcesSubtitle')}</div>
+              </div>
+              <button
+                className="modal-close"
+                type="button"
+                onClick={closeSourcePanel}
+                disabled={loadingSources}
+                aria-label={t('close')}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body explore-sources-body">
+              {draftSources.map((source) => (
+                <div className="explore-source-row" key={source.id}>
+                  <label className="settings-toggle-row">
+                    <button
+                      className={`settings-toggle${source.enabled ? ' checked' : ''}`}
+                      type="button"
+                      onClick={() => updateDraftSource(source.id, { enabled: !source.enabled })}
+                      aria-pressed={source.enabled}
+                    >
+                      <span className="settings-toggle-knob" />
+                    </button>
+                  </label>
+                  <div className="explore-source-fields">
+                    <div className="settings-input-row">
+                      <input
+                        className="settings-input"
+                        value={source.name}
+                        onChange={(event) =>
+                          updateDraftSource(source.id, { name: event.target.value })
+                        }
+                        placeholder={t('exploreSourceName')}
+                      />
+                      <select
+                        className="settings-select explore-source-kind"
+                        value={source.kind}
+                        onChange={(event) =>
+                          updateDraftSource(source.id, { kind: event.target.value })
+                        }
+                      >
+                        <option value="featured_json">featured_json</option>
+                        <option value="skills_sh">skills_sh</option>
+                        <option value="json_index">json_index</option>
+                        <option value="git_index">git_index</option>
+                      </select>
+                    </div>
+                    <input
+                      className="settings-input mono"
+                      value={source.endpoint}
+                      onChange={(event) =>
+                        updateDraftSource(source.id, { endpoint: event.target.value })
+                      }
+                      placeholder={t('exploreSourceEndpoint')}
+                    />
+                    <div className="settings-helper">
+                      {source.builtin
+                        ? t('exploreSourceBuiltinHint')
+                        : t('exploreSourceCustomHint')}
+                    </div>
+                  </div>
+                  {!source.builtin ? (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      onClick={() => removeDraftSource(source.id)}
+                      disabled={loadingSources}
+                    >
+                      {t('remove')}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={addPrivateSource}
+                disabled={loadingSources}
+              >
+                <Plus size={15} />
+                {t('exploreAddSource')}
+              </button>
+            </div>
+            <div className="modal-footer space-between">
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={closeSourcePanel}
+                disabled={loadingSources}
+              >
+                {t('close')}
+              </button>
+              <button
+                className="btn btn-primary"
+                type="button"
+                onClick={saveSources}
+                disabled={loadingSources}
+              >
+                {t('save')}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   )
 }

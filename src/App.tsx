@@ -25,13 +25,13 @@ import NamePromptModal from './components/skills/modals/NamePromptModal'
 import SettingsPage from './components/skills/SettingsPage'
 import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
-  FeaturedSkillDto,
+  ExploreSkillDto,
+  ExploreSourceConfigDto,
   GitSkillCandidate,
   InstallResultDto,
   LocalSkillCandidate,
   ManagedSkill,
   OnboardingPlan,
-  OnlineSkillDto,
   OriginRules,
   PublishResultDto,
   TagWithCountDto,
@@ -125,11 +125,11 @@ function App() {
   const [pendingDeleteTag, setPendingDeleteTag] = useState<TagWithCountDto | null>(null)
   const [addModalTab, setAddModalTab] = useState<'local' | 'git' | 'package'>('git')
   const [addModalTagIds, setAddModalTagIds] = useState<number[]>([])
-  const [featuredSkills, setFeaturedSkills] = useState<FeaturedSkillDto[]>([])
-  const [featuredLoading, setFeaturedLoading] = useState(false)
+  const [exploreSkills, setExploreSkills] = useState<ExploreSkillDto[]>([])
+  const [exploreSources, setExploreSources] = useState<ExploreSourceConfigDto[]>([])
+  const [exploreLoading, setExploreLoading] = useState(false)
   const [exploreFilter, setExploreFilter] = useState('')
-  const [searchResults, setSearchResults] = useState<OnlineSkillDto[]>([])
-  const [searchLoading, setSearchLoading] = useState(false)
+  const [savingExploreSources, setSavingExploreSources] = useState(false)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [autoSelectSkillName, setAutoSelectSkillName] = useState<string | null>(null)
   const [scopeModalSkill, setScopeModalSkill] = useState<ManagedSkill | null>(null)
@@ -747,7 +747,10 @@ function App() {
     [managedSkills],
   )
   const pendingSkillUpdateCount = useMemo(
-    () => Object.values(skillUpdateChecks).filter((item) => item.has_update).length,
+    () =>
+      Object.values(skillUpdateChecks).filter(
+        (item) => item.has_update || item.has_local_changes,
+      ).length,
     [skillUpdateChecks],
   )
 
@@ -888,30 +891,46 @@ function App() {
     await Promise.all([loadManagedSkills(), loadPlan(), loadTags()])
   }, [loadManagedSkills, loadPlan, loadTags])
 
-  const loadFeaturedSkills = useCallback(async () => {
-    if (featuredSkills.length > 0) return
-    setFeaturedLoading(true)
+  const loadExploreSources = useCallback(async () => {
     try {
-      const result = await invokeTauri<FeaturedSkillDto[]>('get_featured_skills')
-      setFeaturedSkills(result)
+      const result = await invokeTauri<ExploreSourceConfigDto[]>('get_explore_sources')
+      setExploreSources(result)
     } catch {
-      // silent — explore tab will show empty state
-    } finally {
-      setFeaturedLoading(false)
+      // silent — explore tab can still show cached skills or empty state
     }
-  }, [featuredSkills.length, invokeTauri])
+  }, [invokeTauri])
+
+  const loadExploreSkills = useCallback(
+    async (query = exploreFilter) => {
+      setExploreLoading(true)
+      try {
+        const result = await invokeTauri<ExploreSkillDto[]>('get_explore_skills', {
+          query: query.trim() || undefined,
+          limit: 80,
+        })
+        setExploreSkills(result)
+      } catch {
+        toast.error(t('searchError'))
+        setExploreSkills([])
+      } finally {
+        setExploreLoading(false)
+      }
+    },
+    [exploreFilter, invokeTauri, t],
+  )
 
   const handleViewChange = useCallback(
     (view: 'myskills' | 'explore' | 'tags') => {
       setActiveView(view)
       if (view === 'explore') {
-        loadFeaturedSkills()
+        void loadExploreSources()
+        void loadExploreSkills('')
       }
       if (view === 'myskills') {
         setDetailSkill(null)
       }
     },
-    [loadFeaturedSkills],
+    [loadExploreSkills, loadExploreSources],
   )
 
   const handleOpenDetail = useCallback((skill: ManagedSkill) => {
@@ -953,28 +972,30 @@ function App() {
         clearTimeout(searchTimerRef.current)
         searchTimerRef.current = null
       }
-      if (value.trim().length < 2) {
-        setSearchResults([])
-        setSearchLoading(false)
-        return
-      }
-      setSearchLoading(true)
-      searchTimerRef.current = setTimeout(async () => {
-        try {
-          const results = await invokeTauri<OnlineSkillDto[]>(
-            'search_skills_online',
-            { query: value.trim(), limit: 20 },
-          )
-          setSearchResults(results)
-        } catch {
-          toast.error(t('searchError'))
-          setSearchResults([])
-        } finally {
-          setSearchLoading(false)
-        }
+      searchTimerRef.current = setTimeout(() => {
+        void loadExploreSkills(value)
       }, 500)
     },
-    [invokeTauri, t],
+    [loadExploreSkills],
+  )
+
+  const handleSaveExploreSources = useCallback(
+    async (sources: ExploreSourceConfigDto[]) => {
+      setSavingExploreSources(true)
+      try {
+        const saved = await invokeTauri<ExploreSourceConfigDto[]>('save_explore_sources', {
+          sources,
+        })
+        setExploreSources(saved)
+        setSuccessToastMessage(t('settingsSaved'))
+        await loadExploreSkills(exploreFilter)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setSavingExploreSources(false)
+      }
+    },
+    [exploreFilter, invokeTauri, loadExploreSkills, t],
   )
 
 
@@ -2747,7 +2768,9 @@ function App() {
   )
 
   const handleCheckSkillUpdates = useCallback(async () => {
-    const existingCount = Object.values(skillUpdateChecks).filter((item) => item.has_update).length
+    const existingCount = Object.values(skillUpdateChecks).filter(
+      (item) => item.has_update || item.has_local_changes,
+    ).length
     if (existingCount > 0) {
       setShowSkillUpdatesPanel(true)
       return
@@ -2764,7 +2787,7 @@ function App() {
         return acc
       }, {})
       setSkillUpdateChecks(next)
-      const count = results.filter((item) => item.has_update).length
+      const count = results.filter((item) => item.has_update || item.has_local_changes).length
       setShowSkillUpdatesPanel(true)
       const statusText = t('status.skillUpdatesChecked', { count })
       setActionMessage(statusText)
@@ -2796,6 +2819,11 @@ function App() {
         setActionMessage(publishedText)
         setSuccessToastMessage(publishedText)
         setActionMessage(null)
+        setSkillUpdateChecks((prev) => {
+          const next = { ...prev }
+          delete next[skill.id]
+          return next
+        })
         await loadManagedSkills()
       } catch (err) {
         const raw = err instanceof Error ? err.message : String(err)
@@ -3014,14 +3042,15 @@ function App() {
           />
         ) : (
           <ExplorePage
-            featuredSkills={featuredSkills}
-            featuredLoading={featuredLoading}
+            skills={exploreSkills}
+            sources={exploreSources}
+            loadingSources={savingExploreSources}
+            exploreLoading={exploreLoading}
             exploreFilter={exploreFilter}
-            searchResults={searchResults}
-            searchLoading={searchLoading}
             managedSkills={managedSkills}
             loading={loading}
             onExploreFilterChange={handleExploreFilterChange}
+            onSaveSources={handleSaveExploreSources}
             onInstallSkill={handleExploreInstall}
             onOpenManualAdd={handleOpenAdd}
             t={t}
