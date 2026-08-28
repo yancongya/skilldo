@@ -79,10 +79,10 @@ fn open_store(db: Option<&PathBuf>) -> Result<SkillStore> {
         Some(p) => p.clone(),
         None => default_db_path_cli().context("failed to resolve default database path")?,
     };
-    let store = SkillStore::new(db_path);
+    let store = SkillStore::new(db_path.clone());
     store
         .ensure_schema()
-        .context("failed to ensure database schema")?;
+        .with_context(|| format!("failed to open db at \"{}\"", db_path.display()))?;
     // Keep legacy-database migration in sync with the desktop client. A failed
     // migration is non-fatal for read commands, so only surface it as a warning.
     if let Err(err) = crate::core::skill_store::migrate_legacy_db_if_needed(store.db_path()) {
