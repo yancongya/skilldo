@@ -81,34 +81,36 @@ esac
 
 npx tauri build $TAURI_FLAG
 
-# 输出结果路径
+# 收集最终产物到 out/
+OUT_DIR="$PROJECT_ROOT/out"
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
+
+BUNDLE_DIR="src-tauri/target/release/bundle"
+
+# 复制 DMG
+for f in "$BUNDLE_DIR/dmg/"*.dmg; do
+  [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ out/$(basename "$f")"
+done
+
+# 复制 .app
+for d in "$BUNDLE_DIR/macos/"*.app; do
+  [ -d "$d" ] && cp -R "$d" "$OUT_DIR/" && echo "→ out/$(basename "$d")"
+done
+
+# 复制 Windows/Linux 产物
+for f in "$BUNDLE_DIR/nsis/"*.exe "$BUNDLE_DIR/msi/"*.msi "$BUNDLE_DIR/deb/"*.deb "$BUNDLE_DIR/appimage/"*.AppImage; do
+  [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ out/$(basename "$f")"
+done
+
+# 复制 CLI 二进制
+cp src-tauri/target/release/skillhub "$OUT_DIR/" && echo "→ out/skillhub"
+
+# 输出结果
 echo ""
 echo "========================================="
 echo " ✓ 构建完成"
 echo "========================================="
 echo ""
-
-BUNDLE_DIR="src-tauri/target/release/bundle"
-if [ -d "$BUNDLE_DIR/dmg" ]; then
-  echo "macOS DMG:"
-  ls -1 "$BUNDLE_DIR/dmg/"*.dmg 2>/dev/null || true
-fi
-if [ -d "$BUNDLE_DIR/macos" ]; then
-  echo "macOS App:"
-  ls -1d "$BUNDLE_DIR/macos/"*.app 2>/dev/null || true
-fi
-if [ -d "$BUNDLE_DIR/nsis" ]; then
-  echo "Windows NSIS:"
-  ls -1 "$BUNDLE_DIR/nsis/"*.exe 2>/dev/null || true
-fi
-if [ -d "$BUNDLE_DIR/deb" ]; then
-  echo "Linux deb:"
-  ls -1 "$BUNDLE_DIR/deb/"*.deb 2>/dev/null || true
-fi
-if [ -d "$BUNDLE_DIR/appimage" ]; then
-  echo "Linux AppImage:"
-  ls -1 "$BUNDLE_DIR/appimage/"*.AppImage 2>/dev/null || true
-fi
-echo ""
-echo "CLI 二进制:"
-ls -lh src-tauri/target/release/skillhub 2>/dev/null || true
+echo "所有产物已复制到 out/:"
+ls -lh "$OUT_DIR/"
