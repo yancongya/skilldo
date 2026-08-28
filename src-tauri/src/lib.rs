@@ -1,5 +1,6 @@
+pub mod cli;
 mod commands;
-mod core;
+pub mod core;
 
 use std::sync::Arc;
 

@@ -37,6 +37,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 junction = "1.1"
 uuid = { version = "1", features = ["v4"] }
 urlencoding = "2.1"
+clap = { version = "4", features = ["derive"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
@@ -46,3 +47,7 @@ objc2-foundation = "0.3"
 [dev-dependencies]
 tempfile = "3"
 mockito = "1"
+
+[[bin]]
+name = "skillhub"
+path = "src/bin/skillhub.rs"

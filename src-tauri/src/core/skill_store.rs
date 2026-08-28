@@ -861,6 +861,23 @@ pub fn default_db_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<P
     Ok(app_dir.join(DB_FILE_NAME))
 }
 
+/// App identifier, must match `identifier` in `tauri.conf.json` so the CLI and
+/// the Tauri GUI resolve the exact same SQLite database path.
+pub const APP_IDENTIFIER: &str = "com.qufei1993.skillshub";
+
+/// Resolve the default database path without a Tauri `AppHandle`.
+///
+/// Mirrors [`default_db_path`] (which uses `app.path().app_data_dir()`) by
+/// composing `dirs::data_dir()` with the app identifier, so the CLI shares the
+/// same on-disk database as the desktop client.
+pub fn default_db_path_cli() -> Result<PathBuf> {
+    let data_dir = dirs::data_dir().context("failed to resolve user data dir")?;
+    let app_dir = data_dir.join(APP_IDENTIFIER);
+    std::fs::create_dir_all(&app_dir)
+        .with_context(|| format!("failed to create app data dir {:?}", app_dir))?;
+    Ok(app_dir.join(DB_FILE_NAME))
+}
+
 pub fn migrate_legacy_db_if_needed(target_db_path: &Path) -> Result<()> {
     let Some(data_dir) = dirs::data_dir() else {
         return Ok(());
