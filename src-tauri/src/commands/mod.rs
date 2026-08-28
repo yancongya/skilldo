@@ -14,6 +14,7 @@ use crate::core::cache_cleanup::{
 use crate::core::cancel_token::CancelToken;
 use crate::core::central_repo::{ensure_central_repo, resolve_central_repo_path};
 use crate::core::content_hash::hash_dir;
+use crate::core::expand_home_path;
 use crate::core::explore_sources::{
     get_explore_skills as get_explore_skills_core, get_explore_sources as get_explore_sources_core,
     save_explore_sources as save_explore_sources_core, ExploreSkill, ExploreSourceConfig,
@@ -901,22 +902,6 @@ pub struct InstallResultDto {
     pub name: String,
     pub central_path: String,
     pub content_hash: Option<String>,
-}
-
-fn expand_home_path(input: &str) -> Result<std::path::PathBuf, anyhow::Error> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        anyhow::bail!("storage path is empty");
-    }
-    if trimmed == "~" {
-        let home = dirs::home_dir().context("failed to resolve home directory")?;
-        return Ok(home);
-    }
-    if let Some(stripped) = trimmed.strip_prefix("~/") {
-        let home = dirs::home_dir().context("failed to resolve home directory")?;
-        return Ok(home.join(stripped));
-    }
-    Ok(std::path::PathBuf::from(trimmed))
 }
 
 fn normalize_scope(scope: Option<&str>) -> Result<&'static str, anyhow::Error> {
@@ -2367,6 +2352,13 @@ impl From<ExploreSkill> for ExploreSkillDto {
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreFetchResultDto {
+    pub skills: Vec<ExploreSkillDto>,
+    pub errors: Vec<String>,
+}
+
 #[tauri::command]
 pub async fn get_explore_sources(
     store: State<'_, SkillStore>,
@@ -2412,12 +2404,19 @@ pub async fn get_explore_skills(
     store: State<'_, SkillStore>,
     query: Option<String>,
     limit: Option<u32>,
-) -> Result<Vec<ExploreSkillDto>, String> {
+) -> Result<ExploreFetchResultDto, String> {
     let store = store.inner().clone();
-    let limit = limit.unwrap_or(60) as usize;
+    let limit = limit.unwrap_or(80) as usize;
     tauri::async_runtime::spawn_blocking(move || {
-        let skills = get_explore_skills_core(&store, query.as_deref(), limit)?;
-        Ok::<_, anyhow::Error>(skills.into_iter().map(ExploreSkillDto::from).collect())
+        let result = get_explore_skills_core(&store, query.as_deref(), limit)?;
+        Ok::<_, anyhow::Error>(ExploreFetchResultDto {
+            skills: result
+                .skills
+                .into_iter()
+                .map(ExploreSkillDto::from)
+                .collect(),
+            errors: result.errors,
+        })
     })
     .await
     .map_err(|err| err.to_string())?

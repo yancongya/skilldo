@@ -27,6 +27,7 @@ import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
   ExploreSkillDto,
   ExploreSourceConfigDto,
+  ExploreFetchResultDto,
   GitSkillCandidate,
   InstallResultDto,
   LocalSkillCandidate,
@@ -127,6 +128,7 @@ function App() {
   const [addModalTagIds, setAddModalTagIds] = useState<number[]>([])
   const [exploreSkills, setExploreSkills] = useState<ExploreSkillDto[]>([])
   const [exploreSources, setExploreSources] = useState<ExploreSourceConfigDto[]>([])
+  const [exploreErrors, setExploreErrors] = useState<string[]>([])
   const [exploreLoading, setExploreLoading] = useState(false)
   const [exploreFilter, setExploreFilter] = useState('')
   const [savingExploreSources, setSavingExploreSources] = useState(false)
@@ -904,14 +906,16 @@ function App() {
     async (query = exploreFilter) => {
       setExploreLoading(true)
       try {
-        const result = await invokeTauri<ExploreSkillDto[]>('get_explore_skills', {
+        const result = await invokeTauri<ExploreFetchResultDto>('get_explore_skills', {
           query: query.trim() || undefined,
           limit: 80,
         })
-        setExploreSkills(result)
+        setExploreSkills(result.skills ?? [])
+        setExploreErrors(result.errors ?? [])
       } catch {
         toast.error(t('searchError'))
         setExploreSkills([])
+        setExploreErrors([])
       } finally {
         setExploreLoading(false)
       }
@@ -3047,6 +3051,7 @@ function App() {
             loadingSources={savingExploreSources}
             exploreLoading={exploreLoading}
             exploreFilter={exploreFilter}
+            exploreErrors={exploreErrors}
             managedSkills={managedSkills}
             loading={loading}
             onExploreFilterChange={handleExploreFilterChange}

@@ -172,6 +172,11 @@ export type ExploreSkillDto = {
   stars: number
 }
 
+export type ExploreFetchResultDto = {
+  skills: ExploreSkillDto[]
+  errors: string[]
+}
+
 export type SkillFileEntry = {
   path: string
   size: number

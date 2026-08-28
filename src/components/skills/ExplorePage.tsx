@@ -9,6 +9,7 @@ type ExplorePageProps = {
   loadingSources: boolean
   exploreLoading: boolean
   exploreFilter: string
+  exploreErrors: string[]
   managedSkills: ManagedSkill[]
   loading: boolean
   onExploreFilterChange: (value: string) => void
@@ -39,6 +40,7 @@ const ExplorePage = ({
   loadingSources,
   exploreLoading,
   exploreFilter,
+  exploreErrors,
   managedSkills,
   loading,
   onExploreFilterChange,
@@ -143,6 +145,16 @@ const ExplorePage = ({
       </div>
 
       <div className="explore-scroll">
+        {exploreErrors.length > 0 && !exploreLoading ? (
+          <div className="explore-error-banner" role="alert">
+            <div className="explore-error-title">{t('exploreSourcesWarning')}</div>
+            <ul className="explore-error-list">
+              {exploreErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {exploreLoading ? (
           <div className="explore-loading">{t('exploreLoading')}</div>
         ) : skills.length > 0 ? (
