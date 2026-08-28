@@ -114,3 +114,12 @@ echo "========================================="
 echo ""
 echo "所有产物已复制到 out/:"
 ls -lh "$OUT_DIR/"
+
+# 清理构建衍生品（保留 src-tauri/target/ 缓存以加速下次构建）
+echo ""
+echo "▶ Cleaning build intermediates..."
+rm -rf "$BUNDLE_DIR/dmg"/*.dmg "$BUNDLE_DIR/dmg"/*.sh \
+       "$BUNDLE_DIR/dmg"/*.icns 2>/dev/null || true
+rm -rf "$BUNDLE_DIR/nsis" "$BUNDLE_DIR/msi" "$BUNDLE_DIR/deb" "$BUNDLE_DIR/appimage" 2>/dev/null || true
+rm -rf "$BUNDLE_DIR/macos" 2>/dev/null || true
+echo "✓ Intermediate bundles cleaned"
