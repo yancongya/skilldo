@@ -1961,6 +1961,694 @@ fn frontmatter_block_style(value: &str) -> Option<char> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CLI-compatible variants (no AppHandle dependency)
+// ---------------------------------------------------------------------------
+//
+// These mirror the Tauri-flavored functions above but accept `PathBuf` for
+// paths that the GUI resolves via `AppHandle`. This lets the `skillhub` CLI
+// binary (which has no Tauri runtime) reuse the same core logic.
+
+use super::central_repo::resolve_central_repo_path_cli;
+
+/// Resolve the git cache root directory without an AppHandle.
+/// Uses `~/.cache/skills-hub-git-cache/` as the CLI equivalent of
+/// `app.path().app_cache_dir().join("skills-hub-git-cache")`.
+fn git_cache_root_cli() -> Result<PathBuf> {
+    let base = dirs::cache_dir().context("failed to resolve cache directory")?;
+    let root = base.join("skills-hub-git-cache");
+    std::fs::create_dir_all(&root)
+        .with_context(|| format!("failed to create cache dir {:?}", root))?;
+    Ok(root)
+}
+
+fn clone_to_cache_cli(
+    store: &SkillStore,
+    clone_url: &str,
+    branch: Option<&str>,
+    cancel: Option<&CancelToken>,
+) -> Result<(PathBuf, String)> {
+    let started = std::time::Instant::now();
+    let cache_root = git_cache_root_cli()?;
+
+    let repo_dir = cache_root.join(repo_cache_key(clone_url, branch, None));
+    let meta_path = repo_dir.join(".skills-hub-cache.json");
+
+    let lock = GIT_CACHE_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().unwrap_or_else(|err| err.into_inner());
+
+    if repo_dir.join(".git").exists() {
+        if let Ok(meta) = std::fs::read_to_string(&meta_path) {
+            if let Ok(meta) = serde_json::from_str::<RepoCacheMeta>(&meta) {
+                if let Some(head) = meta.head {
+                    let ttl_ms = get_git_cache_ttl_secs(store).saturating_mul(1000);
+                    if ttl_ms > 0 && now_ms().saturating_sub(meta.last_fetched_ms) < ttl_ms {
+                        log::info!(
+                            "[installer:cli] git cache hit {}s url={} branch={:?}",
+                            started.elapsed().as_secs_f32(),
+                            clone_url,
+                            branch,
+                        );
+                        return Ok((repo_dir, head));
+                    }
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "[installer:cli] git cache miss/stale; fetching {}s url={} branch={:?}",
+        started.elapsed().as_secs_f32(),
+        clone_url,
+        branch,
+    );
+
+    let rev = match clone_or_pull(clone_url, &repo_dir, branch, cancel) {
+        Ok(rev) => rev,
+        Err(err) => {
+            if repo_dir.exists() {
+                let _ = std::fs::remove_dir_all(&repo_dir);
+            }
+            clone_or_pull(clone_url, &repo_dir, branch, cancel)
+                .with_context(|| format!("{:#}", err))?
+        }
+    };
+
+    let _ = std::fs::write(
+        &meta_path,
+        serde_json::to_string(&RepoCacheMeta {
+            last_fetched_ms: now_ms(),
+            head: Some(rev.clone()),
+        })
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+
+    log::info!(
+        "[installer:cli] git cache ready {}s url={} branch={:?} head={}",
+        started.elapsed().as_secs_f32(),
+        clone_url,
+        branch,
+        rev
+    );
+    Ok((repo_dir, rev))
+}
+
+fn clone_to_cache_subpath_cli(
+    store: &SkillStore,
+    clone_url: &str,
+    branch: Option<&str>,
+    subpath: &str,
+    cancel: Option<&CancelToken>,
+) -> Result<(PathBuf, String)> {
+    let started = std::time::Instant::now();
+    let cache_root = git_cache_root_cli()?;
+
+    let repo_dir = cache_root.join(repo_cache_key(clone_url, branch, Some(subpath)));
+    let meta_path = repo_dir.join(".skills-hub-cache.json");
+
+    let lock = GIT_CACHE_LOCK.get_or_init(|| Mutex::new(()));
+    let _guard = lock.lock().unwrap_or_else(|err| err.into_inner());
+
+    if repo_dir.join(".git").exists() {
+        if let Ok(meta) = std::fs::read_to_string(&meta_path) {
+            if let Ok(meta) = serde_json::from_str::<RepoCacheMeta>(&meta) {
+                if let Some(head) = meta.head {
+                    let ttl_ms = get_git_cache_ttl_secs(store).saturating_mul(1000);
+                    if ttl_ms > 0 && now_ms().saturating_sub(meta.last_fetched_ms) < ttl_ms {
+                        log::info!(
+                            "[installer:cli] git cache hit (subpath) {}s url={} subpath={}",
+                            started.elapsed().as_secs_f32(),
+                            clone_url,
+                            subpath,
+                        );
+                        return Ok((repo_dir, head));
+                    }
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "[installer:cli] git cache miss/stale (subpath); fetching {}s url={} subpath={}",
+        started.elapsed().as_secs_f32(),
+        clone_url,
+        subpath,
+    );
+
+    let rev = match clone_or_pull_sparse(clone_url, &repo_dir, branch, subpath, cancel) {
+        Ok(rev) => rev,
+        Err(err) => {
+            if repo_dir.exists() {
+                let _ = std::fs::remove_dir_all(&repo_dir);
+            }
+            clone_or_pull_sparse(clone_url, &repo_dir, branch, subpath, cancel)
+                .with_context(|| format!("{:#}", err))?
+        }
+    };
+
+    let _ = std::fs::write(
+        &meta_path,
+        serde_json::to_string(&RepoCacheMeta {
+            last_fetched_ms: now_ms(),
+            head: Some(rev.clone()),
+        })
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+
+    log::info!(
+        "[installer:cli] git cache ready (subpath) {}s url={} subpath={} head={}",
+        started.elapsed().as_secs_f32(),
+        clone_url,
+        subpath,
+        rev
+    );
+    Ok((repo_dir, rev))
+}
+
+/// CLI variant of `install_git_skill`: no AppHandle, no cancel token.
+pub fn install_git_skill_cli(
+    store: &SkillStore,
+    repo_url: &str,
+    name: Option<String>,
+) -> Result<InstallResult> {
+    let parsed = parse_github_url(repo_url);
+    let name = name.unwrap_or_else(|| {
+        if let Some(subpath) = &parsed.subpath {
+            if subpath == "." {
+                derive_name_from_repo_url(&parsed.clone_url)
+            } else {
+                subpath
+                    .rsplit('/')
+                    .next()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| derive_name_from_repo_url(&parsed.clone_url))
+            }
+        } else {
+            derive_name_from_repo_url(&parsed.clone_url)
+        }
+    });
+
+    let central_dir = resolve_central_repo_path_cli(store)?;
+    ensure_central_repo(&central_dir)?;
+    let central_path = central_dir.join(&name);
+
+    if central_path.exists() {
+        anyhow::bail!("skill already exists in central repo: {:?}", central_path);
+    }
+
+    let github_token = store.get_setting("github_token")?.unwrap_or_default();
+    let github_token_opt = if github_token.is_empty() {
+        None
+    } else {
+        Some(github_token.as_str())
+    };
+    let revision;
+    if let Some((owner, repo, branch, subpath)) = parse_github_api_params(
+        &parsed.clone_url,
+        parsed.branch.as_deref(),
+        parsed.subpath.as_deref(),
+    ) {
+        match clone_to_cache_subpath_cli(
+            store,
+            &parsed.clone_url,
+            Some(branch.as_str()),
+            &subpath,
+            None,
+        ) {
+            Ok((repo_dir, rev)) => {
+                let sub_src = repo_dir.join(&subpath);
+                if !sub_src.exists() {
+                    anyhow::bail!("subpath not found in repo: {:?}", sub_src);
+                }
+                ensure_installable_skill_dir(&sub_src)?;
+                copy_dir_recursive(&sub_src, &central_path)
+                    .with_context(|| format!("copy {:?} -> {:?}", sub_src, central_path))?;
+                revision = rev;
+            }
+            Err(err) => {
+                let _ = std::fs::remove_dir_all(&central_path);
+                log::warn!(
+                    "[installer:cli] sparse git checkout failed, falling back to GitHub API: {:#}",
+                    err
+                );
+                match download_github_directory(
+                    &owner,
+                    &repo,
+                    &branch,
+                    &subpath,
+                    &central_path,
+                    None,
+                    github_token_opt,
+                ) {
+                    Ok(()) => {
+                        revision = format!("api-download-{}", branch);
+                    }
+                    Err(err) => {
+                        let _ = std::fs::remove_dir_all(&central_path);
+                        return Err(err);
+                    }
+                }
+            }
+        }
+    } else {
+        let (repo_dir, rev) =
+            clone_to_cache_cli(store, &parsed.clone_url, parsed.branch.as_deref(), None)?;
+        let copy_src = if let Some(subpath) = &parsed.subpath {
+            repo_dir.join(subpath)
+        } else {
+            repo_dir.clone()
+        };
+        if !copy_src.exists() {
+            anyhow::bail!("path not found in repo: {:?}", copy_src);
+        }
+        ensure_installable_skill_dir(&copy_src)?;
+        copy_dir_recursive(&copy_src, &central_path)
+            .with_context(|| format!("copy {:?} -> {:?}", copy_src, central_path))?;
+        revision = rev;
+    }
+
+    let now = now_ms();
+    let content_hash = compute_content_hash(&central_path);
+    let description = parse_skill_md(&central_path.join("SKILL.md")).and_then(|(_, desc)| desc);
+
+    let record = SkillRecord {
+        id: Uuid::new_v4().to_string(),
+        name: name.clone(),
+        description,
+        source_type: "git".to_string(),
+        source_ref: Some(parsed.clone_url),
+        source_subpath: parsed.subpath,
+        source_revision: Some(revision),
+        central_path: central_path.to_string_lossy().to_string(),
+        content_hash: content_hash.clone(),
+        created_at: now,
+        updated_at: now,
+        last_sync_at: None,
+        last_seen_at: now,
+        status: "ok".to_string(),
+    };
+
+    store.upsert_skill(&record)?;
+
+    Ok(InstallResult {
+        skill_id: record.id,
+        name,
+        central_path,
+        content_hash,
+    })
+}
+
+/// CLI variant of `install_local_skill`: no AppHandle.
+pub fn install_local_skill_cli(
+    store: &SkillStore,
+    source_path: &Path,
+    name: Option<String>,
+) -> Result<InstallResult> {
+    if !source_path.exists() {
+        anyhow::bail!("source path not found: {:?}", source_path);
+    }
+
+    let name = name.unwrap_or_else(|| {
+        source_path
+            .file_name()
+            .map(|v| v.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unnamed-skill".to_string())
+    });
+
+    let central_dir = resolve_central_repo_path_cli(store)?;
+    ensure_central_repo(&central_dir)?;
+    let central_path = central_dir.join(&name);
+
+    if central_path.exists() {
+        anyhow::bail!("skill already exists in central repo: {:?}", central_path);
+    }
+
+    copy_dir_recursive(source_path, &central_path)
+        .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
+
+    let now = now_ms();
+    let content_hash = compute_content_hash(&central_path);
+    let description = parse_skill_md(&central_path.join("SKILL.md")).and_then(|(_, desc)| desc);
+
+    let record = SkillRecord {
+        id: Uuid::new_v4().to_string(),
+        name,
+        description,
+        source_type: "local".to_string(),
+        source_ref: Some(source_path.to_string_lossy().to_string()),
+        source_subpath: None,
+        source_revision: None,
+        central_path: central_path.to_string_lossy().to_string(),
+        content_hash: content_hash.clone(),
+        created_at: now,
+        updated_at: now,
+        last_sync_at: None,
+        last_seen_at: now,
+        status: "ok".to_string(),
+    };
+
+    store.upsert_skill(&record)?;
+
+    Ok(InstallResult {
+        skill_id: record.id,
+        name: record.name,
+        central_path,
+        content_hash,
+    })
+}
+
+/// CLI variant of `check_managed_skill_update`: no AppHandle.
+pub fn check_managed_skill_update_cli(
+    store: &SkillStore,
+    skill_id: &str,
+) -> Result<UpdateCheckResult> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+
+    let central_path = PathBuf::from(&record.central_path);
+    if !central_path.exists() {
+        return Ok(UpdateCheckResult {
+            skill_id: record.id,
+            name: record.name,
+            checkable: false,
+            has_update: false,
+            has_local_changes: false,
+            current_revision: record.source_revision,
+            latest_revision: None,
+            current_hash: record.content_hash,
+            latest_hash: None,
+            message: Some(format!("central path not found: {:?}", central_path)),
+        });
+    }
+
+    let current_hash = hash_dir(&central_path).ok().or(record.content_hash.clone());
+    let mut latest_revision = None;
+    let mut has_local_changes = false;
+
+    if record.source_type == "git" {
+        let repo_url = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for git skill"))?;
+        let parsed = parse_github_url(repo_url);
+        let (repo_dir, rev) = if let Some(subpath) = record.source_subpath.as_deref() {
+            clone_to_cache_subpath_cli(
+                store,
+                &parsed.clone_url,
+                parsed.branch.as_deref(),
+                subpath,
+                None,
+            )?
+        } else {
+            clone_to_cache_cli(store, &parsed.clone_url, parsed.branch.as_deref(), None)?
+        };
+        latest_revision = Some(rev);
+
+        let mut resolved_subpath = record
+            .source_subpath
+            .as_deref()
+            .or(parsed.subpath.as_deref())
+            .map(str::to_string);
+        if resolved_subpath.is_none() && count_skills_in_repo(&repo_dir) >= 2 {
+            let candidates = scan_skill_candidates_in_dir(&repo_dir);
+            let skill_name = record.name.to_lowercase();
+            if let Some(matched) = candidates.iter().find(|c| c.0.to_lowercase() == skill_name) {
+                resolved_subpath = Some(matched.1.clone());
+            }
+        }
+        let source_dir = if let Some(sub) = &resolved_subpath {
+            repo_dir.join(sub)
+        } else {
+            repo_dir
+        };
+        if source_dir.exists() {
+            let latest_hash = hash_dir(&source_dir).ok();
+            has_local_changes =
+                current_hash.is_some() && latest_hash.is_some() && current_hash != latest_hash;
+        }
+    }
+
+    let latest_hash = if record.source_type == "git" {
+        let repo_url = record.source_ref.as_deref().unwrap_or("");
+        let parsed = parse_github_url(repo_url);
+        let repo_dir = if let Some(subpath) = record.source_subpath.as_deref() {
+            clone_to_cache_subpath_cli(
+                store,
+                &parsed.clone_url,
+                parsed.branch.as_deref(),
+                subpath,
+                None,
+            )?
+            .0
+        } else {
+            clone_to_cache_cli(store, &parsed.clone_url, parsed.branch.as_deref(), None)?.0
+        };
+        let resolved_subpath = record
+            .source_subpath
+            .as_deref()
+            .or(parsed.subpath.as_deref());
+        let source_dir = if let Some(sub) = resolved_subpath {
+            repo_dir.join(sub)
+        } else {
+            repo_dir
+        };
+        hash_dir(&source_dir).ok()
+    } else {
+        None
+    };
+
+    let has_update = record.source_type == "git" && has_local_changes;
+
+    Ok(UpdateCheckResult {
+        skill_id: record.id,
+        name: record.name,
+        checkable: record.source_type == "git",
+        has_update,
+        has_local_changes,
+        current_revision: record.source_revision,
+        latest_revision,
+        current_hash,
+        latest_hash,
+        message: None,
+    })
+}
+
+/// CLI variant of `update_managed_skill_from_source`: no AppHandle.
+pub fn update_managed_skill_from_source_cli(
+    store: &SkillStore,
+    skill_id: &str,
+) -> Result<UpdateResult> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+
+    let central_path = PathBuf::from(record.central_path.clone());
+    if !central_path.exists() {
+        anyhow::bail!("central path not found: {:?}", central_path);
+    }
+    let central_parent = central_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("invalid central path"))?
+        .to_path_buf();
+
+    let now = now_ms();
+    let staging_dir = central_parent.join(format!(".skills-hub-update-{}", Uuid::new_v4()));
+    if staging_dir.exists() {
+        let _ = std::fs::remove_dir_all(&staging_dir);
+    }
+
+    let mut new_revision: Option<String> = None;
+
+    if record.source_type == "git" {
+        let repo_url = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for git skill"))?;
+        let parsed = parse_github_url(repo_url);
+
+        let (repo_dir, rev) = if let Some(subpath) = record.source_subpath.as_deref() {
+            clone_to_cache_subpath_cli(
+                store,
+                &parsed.clone_url,
+                parsed.branch.as_deref(),
+                subpath,
+                None,
+            )?
+        } else {
+            clone_to_cache_cli(store, &parsed.clone_url, parsed.branch.as_deref(), None)?
+        };
+        new_revision = Some(rev);
+
+        let resolved_subpath = record
+            .source_subpath
+            .as_deref()
+            .or(parsed.subpath.as_deref())
+            .map(|s| s.to_string());
+        let copy_src = if let Some(subpath) = &resolved_subpath {
+            repo_dir.join(subpath)
+        } else {
+            repo_dir.clone()
+        };
+        if !copy_src.exists() {
+            anyhow::bail!("path not found in repo: {:?}", copy_src);
+        }
+        copy_dir_recursive(&copy_src, &staging_dir)
+            .with_context(|| format!("copy {:?} -> {:?}", copy_src, staging_dir))?;
+    } else if record.source_type == "local" {
+        let source = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for local skill"))?;
+        let source_path = PathBuf::from(source);
+        if !source_path.exists() {
+            anyhow::bail!("source path not found: {:?}", source_path);
+        }
+        copy_dir_recursive(&source_path, &staging_dir)
+            .with_context(|| format!("copy {:?} -> {:?}", source_path, staging_dir))?;
+    } else {
+        anyhow::bail!(
+            "unsupported source type for CLI update: {}",
+            record.source_type
+        );
+    }
+
+    ensure_installable_skill_dir(&staging_dir)?;
+
+    // Atomic swap: rename old → .old, rename new → old, delete .old.
+    let old_backup = central_parent.join(format!(".skills-hub-old-{}", Uuid::new_v4()));
+    std::fs::rename(&central_path, &old_backup)
+        .with_context(|| format!("rename {:?} -> {:?}", central_path, old_backup))?;
+    std::fs::rename(&staging_dir, &central_path)
+        .with_context(|| format!("rename {:?} -> {:?}", staging_dir, central_path))?;
+    let _ = std::fs::remove_dir_all(&old_backup);
+
+    let new_hash = compute_content_hash(&central_path);
+
+    let mut patched = record.clone();
+    patched.updated_at = now;
+    patched.content_hash = new_hash.clone();
+    if let Some(rev) = &new_revision {
+        patched.source_revision = Some(rev.clone());
+    }
+    store.upsert_skill(&patched)?;
+
+    // Re-sync all existing targets.
+    let targets = store.list_skill_targets(&patched.id)?;
+    let mut updated_targets = Vec::new();
+    for target in &targets {
+        let target_path = std::path::PathBuf::from(&target.target_path);
+        if let Some(parent) = target_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if sync_dir_copy_with_overwrite(&central_path, &target_path, true).is_ok() {
+            updated_targets.push(target.tool.clone());
+        }
+    }
+
+    Ok(UpdateResult {
+        skill_id: patched.id,
+        name: patched.name,
+        central_path,
+        content_hash: new_hash,
+        source_revision: new_revision,
+        updated_targets,
+    })
+}
+
+/// CLI variant: sync a single skill to a specific tool (by name).
+pub fn sync_skill_to_tool_cli(
+    store: &SkillStore,
+    skill_id: &str,
+    tool_key: &str,
+) -> Result<super::sync_engine::SyncOutcome> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found: {}", skill_id))?;
+
+    let adapter =
+        adapter_by_key(tool_key).ok_or_else(|| anyhow::anyhow!("unknown tool: {}", tool_key))?;
+
+    let central_path = std::path::PathBuf::from(&record.central_path);
+    if !central_path.exists() {
+        anyhow::bail!("central path not found: {:?}", central_path);
+    }
+
+    let target_path = super::tool_adapters::resolve_default_path(&adapter)
+        .context(format!("cannot resolve path for tool: {}", tool_key))?
+        .join(&record.name);
+
+    if let Some(parent) = target_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("create {:?}", parent))?;
+    }
+
+    let outcome =
+        super::sync_engine::sync_dir_hybrid_with_overwrite(&central_path, &target_path, true)?;
+
+    // Record or update target in DB.
+    let existing = store.find_skill_target(skill_id, tool_key, "global", None)?;
+    if existing.is_none() {
+        let record = super::skill_store::SkillTargetRecord {
+            id: Uuid::new_v4().to_string(),
+            skill_id: skill_id.to_string(),
+            tool: tool_key.to_string(),
+            scope: "global".to_string(),
+            project_path: None,
+            target_path: target_path.to_string_lossy().to_string(),
+            mode: format!("{:?}", outcome.mode_used),
+            status: "ok".to_string(),
+            last_error: None,
+            synced_at: None,
+        };
+        store.upsert_skill_target(&record)?;
+    }
+
+    Ok(outcome)
+}
+
+/// CLI variant: remove a skill and its central files.
+pub fn delete_skill_cli(store: &SkillStore, skill_id: &str) -> Result<()> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found: {}", skill_id))?;
+
+    // Remove all targets (symlinks).
+    let targets = store.list_skill_targets(skill_id)?;
+    for target in &targets {
+        let target_path = PathBuf::from(&target.target_path);
+        if target_path.is_symlink() || target_path.exists() {
+            let _ = std::fs::remove_file(&target_path);
+        }
+    }
+
+    // Remove central repo copy.
+    let central_path = PathBuf::from(&record.central_path);
+    if central_path.exists() {
+        let _ = std::fs::remove_dir_all(&central_path);
+    }
+
+    // Remove from DB.
+    store.delete_skill(skill_id)?;
+
+    Ok(())
+}
+
+/// CLI variant: remove a single target (unsync) and clean up the symlink.
+pub fn unsync_skill_cli(store: &SkillStore, skill_id: &str, tool_key: &str) -> Result<()> {
+    let target = store
+        .find_skill_target(skill_id, tool_key, "global", None)?
+        .ok_or_else(|| anyhow::anyhow!("target not found: skill={} tool={}", skill_id, tool_key))?;
+
+    let target_path = PathBuf::from(&target.target_path);
+    if target_path.is_symlink() || target_path.exists() {
+        let _ = std::fs::remove_file(&target_path);
+    }
+
+    store.delete_skill_target(skill_id, tool_key, "global", None)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/installer.rs"]
 mod tests;

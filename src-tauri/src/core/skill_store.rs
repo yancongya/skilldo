@@ -732,6 +732,46 @@ impl SkillStore {
         })
     }
 
+    pub fn find_skill_target(
+        &self,
+        skill_id: &str,
+        tool: &str,
+        scope: &str,
+        project_path: Option<&str>,
+    ) -> Result<Option<SkillTargetRecord>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, skill_id, tool, scope, project_path, target_path, mode, status,
+                        last_error, synced_at
+                 FROM skill_targets
+                 WHERE skill_id = ?1
+                   AND tool = ?2
+                   AND scope = ?3
+                   AND ((?4 IS NULL AND project_path IS NULL) OR project_path = ?4)
+                 LIMIT 1",
+            )?;
+            let mut rows = stmt.query_map(params![skill_id, tool, scope, project_path], |row| {
+                Ok(SkillTargetRecord {
+                    id: row.get(0)?,
+                    skill_id: row.get(1)?,
+                    tool: row.get(2)?,
+                    scope: row.get(3)?,
+                    project_path: row.get(4)?,
+                    target_path: row.get(5)?,
+                    mode: row.get(6)?,
+                    status: row.get(7)?,
+                    last_error: row.get(8)?,
+                    synced_at: row.get(9)?,
+                })
+            })?;
+            if let Some(row) = rows.next() {
+                Ok(Some(row?))
+            } else {
+                Ok(None)
+            }
+        })
+    }
+
     pub fn delete_skill_target(
         &self,
         skill_id: &str,
