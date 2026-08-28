@@ -30,3 +30,15 @@ plans/
 .env
 
 bun.lock
+
+# Build outputs
+out/
+
+# Tauri build intermediates
+src-tauri/target/release/bundle/
+
+# OMO tool remnants
+.omo/
+
+# Local CLI wrapper (generated)
+skillhub
