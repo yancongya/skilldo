@@ -110,6 +110,18 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
+    /// Commit and push changes for a git-managed skill.
+    Push {
+        /// Skill ID or name to push.
+        #[arg(long)]
+        skill: String,
+        /// Commit message.
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Skip confirmation prompts (agent mode).
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -159,6 +171,11 @@ fn execute() -> Result<()> {
         Commands::Unsync { skill, tool } => cmd_unsync(&store, &skill, &tool, cli.json),
         Commands::Update { skill, all, yes } => cmd_update(&store, &skill, all, yes, cli.json),
         Commands::Delete { skill, yes } => cmd_delete(&store, &skill, yes, cli.json),
+        Commands::Push {
+            skill,
+            message,
+            yes,
+        } => cmd_push(&store, &skill, message.as_deref(), yes, cli.json),
     }
 }
 
@@ -670,6 +687,67 @@ fn cmd_delete(store: &SkillStore, skill_name: &str, yes: bool, json: bool) -> Re
         print_json(&out)?;
     } else {
         println!("Deleted skill '{}'.", name);
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliPushResult {
+    success: bool,
+    skill_id: String,
+    name: String,
+    committed: bool,
+    pushed: bool,
+    message: String,
+}
+
+fn cmd_push(
+    store: &SkillStore,
+    skill_name: &str,
+    message: Option<&str>,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    let skill_id = resolve_skill_id(store, skill_name)?;
+    let record = store
+        .get_skill_by_id(&skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+
+    if !yes {
+        eprintln!(
+            "About to commit and push changes for skill '{}' ({})",
+            record.name, record.central_path
+        );
+        eprint!("Continue? [y/N] ");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            anyhow::bail!("cancelled by user");
+        }
+    }
+
+    let result = installer::push_skill_cli(store, &skill_id, message)?;
+    let out = CliPushResult {
+        success: true,
+        skill_id: skill_id,
+        name: record.name,
+        committed: result.committed,
+        pushed: result.pushed,
+        message: result.message,
+    };
+
+    if json {
+        print_json(&out)?;
+    } else {
+        if out.committed {
+            println!("Committed and pushed '{}'.", out.name);
+        } else {
+            println!("No changes to commit for '{}'.", out.name);
+        }
+        if !out.message.is_empty() {
+            println!("  {}", out.message);
+        }
     }
     Ok(())
 }

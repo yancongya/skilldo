@@ -2530,6 +2530,30 @@ pub fn update_managed_skill_from_source_cli(
         if !source_path.exists() {
             anyhow::bail!("source path not found: {:?}", source_path);
         }
+        // If the source is a git repository, pull latest changes first.
+        if source_path.join(".git").exists() {
+            log::info!(
+                "[installer:cli] source is a git repo, pulling latest: {:?}",
+                source_path
+            );
+            let url = source_path.to_string_lossy().to_string();
+            match super::git_fetcher::clone_or_pull(
+                &url,
+                &source_path,
+                None,
+                None,
+            ) {
+                Ok(rev) => {
+                    log::info!("[installer:cli] pulled to rev: {}", rev);
+                }
+                Err(err) => {
+                    log::warn!(
+                        "[installer:cli] git pull failed for source, using existing: {:#}",
+                        err
+                    );
+                }
+            }
+        }
         copy_dir_recursive(&source_path, &staging_dir)
             .with_context(|| format!("copy {:?} -> {:?}", source_path, staging_dir))?;
     } else {
@@ -2672,6 +2696,123 @@ pub fn unsync_skill_cli(store: &SkillStore, skill_id: &str, tool_key: &str) -> R
 
     store.delete_skill_target(skill_id, tool_key, "global", None)?;
 
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Git push support
+// ---------------------------------------------------------------------------
+
+/// Result of a push operation.
+pub struct PushResult {
+    pub committed: bool,
+    pub pushed: bool,
+    pub message: String,
+}
+
+/// CLI variant: commit and push changes in a skill's central repo.
+/// Only works for skills whose central_path contains a .git directory.
+pub fn push_skill_cli(
+    store: &SkillStore,
+    skill_id: &str,
+    message: Option<&str>,
+) -> Result<PushResult> {
+    let record = store
+        .get_skill_by_id(skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found: {}", skill_id))?;
+
+    let central_path = PathBuf::from(&record.central_path);
+    if !central_path.exists() {
+        anyhow::bail!("central path not found: {:?}", central_path);
+    }
+    if !central_path.join(".git").exists() {
+        anyhow::bail!(
+            "skill '{}' central path is not a git repository: {:?}",
+            record.name,
+            central_path
+        );
+    }
+
+    let default_msg = format!("skills-hub: update {}", record.name);
+    let msg = message.unwrap_or(&default_msg);
+
+    // Stage all changes.
+    let status = Command::new("git")
+        .arg("add")
+        .arg("-A")
+        .current_dir(&central_path)
+        .output()
+        .context("failed to run git add")?;
+    if !status.status.success() {
+        anyhow::bail!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+    }
+
+    // Check if there's anything to commit.
+    let diff = Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .current_dir(&central_path)
+        .output()
+        .context("failed to run git diff")?;
+
+    if diff.status.code() == Some(0) {
+        // No changes to commit — still try push in case remote is ahead.
+        log::info!("[installer:cli] no changes to commit for {}", record.name);
+        let push_result = git_push(&central_path);
+        return Ok(PushResult {
+            committed: false,
+            pushed: push_result.is_ok(),
+            message: if push_result.is_ok() {
+                "Pushed (no new commits)".to_string()
+            } else {
+                format!("Push failed: {:#}", push_result.unwrap_err())
+            },
+        });
+    }
+
+    // Commit.
+    let commit_out = Command::new("git")
+        .args(["commit", "-m", msg])
+        .current_dir(&central_path)
+        .output()
+        .context("failed to run git commit")?;
+    if !commit_out.status.success() {
+        anyhow::bail!(
+            "git commit failed: {}",
+            String::from_utf8_lossy(&commit_out.stderr)
+        );
+    }
+
+    let commit_msg = String::from_utf8_lossy(&commit_out.stdout).trim().to_string();
+
+    // Push.
+    let push_result = git_push(&central_path);
+
+    Ok(PushResult {
+        committed: true,
+        pushed: push_result.is_ok(),
+        message: if push_result.is_ok() {
+            commit_msg
+        } else {
+            format!("Committed but push failed: {:#}", push_result.unwrap_err())
+        },
+    })
+}
+
+fn git_push(repo_dir: &Path) -> Result<()> {
+    let out = Command::new("git")
+        .arg("push")
+        .current_dir(repo_dir)
+        .output()
+        .context("failed to run git push")?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git push failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
     Ok(())
 }
 
