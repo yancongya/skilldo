@@ -18,6 +18,7 @@ use clap::{Parser, Subcommand};
 use serde::Serialize;
 
 use crate::core::explore_sources::{self, ExploreSourceConfig};
+use crate::core::installer;
 use crate::core::skill_store::{default_db_path_cli, SkillStore};
 use crate::core::tool_adapters;
 
@@ -57,6 +58,57 @@ enum Commands {
     Sources {
         #[command(subcommand)]
         action: SourcesAction,
+    },
+    /// Install a skill from a Git repository or local path.
+    Install {
+        /// Git repository URL (HTTPS, SSH) or local filesystem path.
+        #[arg(long)]
+        url: String,
+        /// Optional display name for the skill.
+        #[arg(long)]
+        name: Option<String>,
+        /// Skip confirmation prompts (agent mode).
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Sync a skill to a specific AI tool.
+    Sync {
+        /// Skill ID or name to sync.
+        #[arg(long)]
+        skill: String,
+        /// Target tool key (e.g. claude_code, codex, cursor).
+        #[arg(long)]
+        tool: String,
+    },
+    /// Remove a skill from a specific AI tool (unsync).
+    Unsync {
+        /// Skill ID or name.
+        #[arg(long)]
+        skill: String,
+        /// Target tool key.
+        #[arg(long)]
+        tool: String,
+    },
+    /// Update a skill from its source.
+    Update {
+        /// Skill ID or name to update.
+        #[arg(long)]
+        skill: String,
+        /// Update all skills (overrides --skill).
+        #[arg(long, default_value_t = false)]
+        all: bool,
+        /// Skip confirmation prompts (agent mode).
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Delete a skill and remove all its sync targets.
+    Delete {
+        /// Skill ID or name to delete.
+        #[arg(long)]
+        skill: String,
+        /// Skip confirmation prompts (agent mode).
+        #[arg(long, default_value_t = false)]
+        yes: bool,
     },
 }
 
@@ -102,6 +154,11 @@ fn execute() -> Result<()> {
         Commands::Sources { action } => match action {
             SourcesAction::List => cmd_sources_list(&store, cli.json),
         },
+        Commands::Install { url, name, yes } => cmd_install(&store, &url, name, yes, cli.json),
+        Commands::Sync { skill, tool } => cmd_sync(&store, &skill, &tool, cli.json),
+        Commands::Unsync { skill, tool } => cmd_unsync(&store, &skill, &tool, cli.json),
+        Commands::Update { skill, all, yes } => cmd_update(&store, &skill, all, yes, cli.json),
+        Commands::Delete { skill, yes } => cmd_delete(&store, &skill, yes, cli.json),
     }
 }
 
@@ -141,6 +198,45 @@ struct CliToolStatus {
     display_name: String,
     installed: bool,
     skills_dir: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliInstallResult {
+    success: bool,
+    skill_id: String,
+    name: String,
+    central_path: String,
+    source_type: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliUpdateResult {
+    success: bool,
+    skill_id: String,
+    name: String,
+    previous_revision: Option<String>,
+    new_revision: Option<String>,
+    updated_targets: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliDeleteResult {
+    success: bool,
+    skill_id: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliSyncResult {
+    success: bool,
+    skill_id: String,
+    tool: String,
+    target_path: String,
+    mode: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -278,6 +374,302 @@ fn cmd_sources_list(store: &SkillStore, json: bool) -> Result<()> {
             println!("  [{}] {}  ({})  {}", mark, s.name, s.kind, s.endpoint);
         }
         println!("\n{} source(s) configured.", sources.len());
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Write commands
+// ---------------------------------------------------------------------------
+
+/// Resolve a skill name or ID to a skill ID. If the input looks like a UUID,
+/// try it directly; otherwise search by name.
+fn resolve_skill_id(store: &SkillStore, name_or_id: &str) -> Result<String> {
+    // Try exact ID match first.
+    if let Some(record) = store.get_skill_by_id(name_or_id)? {
+        return Ok(record.id);
+    }
+    // Try name match (case-insensitive).
+    let all = store.list_skills()?;
+    let lower = name_or_id.to_lowercase();
+    let matches: Vec<_> = all
+        .iter()
+        .filter(|s| s.name.to_lowercase() == lower)
+        .collect();
+    match matches.len() {
+        0 => anyhow::bail!("skill not found: {}", name_or_id),
+        1 => Ok(matches[0].id.clone()),
+        _ => {
+            let ids: Vec<_> = matches
+                .iter()
+                .map(|s| format!("  {} ({})", s.id, s.name))
+                .collect();
+            anyhow::bail!(
+                "ambiguous name '{}' matches {} skills:\n{}",
+                name_or_id,
+                matches.len(),
+                ids.join("\n")
+            );
+        }
+    }
+}
+
+fn cmd_install(
+    store: &SkillStore,
+    url: &str,
+    name: Option<String>,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    // Determine if this is a local path or a git URL.
+    let is_local = !url.starts_with("http://")
+        && !url.starts_with("https://")
+        && !url.starts_with("git@")
+        && !url.ends_with(".git");
+
+    if is_local {
+        let path = std::path::PathBuf::from(url);
+        if !path.exists() {
+            anyhow::bail!("local path not found: {:?}", path);
+        }
+        if !yes {
+            eprintln!("About to install skill from local path: {}", path.display());
+            eprint!("Continue? [y/N] ");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                anyhow::bail!("cancelled by user");
+            }
+        }
+        let result = installer::install_local_skill_cli(store, &path, name)?;
+        let out = CliInstallResult {
+            success: true,
+            skill_id: result.skill_id,
+            name: result.name,
+            central_path: result.central_path.to_string_lossy().to_string(),
+            source_type: "local".to_string(),
+        };
+        if json {
+            print_json(&out)?;
+        } else {
+            println!("Installed skill '{}' from local path.", out.name);
+            println!("  ID: {}", out.skill_id);
+            println!("  Path: {}", out.central_path);
+        }
+    } else {
+        if !yes {
+            eprintln!("About to install skill from: {}", url);
+            eprint!("Continue? [y/N] ");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                anyhow::bail!("cancelled by user");
+            }
+        }
+        let result = installer::install_git_skill_cli(store, url, name)?;
+        let out = CliInstallResult {
+            success: true,
+            skill_id: result.skill_id,
+            name: result.name,
+            central_path: result.central_path.to_string_lossy().to_string(),
+            source_type: "git".to_string(),
+        };
+        if json {
+            print_json(&out)?;
+        } else {
+            println!("Installed skill '{}' from git.", out.name);
+            println!("  ID: {}", out.skill_id);
+            println!("  Path: {}", out.central_path);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_sync(store: &SkillStore, skill_name: &str, tool_key: &str, json: bool) -> Result<()> {
+    let skill_id = resolve_skill_id(store, skill_name)?;
+    let outcome = installer::sync_skill_to_tool_cli(store, &skill_id, tool_key)?;
+    let out = CliSyncResult {
+        success: true,
+        skill_id,
+        tool: tool_key.to_string(),
+        target_path: outcome.target_path.to_string_lossy().to_string(),
+        mode: format!("{:?}", outcome.mode_used),
+    };
+    if json {
+        print_json(&out)?;
+    } else {
+        println!(
+            "Synced '{}' to {} via {}.",
+            out.skill_id, out.tool, out.mode
+        );
+        println!("  Target: {}", out.target_path);
+    }
+    Ok(())
+}
+
+fn cmd_unsync(store: &SkillStore, skill_name: &str, tool_key: &str, json: bool) -> Result<()> {
+    let skill_id = resolve_skill_id(store, skill_name)?;
+    installer::unsync_skill_cli(store, &skill_id, tool_key)?;
+    if json {
+        let out = serde_json::json!({
+            "success": true,
+            "skillId": skill_id,
+            "tool": tool_key,
+        });
+        print_json(&out)?;
+    } else {
+        println!("Unsynced '{}' from {}.", skill_id, tool_key);
+    }
+    Ok(())
+}
+
+fn cmd_update(
+    store: &SkillStore,
+    skill_name: &str,
+    all: bool,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    if all {
+        // Update all skills.
+        let skills = store.list_skills()?;
+        let git_skills: Vec<_> = skills.iter().filter(|s| s.source_type == "git").collect();
+        if git_skills.is_empty() {
+            if json {
+                println!("[]");
+            } else {
+                println!("No updatable skills found.");
+            }
+            return Ok(());
+        }
+        if !yes {
+            eprintln!(
+                "About to update {} git skill(s). This will pull from remote sources.",
+                git_skills.len()
+            );
+            eprint!("Continue? [y/N] ");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                anyhow::bail!("cancelled by user");
+            }
+        }
+        let mut results = Vec::new();
+        for skill in &git_skills {
+            match installer::update_managed_skill_from_source_cli(store, &skill.id) {
+                Ok(result) => {
+                    results.push(CliUpdateResult {
+                        success: true,
+                        skill_id: result.skill_id,
+                        name: result.name,
+                        previous_revision: result.source_revision.clone(),
+                        new_revision: result.source_revision,
+                        updated_targets: result.updated_targets,
+                    });
+                }
+                Err(err) => {
+                    if json {
+                        results.push(CliUpdateResult {
+                            success: false,
+                            skill_id: skill.id.clone(),
+                            name: skill.name.clone(),
+                            previous_revision: None,
+                            new_revision: None,
+                            updated_targets: vec![],
+                        });
+                    } else {
+                        eprintln!("warning: failed to update {}: {:#}", skill.name, err);
+                    }
+                }
+            }
+        }
+        if json {
+            print_json(&results)?;
+        } else {
+            let ok = results.iter().filter(|r| r.success).count();
+            println!("\n{}/{} skill(s) updated.", ok, results.len());
+        }
+    } else {
+        let skill_id = resolve_skill_id(store, skill_name)?;
+        let record = store
+            .get_skill_by_id(&skill_id)?
+            .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+        if record.source_type != "git" {
+            anyhow::bail!(
+                "skill '{}' is not a git skill (source_type={}), cannot update from source",
+                record.name,
+                record.source_type
+            );
+        }
+        if !yes {
+            eprintln!(
+                "About to update skill '{}' from {}.",
+                record.name,
+                record.source_ref.as_deref().unwrap_or("unknown")
+            );
+            eprint!("Continue? [y/N] ");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if !input.trim().eq_ignore_ascii_case("y") {
+                anyhow::bail!("cancelled by user");
+            }
+        }
+        let result = installer::update_managed_skill_from_source_cli(store, &skill_id)?;
+        let out = CliUpdateResult {
+            success: true,
+            skill_id: result.skill_id,
+            name: result.name,
+            previous_revision: None,
+            new_revision: result.source_revision,
+            updated_targets: result.updated_targets,
+        };
+        if json {
+            print_json(&out)?;
+        } else {
+            println!("Updated skill '{}'.", out.name);
+            if !out.updated_targets.is_empty() {
+                println!("  Re-synced targets: {}", out.updated_targets.join(", "));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_delete(store: &SkillStore, skill_name: &str, yes: bool, json: bool) -> Result<()> {
+    let skill_id = resolve_skill_id(store, skill_name)?;
+    let record = store
+        .get_skill_by_id(&skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+
+    if !yes {
+        let targets = store.list_skill_targets(&skill_id)?;
+        eprintln!(
+            "About to delete skill '{}' ({} target(s), central path: {}).",
+            record.name,
+            targets.len(),
+            record.central_path
+        );
+        eprintln!("This will remove the central repo copy and all symlinks.");
+        eprint!("Continue? [y/N] ");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            anyhow::bail!("cancelled by user");
+        }
+    }
+
+    let name = record.name.clone();
+    installer::delete_skill_cli(store, &skill_id)?;
+
+    if json {
+        let out = CliDeleteResult {
+            success: true,
+            skill_id,
+            name,
+        };
+        print_json(&out)?;
+    } else {
+        println!("Deleted skill '{}'.", name);
     }
     Ok(())
 }
