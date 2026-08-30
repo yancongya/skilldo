@@ -4,7 +4,7 @@ version = "0.6.1"
 description = "A Tauri App"
 authors = ["you"]
 license = ""
-repository = "git@github.com:yancongya/skills-hub.git"
+repository = "git@github.com:yancongya/skilldo.git"
 edition = "2021"
 rust-version = "1.77.2"
 default-run = "app"
@@ -54,5 +54,5 @@ name = "app"
 path = "src/main.rs"
 
 [[bin]]
-name = "skillhub"
-path = "src/bin/skillhub.rs"
+name = "skilldo"
+path = "src/bin/skilldo.rs"

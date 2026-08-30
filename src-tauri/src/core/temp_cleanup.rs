@@ -4,8 +4,8 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context, Result};
 use tauri::Manager;
 
-const TEMP_PREFIX: &str = "skills-hub-git-";
-const TEMP_MARKER: &str = ".skills-hub-git-temp";
+const TEMP_PREFIX: &str = "skilldo-git-";
+const TEMP_MARKER: &str = ".skilldo-git-temp";
 
 #[allow(dead_code)]
 pub fn mark_temp_dir(dir: &Path) -> Result<()> {
@@ -13,7 +13,7 @@ pub fn mark_temp_dir(dir: &Path) -> Result<()> {
     if marker.exists() {
         return Ok(());
     }
-    std::fs::write(&marker, b"skills-hub-git-temp-v1\n")
+    std::fs::write(&marker, b"skilldo-git-temp-v1\n")
         .with_context(|| format!("failed to write marker {:?}", marker))?;
     Ok(())
 }

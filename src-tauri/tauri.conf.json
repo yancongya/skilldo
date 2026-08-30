@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Skills Hub",
+  "productName": "SkillDo",
   "version": "0.6.1",
   "identifier": "com.qufei1993.skillshub",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Skills Hub",
+        "title": "SkillDo",
         "width": 960,
         "height": 680,
         "resizable": true,
@@ -40,7 +40,7 @@
       "active": true,
       "dialog": false,
       "endpoints": [
-        "https://github.com/yancongya/skills-hub/releases/latest/download/updater.json"
+        "https://github.com/yancongya/skilldo/releases/latest/download/updater.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI1QjEyQ0U0RkM5NjZCMjQKUldRa2E1Yjg1Q3l4dFM0TGl4N3k3KytFalRiajhFZmo4QkE5ek5HVXM1MjRDZWVORWhibnR6Vk8K"
     }

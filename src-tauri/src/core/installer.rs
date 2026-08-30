@@ -417,7 +417,7 @@ pub fn install_package_skill<R: tauri::Runtime>(
         anyhow::bail!("package name is required");
     }
 
-    let output_dir = std::env::temp_dir().join(format!("skills-hub-package-{}", Uuid::new_v4()));
+    let output_dir = std::env::temp_dir().join(format!("skilldo-package-{}", Uuid::new_v4()));
     run_package_command(package, command, &output_dir)?;
     let (source_dir, source_subpath) = resolve_single_generated_skill(&output_dir, None)?;
 
@@ -974,7 +974,7 @@ fn check_skill_record_update<R: tauri::Runtime>(
             .parent()
             .ok_or_else(|| anyhow::anyhow!("invalid central path"))?
             .to_path_buf();
-        let output_dir = central_parent.join(format!(".skills-hub-check-{}", Uuid::new_v4()));
+        let output_dir = central_parent.join(format!(".skilldo-check-{}", Uuid::new_v4()));
         run_package_command(&package.package, package.command.as_deref(), &output_dir)?;
         let (source_dir, _) =
             resolve_single_generated_skill(&output_dir, record.source_subpath.as_deref())?;
@@ -1043,7 +1043,7 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
     let now = now_ms();
 
     // Build new content in a sibling temp dir for safe swap.
-    let staging_dir = central_parent.join(format!(".skills-hub-update-{}", Uuid::new_v4()));
+    let staging_dir = central_parent.join(format!(".skilldo-update-{}", Uuid::new_v4()));
     if staging_dir.exists() {
         let _ = std::fs::remove_dir_all(&staging_dir);
     }
@@ -1139,7 +1139,7 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
             .as_deref()
             .ok_or_else(|| anyhow::anyhow!("missing source_ref for package skill"))?;
         let package = parse_package_source_ref(source_ref)?;
-        let output_dir = central_parent.join(format!(".skills-hub-package-{}", Uuid::new_v4()));
+        let output_dir = central_parent.join(format!(".skilldo-package-{}", Uuid::new_v4()));
         if output_dir.exists() {
             let _ = std::fs::remove_dir_all(&output_dir);
         }
@@ -1693,7 +1693,7 @@ fn clone_to_cache<R: tauri::Runtime>(
         .with_context(|| format!("failed to create cache dir {:?}", cache_root))?;
 
     let repo_dir = cache_root.join(repo_cache_key(clone_url, branch, None));
-    let meta_path = repo_dir.join(".skills-hub-cache.json");
+    let meta_path = repo_dir.join(".skilldo-cache.json");
 
     let lock = GIT_CACHE_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().unwrap_or_else(|err| err.into_inner());
@@ -1775,7 +1775,7 @@ fn clone_to_cache_subpath<R: tauri::Runtime>(
         .with_context(|| format!("failed to create cache dir {:?}", cache_root))?;
 
     let repo_dir = cache_root.join(repo_cache_key(clone_url, branch, Some(subpath)));
-    let meta_path = repo_dir.join(".skills-hub-cache.json");
+    let meta_path = repo_dir.join(".skilldo-cache.json");
 
     let lock = GIT_CACHE_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().unwrap_or_else(|err| err.into_inner());
@@ -1966,14 +1966,14 @@ fn frontmatter_block_style(value: &str) -> Option<char> {
 // ---------------------------------------------------------------------------
 //
 // These mirror the Tauri-flavored functions above but accept `PathBuf` for
-// paths that the GUI resolves via `AppHandle`. This lets the `skillhub` CLI
+// paths that the GUI resolves via `AppHandle`. This lets the `skilldo` CLI
 // binary (which has no Tauri runtime) reuse the same core logic.
 
 use super::central_repo::resolve_central_repo_path_cli;
 
 /// Resolve the git cache root directory without an AppHandle.
-/// Uses `~/.cache/skills-hub-git-cache/` as the CLI equivalent of
-/// `app.path().app_cache_dir().join("skills-hub-git-cache")`.
+/// Uses `~/.cache/skilldo-git-cache/` as the CLI equivalent of
+/// `app.path().app_cache_dir().join("skilldo-git-cache")`.
 fn git_cache_root_cli() -> Result<PathBuf> {
     let base = dirs::cache_dir().context("failed to resolve cache directory")?;
     let root = base.join(super::config::GIT_CACHE_DIR_NAME);
@@ -1992,7 +1992,7 @@ fn clone_to_cache_cli(
     let cache_root = git_cache_root_cli()?;
 
     let repo_dir = cache_root.join(repo_cache_key(clone_url, branch, None));
-    let meta_path = repo_dir.join(".skills-hub-cache.json");
+    let meta_path = repo_dir.join(".skilldo-cache.json");
 
     let lock = GIT_CACHE_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().unwrap_or_else(|err| err.into_inner());
@@ -2064,7 +2064,7 @@ fn clone_to_cache_subpath_cli(
     let cache_root = git_cache_root_cli()?;
 
     let repo_dir = cache_root.join(repo_cache_key(clone_url, branch, Some(subpath)));
-    let meta_path = repo_dir.join(".skills-hub-cache.json");
+    let meta_path = repo_dir.join(".skilldo-cache.json");
 
     let lock = GIT_CACHE_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = lock.lock().unwrap_or_else(|err| err.into_inner());
@@ -2479,7 +2479,7 @@ pub fn update_managed_skill_from_source_cli(
         .to_path_buf();
 
     let now = now_ms();
-    let staging_dir = central_parent.join(format!(".skills-hub-update-{}", Uuid::new_v4()));
+    let staging_dir = central_parent.join(format!(".skilldo-update-{}", Uuid::new_v4()));
     if staging_dir.exists() {
         let _ = std::fs::remove_dir_all(&staging_dir);
     }
@@ -2566,7 +2566,7 @@ pub fn update_managed_skill_from_source_cli(
     ensure_installable_skill_dir(&staging_dir)?;
 
     // Atomic swap: rename old → .old, rename new → old, delete .old.
-    let old_backup = central_parent.join(format!(".skills-hub-old-{}", Uuid::new_v4()));
+    let old_backup = central_parent.join(format!(".skilldo-old-{}", Uuid::new_v4()));
     std::fs::rename(&central_path, &old_backup)
         .with_context(|| format!("rename {:?} -> {:?}", central_path, old_backup))?;
     std::fs::rename(&staging_dir, &central_path)
@@ -2733,7 +2733,7 @@ pub fn push_skill_cli(
         );
     }
 
-    let default_msg = format!("skills-hub: update {}", record.name);
+    let default_msg = format!("skilldo: update {}", record.name);
     let msg = message.unwrap_or(&default_msg);
 
     // Stage all changes.

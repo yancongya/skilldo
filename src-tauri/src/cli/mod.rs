@@ -1,4 +1,4 @@
-//! Skills Hub command-line interface.
+//! SkillDo command-line interface.
 //!
 //! This module is an alternative front-end to the same `core` business logic
 //! that powers the Tauri desktop client. It exists so that AI coding agents
@@ -24,9 +24,8 @@ use crate::core::tool_adapters;
 
 #[derive(Parser)]
 #[command(
-    name = "skillhub",
     version,
-    about = "Skills Hub CLI - manage AI agent skills from the terminal (agent-native)",
+    about = "SkillDo CLI - manage AI agent skills from the terminal (agent-native)",
     long_about = None
 )]
 pub struct Cli {
@@ -44,7 +43,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// List skills currently managed by Skills Hub.
+    /// List skills currently managed by SkillDo.
     List,
     /// Show installation status of supported AI tools.
     Status,
@@ -130,7 +129,7 @@ enum SourcesAction {
     List,
 }
 
-/// Entry point invoked from the `skillhub` binary.
+/// Entry point invoked from the `skilldo` binary.
 pub fn run() {
     if let Err(err) = execute() {
         eprintln!("error: {:#}", err);

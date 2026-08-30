@@ -1,8 +1,8 @@
-# Skills Hub
+# SkillDo
 
 > **Install once, sync everywhere.** The agent-native skill manager for 47+ AI tools.
 
-Skills Hub manages AI Agent Skills from a single source of truth and syncs them to all your coding tools. Use the **CLI** for automation, the **desktop app** for visual management, or let **agents** drive it programmatically via structured JSON output.
+SkillDo manages AI Agent Skills from a single source of truth and syncs them to all your coding tools. Use the **CLI** for automation, the **desktop app** for visual management, or let **agents** drive it programmatically via structured JSON output.
 
 ## Quick Start
 
@@ -10,32 +10,32 @@ Skills Hub manages AI Agent Skills from a single source of truth and syncs them 
 
 ```bash
 # Install from GitHub
-skillhub install --url https://github.com/anthropics/skills/tree/main/skills/skill-creator --yes
+skilldo install --url https://github.com/anthropics/skills/tree/main/skills/skill-creator --yes
 
 # Sync to all tools
-skillhub sync --skill skill-creator --tool claude_code
-skillhub sync --skill skill-creator --tool codex
+skilldo sync --skill skill-creator --tool claude_code
+skilldo sync --skill skill-creator --tool codex
 
 # Check status
-skillhub list --json
-skillhub status --json
+skilldo list --json
+skilldo status --json
 
 # Update all git-managed skills
-skillhub update --all --yes
+skilldo update --all --yes
 
 # Browse the skill market
-skillhub explore --query "rag" --json
+skilldo explore --query "rag" --json
 ```
 
 ### Desktop App
 
-Download the `.dmg` for macOS (or `.exe` for Windows, `.AppImage` for Linux) from [Releases](https://github.com/yancongya/skills-hub/releases). The GUI provides visual skill management, explore, and one-click sync.
+Download the `.dmg` for macOS (or `.exe` for Windows, `.AppImage` for Linux) from [Releases](https://github.com/yancongya/skilldo/releases). The GUI provides visual skill management, explore, and one-click sync.
 
 ### Development
 
 ```bash
-git clone https://github.com/yancongya/skills-hub.git
-cd skills-hub
+git clone https://github.com/yancongya/skilldo.git
+cd skilldo
 npm install
 npm run tauri:dev          # Desktop app (GUI + Rust backend)
 npm run dev                # Web preview only (no backend)
@@ -46,17 +46,17 @@ npm run dev                # Web preview only (no backend)
 
 | Command | Description |
 |---------|-------------|
-| `skillhub list [--json]` | List managed skills and sync targets |
-| `skillhub status [--json]` | Show which of 47+ AI tools are installed |
-| `skillhub explore [--query Q] [--json]` | Browse the skill market |
-| `skillhub install --url <repo> [--name] [--yes]` | Install from git URL or local path |
-| `skillhub sync --skill <name> --tool <key>` | Sync to a specific tool |
-| `skillhub unsync --skill <name> --tool <key>` | Remove from a tool |
-| `skillhub update --skill <name> [--yes]` | Update from source (auto git pull) |
-| `skillhub update --all [--yes]` | Update all git-managed skills |
-| `skillhub delete --skill <name> [--yes]` | Delete skill and all targets |
-| `skillhub push --skill <name> [-m "msg"]` | Commit & push git-managed skill |
-| `skillhub sources list [--json]` | List explore sources |
+| `skilldo list [--json]` | List managed skills and sync targets |
+| `skilldo status [--json]` | Show which of 47+ AI tools are installed |
+| `skilldo explore [--query Q] [--json]` | Browse the skill market |
+| `skilldo install --url <repo> [--name] [--yes]` | Install from git URL or local path |
+| `skilldo sync --skill <name> --tool <key>` | Sync to a specific tool |
+| `skilldo unsync --skill <name> --tool <key>` | Remove from a tool |
+| `skilldo update --skill <name> [--yes]` | Update from source (auto git pull) |
+| `skilldo update --all [--yes]` | Update all git-managed skills |
+| `skilldo delete --skill <name> [--yes]` | Delete skill and all targets |
+| `skilldo push --skill <name> [-m "msg"]` | Commit & push git-managed skill |
+| `skilldo sources list [--json]` | List explore sources |
 
 All commands support `--json` for agent-friendly structured output and `--yes` to skip confirmations.
 
@@ -82,7 +82,7 @@ All commands support `--json` for agent-friendly structured output and `--yes` t
 
 - **Three front-ends** share one `core/` engine and one SQLite database
 - CLI and GUI state stay in sync automatically
-- Agents discover `skillhub` via `SKILL.md` in their skill directories
+- Agents discover `skilldo` via `SKILL.md` in their skill directories
 
 ## Supported Tools (47+)
 

@@ -1,11 +1,11 @@
 ---
-name: skillhub-cli
-description: Manage AI agent skills from the terminal with the Skills Hub CLI (skillhub). Install, sync, update, delete, and push skills across 47+ AI tools. Agent-native, structured JSON output.
+name: skilldo-cli
+description: Manage AI agent skills from the terminal with the SkillDo CLI (skilldo). Install, sync, update, delete, and push skills across 47+ AI tools. Agent-native, structured JSON output.
 ---
 
-# Skills Hub CLI (`skillhub`)
+# SkillDo CLI (`skilldo`)
 
-`skillhub` is the command-line interface for Skills Hub — the "install once, sync everywhere" manager for AI Agent Skills. It lets AI coding agents (Claude Code, Codex, Cursor, etc.) and humans read and manage skills from a plain terminal, without launching the desktop GUI.
+`skilldo` is the command-line interface for SkillDo — the "install once, sync everywhere" manager for AI Agent Skills. It lets AI coding agents (Claude Code, Codex, Cursor, etc.) and humans read and manage skills from a plain terminal, without launching the desktop GUI.
 
 The CLI shares the exact same SQLite database as the desktop client, so state stays in sync across both.
 
@@ -20,18 +20,18 @@ The CLI shares the exact same SQLite database as the desktop client, so state st
 
 | Command | Description |
 |---------|-------------|
-| `skillhub list [--json]` | List managed skills and their sync targets |
-| `skillhub status [--json]` | Show installation status of all 47+ supported AI tools |
-| `skillhub explore [--query Q] [--json]` | Browse the skill market across enabled sources |
-| `skillhub sources list [--json]` | List configured explore sources |
-| `skillhub install --url <repo> [--name N] [--yes]` | Install a skill from a git URL or local path |
-| `skillhub sync --skill <name> --tool <key>` | Sync a skill to a specific AI tool |
-| `skillhub unsync --skill <name> --tool <key>` | Remove a skill from a specific tool |
-| `skillhub update --skill <name> [--yes]` | Update a skill from its source (git pull / local copy) |
-| `skillhub update --all [--yes]` | Update all git-managed skills |
-| `skillhub delete --skill <name> [--yes]` | Delete a skill and remove all sync targets |
-| `skillhub push --skill <name> [-m "msg"]` | Commit and push changes for a git-managed skill |
-| `skillhub --help` | Show all commands and flags |
+| `skilldo list [--json]` | List managed skills and their sync targets |
+| `skilldo status [--json]` | Show installation status of all 47+ supported AI tools |
+| `skilldo explore [--query Q] [--json]` | Browse the skill market across enabled sources |
+| `skilldo sources list [--json]` | List configured explore sources |
+| `skilldo install --url <repo> [--name N] [--yes]` | Install a skill from a git URL or local path |
+| `skilldo sync --skill <name> --tool <key>` | Sync a skill to a specific AI tool |
+| `skilldo unsync --skill <name> --tool <key>` | Remove a skill from a specific tool |
+| `skilldo update --skill <name> [--yes]` | Update a skill from its source (git pull / local copy) |
+| `skilldo update --all [--yes]` | Update all git-managed skills |
+| `skilldo delete --skill <name> [--yes]` | Delete a skill and remove all sync targets |
+| `skilldo push --skill <name> [-m "msg"]` | Commit and push changes for a git-managed skill |
+| `skilldo --help` | Show all commands and flags |
 
 ## Global flags
 
@@ -52,32 +52,32 @@ Most commands accept `--skill <name>` which matches by **case-insensitive name**
 
 ```bash
 # Install a skill from GitHub and sync to Claude Code
-skillhub install --url https://github.com/anthropics/skills/tree/main/skills/skill-creator --yes
-skillhub sync --skill skill-creator --tool claude_code
+skilldo install --url https://github.com/anthropics/skills/tree/main/skills/skill-creator --yes
+skilldo sync --skill skill-creator --tool claude_code
 
 # List all managed skills as JSON
-skillhub list --json
+skilldo list --json
 
 # Check which AI tools are installed
-skillhub status
+skilldo status
 
 # Search the skill market
-skillhub explore --query "rag" --json
+skilldo explore --query "rag" --json
 
 # Update all git-managed skills
-skillhub update --all --yes
+skilldo update --all --yes
 
 # Push local changes for a skill
-skillhub push --skill my-skill -m "update docs"
+skilldo push --skill my-skill -m "update docs"
 
 # Delete a skill
-skillhub delete --skill old-skill --yes
+skilldo delete --skill old-skill --yes
 ```
 
 ## Tool keys
 
-Common tool keys for `--tool`: `claude_code`, `codex`, `opencode`, `gemini_cli`, `cline`, `augment`, `openclaw`, `iflow_cli`, `kiro_cli`, `pi`, `qoder`, `qwen_code`, `antigravity`, `cursor`. Run `skillhub status` for the full list.
+Common tool keys for `--tool`: `claude_code`, `codex`, `opencode`, `gemini_cli`, `cline`, `augment`, `openclaw`, `iflow_cli`, `kiro_cli`, `pi`, `qoder`, `qwen_code`, `antigravity`, `cursor`. Run `skilldo status` for the full list.
 
 ## Discovery
 
-If `skillhub` is on `PATH` (e.g. via shell function, `cargo install`, or bundled with the desktop app), an agent can invoke it directly after reading this skill. Prefer `--json` for programmatic use and parse the exit code to detect failures.
+If `skilldo` is on `PATH` (e.g. via shell function, `cargo install`, or bundled with the desktop app), an agent can invoke it directly after reading this skill. Prefer `--json` for programmatic use and parse the exit code to detect failures.

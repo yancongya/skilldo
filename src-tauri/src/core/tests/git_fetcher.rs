@@ -131,7 +131,7 @@ fn commit_all_and_push_pushes_changes_to_origin() {
         ],
         None,
     );
-    run_git(&["config", "user.name", "Skills Hub"], Some(&seed));
+    run_git(&["config", "user.name", crate::core::config::PRODUCT_NAME], Some(&seed));
     run_git(&["config", "user.email", "skills@example.com"], Some(&seed));
     fs::write(seed.join("SKILL.md"), b"---\nname: Test\n---\nold\n").unwrap();
     run_git(&["add", "SKILL.md"], Some(&seed));
@@ -147,7 +147,7 @@ fn commit_all_and_push_pushes_changes_to_origin() {
         None,
     );
     run_git(&["checkout", "main"], Some(&work));
-    run_git(&["config", "user.name", "Skills Hub"], Some(&work));
+    run_git(&["config", "user.name", crate::core::config::PRODUCT_NAME], Some(&work));
     run_git(&["config", "user.email", "skills@example.com"], Some(&work));
     fs::write(work.join("SKILL.md"), b"---\nname: Test\n---\nnew\n").unwrap();
 

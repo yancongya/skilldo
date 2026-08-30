@@ -39,8 +39,8 @@ pub fn run() {
 
             // Best-effort cleanup of our own old git temp directories.
             // Safety:
-            // - Only deletes directories that match prefix `skills-hub-git-*`
-            // - And contain our marker file `.skills-hub-git-temp`
+            // - Only deletes directories that match prefix `skilldo-git-*`
+            // - And contain our marker file `.skilldo-git-temp`
             // - And are older than the max age.
             let handle = app.handle().clone();
             let store_for_cleanup = store.clone();

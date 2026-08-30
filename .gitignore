@@ -41,4 +41,4 @@ src-tauri/target/release/bundle/
 .omo/
 
 # Local CLI wrapper (generated)
-skillhub
+skilldo

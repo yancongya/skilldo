@@ -13,7 +13,7 @@ use super::expand_home_path;
 use super::skill_store::SkillStore;
 use super::skills_search::{search_skills_online_with_base, OnlineSkillResult};
 
-use super::config::FEATURED_SKILLS_URL;
+use super::config::{FEATURED_SKILLS_URL, PRODUCT_NAME};
 
 const EXPLORE_SOURCES_KEY: &str = "explore_sources_v1";
 
@@ -178,7 +178,7 @@ fn default_sources() -> Vec<ExploreSourceConfig> {
     vec![
         ExploreSourceConfig {
             id: "official-featured".to_string(),
-            name: "Skills Hub Official".to_string(),
+            name: format!("{PRODUCT_NAME} Official").to_string(),
             kind: "featured_json".to_string(),
             endpoint: FEATURED_SKILLS_URL.to_string(),
             enabled: true,
@@ -295,7 +295,7 @@ fn fetch_git_index_source(
 ) -> Result<Vec<ExploreSkill>> {
     let cache_key = format!("explore_source_cache_{}", source.id);
     let cache_dir = std::env::temp_dir()
-        .join("skills-hub-explore")
+        .join("skilldo-explore")
         .join(sanitize_id(&source.id));
     let _ = std::fs::create_dir_all(&cache_dir);
 
@@ -399,7 +399,7 @@ fn read_endpoint(client: &Client, endpoint: &str) -> Result<String> {
     if endpoint.starts_with("http://") || endpoint.starts_with("https://") {
         return client
             .get(endpoint)
-            .header("User-Agent", "skills-hub")
+            .header("User-Agent", "skilldo")
             .send()
             .context("fetch explore source")?
             .error_for_status()
@@ -682,7 +682,8 @@ mod tests {
         let merged = merge_saved_sources(saved);
         let official = merged.iter().find(|s| s.id == "official-featured").unwrap();
         assert!(official.builtin);
-        assert_eq!(official.name, "Skills Hub Official");
+        let expected = format!("{} Official", crate::core::config::PRODUCT_NAME);
+        assert_eq!(official.name, expected);
         assert_eq!(official.kind, "featured_json");
         assert!(!official.enabled);
         assert!(merged.iter().any(|s| s.id == "custom-1"));

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Skills Hub — 构建脚本
+# SkillDo — 构建脚本
 # 用法:
 #   ./scripts/build.sh              # macOS DMG（当前架构）
 #   ./scripts/build.sh universal    # macOS Universal DMG（Intel + Apple Silicon）
@@ -7,7 +7,7 @@
 #   ./scripts/build.sh linux        # Linux AppImage + deb
 #   ./scripts/build.sh all          # 当前平台全部格式
 #   ./scripts/build.sh cli          # 仅构建 CLI 二进制（不打包桌面应用）
-#   ./scripts/build.sh release      # 构建 release CLI 到 ~/.local/bin/skillhub
+#   ./scripts/build.sh release      # 构建 release CLI 到 ~/.local/bin/skilldo
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ TARGET="${1:-dmg}"
 TAURI_FLAG=""
 
 echo "========================================="
-echo " Skills Hub Build — target: $TARGET"
+echo " SkillDo Build — target: $TARGET"
 echo "========================================="
 
 # 1. 前端构建（tsc + vite）
@@ -52,24 +52,24 @@ case "$TARGET" in
   cli)
     echo "▶ Building CLI binary only (no desktop app)..."
     cd src-tauri
-    cargo build --release --bin skillhub
+    cargo build --release --bin skilldo
     echo ""
-    echo "✓ CLI binary: src-tauri/target/release/skillhub"
+    echo "✓ CLI binary: src-tauri/target/release/skilldo"
     echo ""
     echo "安装到 PATH:"
-    echo "  cp src-tauri/target/release/skillhub ~/.local/bin/skillhub"
+    echo "  cp src-tauri/target/release/skilldo ~/.local/bin/skilldo"
     exit 0
     ;;
   release)
     echo "▶ Building release CLI + installing to ~/.local/bin..."
     cd src-tauri
-    cargo build --release --bin skillhub
+    cargo build --release --bin skilldo
     mkdir -p ~/.local/bin
-    cp target/release/skillhub ~/.local/bin/skillhub
-    chmod +x ~/.local/bin/skillhub
+    cp target/release/skilldo ~/.local/bin/skilldo
+    chmod +x ~/.local/bin/skilldo
     echo ""
-    echo "✓ skillhub installed to ~/.local/bin/skillhub"
-    echo "  版本: $(~/.local/bin/skillhub --version 2>/dev/null || echo 'unknown')"
+    echo "✓ skilldo installed to ~/.local/bin/skilldo"
+    echo "  版本: $(~/.local/bin/skilldo --version 2>/dev/null || echo 'unknown')"
     exit 0
     ;;
   *)
@@ -104,7 +104,7 @@ for f in "$BUNDLE_DIR/nsis/"*.exe "$BUNDLE_DIR/msi/"*.msi "$BUNDLE_DIR/deb/"*.de
 done
 
 # 复制 CLI 二进制
-cp src-tauri/target/release/skillhub "$OUT_DIR/" && echo "→ out/skillhub"
+cp src-tauri/target/release/skilldo "$OUT_DIR/" && echo "→ out/skilldo"
 
 # 输出结果
 echo ""
