@@ -127,6 +127,13 @@ pub fn run() {
             commands::add_custom_scan_dir,
             commands::remove_custom_scan_dir,
             commands::browse_directory_show_hidden,
+            commands::get_app_config,
+            commands::save_app_config,
+            commands::export_config,
+            commands::import_config,
+            commands::validate_github_token,
+            commands::write_text_file,
+            commands::read_text_file,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

@@ -903,7 +903,7 @@ pub fn default_db_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<P
 
 /// App identifier, must match `identifier` in `tauri.conf.json` so the CLI and
 /// the Tauri GUI resolve the exact same SQLite database path.
-pub use super::config::APP_IDENTIFIER as APP_IDENTIFIER;
+pub use super::config::APP_IDENTIFIER;
 
 /// Resolve the default database path without a Tauri `AppHandle`.
 ///

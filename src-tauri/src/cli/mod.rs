@@ -729,7 +729,7 @@ fn cmd_push(
     let result = installer::push_skill_cli(store, &skill_id, message)?;
     let out = CliPushResult {
         success: true,
-        skill_id: skill_id,
+        skill_id,
         name: record.name,
         committed: result.committed,
         pushed: result.pushed,

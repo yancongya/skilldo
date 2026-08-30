@@ -2537,12 +2537,7 @@ pub fn update_managed_skill_from_source_cli(
                 source_path
             );
             let url = source_path.to_string_lossy().to_string();
-            match super::git_fetcher::clone_or_pull(
-                &url,
-                &source_path,
-                None,
-                None,
-            ) {
+            match super::git_fetcher::clone_or_pull(&url, &source_path, None, None) {
                 Ok(rev) => {
                     log::info!("[installer:cli] pulled to rev: {}", rev);
                 }
@@ -2764,10 +2759,9 @@ pub fn push_skill_cli(
         return Ok(PushResult {
             committed: false,
             pushed: push_result.is_ok(),
-            message: if push_result.is_ok() {
-                "Pushed (no new commits)".to_string()
-            } else {
-                format!("Push failed: {:#}", push_result.unwrap_err())
+            message: match push_result {
+                Ok(()) => "Pushed (no new commits)".to_string(),
+                Err(e) => format!("Push failed: {:#}", e),
             },
         });
     }
@@ -2785,7 +2779,9 @@ pub fn push_skill_cli(
         );
     }
 
-    let commit_msg = String::from_utf8_lossy(&commit_out.stdout).trim().to_string();
+    let commit_msg = String::from_utf8_lossy(&commit_out.stdout)
+        .trim()
+        .to_string();
 
     // Push.
     let push_result = git_push(&central_path);
@@ -2793,10 +2789,9 @@ pub fn push_skill_cli(
     Ok(PushResult {
         committed: true,
         pushed: push_result.is_ok(),
-        message: if push_result.is_ok() {
-            commit_msg
-        } else {
-            format!("Committed but push failed: {:#}", push_result.unwrap_err())
+        message: match push_result {
+            Ok(()) => commit_msg,
+            Err(e) => format!("Committed but push failed: {:#}", e),
         },
     })
 }
@@ -2808,10 +2803,7 @@ fn git_push(repo_dir: &Path) -> Result<()> {
         .output()
         .context("failed to run git push")?;
     if !out.status.success() {
-        anyhow::bail!(
-            "git push failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        anyhow::bail!("git push failed: {}", String::from_utf8_lossy(&out.stderr));
     }
     Ok(())
 }

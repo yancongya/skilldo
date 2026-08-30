@@ -1,3 +1,4 @@
+pub mod app_config;
 pub mod cache_cleanup;
 pub mod cancel_token;
 pub mod central_repo;

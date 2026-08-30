@@ -25,10 +25,12 @@ import NamePromptModal from './components/skills/modals/NamePromptModal'
 import SettingsPage from './components/skills/SettingsPage'
 import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
+  AppConfigDto,
   ExploreSkillDto,
   ExploreSourceConfigDto,
   ExploreFetchResultDto,
   GitSkillCandidate,
+  GithubTokenStatusDto,
   InstallResultDto,
   LocalSkillCandidate,
   ManagedSkill,
@@ -51,6 +53,22 @@ type SkillScopeState = Record<
     projects: string[]
   }
 >
+
+// The shipped type rollup for `@tauri-apps/plugin-dialog` under `bundler`
+// resolution doesn't expose `save`/`filters`, so we declare the minimal
+// surface we use and cast the dynamic import to it at the call sites.
+interface DialogModule {
+  open(opts?: {
+    filters?: { name: string; extensions: string[] }[]
+    multiple?: boolean
+    directory?: boolean
+    title?: string
+  }): Promise<string | string[] | null>
+  save(opts?: {
+    defaultPath?: string
+    filters?: { name: string; extensions: string[] }[]
+  }): Promise<string | null>
+}
 
 function App() {
   const { t, i18n } = useTranslation()
@@ -532,6 +550,11 @@ function App() {
       .catch(() => {})
   }, [isTauri, invokeTauri])
 
+  const handleValidateGithubToken = useCallback(
+    (token: string) => invokeTauri<GithubTokenStatusDto>('validate_github_token', { token }),
+    [invokeTauri],
+  )
+
   useEffect(() => {
     if (isTauri) {
       void loadPlan()
@@ -765,6 +788,44 @@ function App() {
     myGitRepos: [],
     officialGitRepos: [],
   })
+
+  const handleExportConfig = useCallback(async () => {
+    if (!isTauri) return
+    const json = await invokeTauri<string>('export_config')
+    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
+    const date = new Date().toISOString().slice(0, 10)
+    const path = await dialog.save({
+      defaultPath: `skilldo-config-${date}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (path) {
+      await invokeTauri('write_text_file', { path, contents: json })
+    }
+  }, [isTauri, invokeTauri])
+
+  const handleImportConfig = useCallback(async () => {
+    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
+    const selected = await dialog.open({
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      multiple: false,
+    })
+    if (!selected || Array.isArray(selected)) return
+    const json = await invokeTauri<string>('read_text_file', { path: selected })
+    await invokeTauri<AppConfigDto>('import_config', { json })
+    // Refresh all settings state from the newly imported config.
+    const token = await invokeTauri<string>('get_github_token').catch(() => '')
+    setGithubToken(token)
+    const rules = await invokeTauri<OriginRules>('get_origin_rules').catch(() => null)
+    if (rules) setOriginRules(rules)
+    const dirs = await invokeTauri<CustomScanDirEntry[]>('get_custom_scan_dirs').catch(() => null)
+    if (dirs) setCustomScanDirs(dirs)
+    const sources = await invokeTauri<ExploreSourceConfigDto[]>('get_explore_sources').catch(
+      () => null,
+    )
+    if (sources) setExploreSources(sources)
+    setToolStatus(await invokeTauri<ToolStatusDto>('get_tool_status').catch(() => null))
+  }, [invokeTauri, setGithubToken, setOriginRules, setCustomScanDirs, setExploreSources, setToolStatus])
+
   const handlePickStoragePath = useCallback(async () => {
     try {
       if (!isTauri) {
@@ -3042,6 +3103,12 @@ function App() {
             customScanDirs={customScanDirs}
             onAddCustomScanDir={handleAddCustomScanDir}
             onRemoveCustomScanDir={handleRemoveCustomScanDir}
+            exploreSources={exploreSources}
+            onSaveExploreSources={handleSaveExploreSources}
+            onExportConfig={handleExportConfig}
+            onImportConfig={handleImportConfig}
+            onValidateGithubToken={handleValidateGithubToken}
+            toolStatus={toolStatus}
             t={t}
           />
         ) : (

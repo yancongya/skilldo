@@ -200,3 +200,26 @@ export type OriginRules = {
   myGitRepos: string[]
   officialGitRepos: string[]
 }
+
+/// Aggregated, serializable application configuration (backup / restore unit).
+export type AppConfigDto = {
+  configVersion: number
+  language?: string | null
+  storagePath?: string | null
+  gitCacheCleanupDays: number
+  gitCacheTtlSecs: number
+  githubToken: string
+  originRules: OriginRules
+  toolDirOverrides: ToolDirOverride[]
+  customScanDirs: CustomScanDirEntry[]
+  exploreSources: ExploreSourceConfigDto[]
+  exportedAt?: string | null
+}
+
+/// Result of validating a GitHub personal access token.
+export type GithubTokenStatusDto = {
+  valid: boolean
+  login?: string | null
+  scopes: string[]
+  error?: string | null
+}

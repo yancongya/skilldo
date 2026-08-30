@@ -2672,6 +2672,96 @@
   margin-top: 4px;
 }
 
+.settings-token-status {
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+.settings-token-status.ok {
+  color: var(--success, #1a7f37);
+  border-color: var(--success, #1a7f37);
+  background: color-mix(in srgb, var(--success, #1a7f37) 12%, transparent);
+}
+.settings-token-status.err {
+  color: var(--danger, #c0392b);
+  border-color: var(--danger, #c0392b);
+  background: color-mix(in srgb, var(--danger, #c0392b) 12%, transparent);
+}
+
+.settings-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.settings-switch input {
+  accent-color: var(--accent-primary);
+}
+
+.settings-source-editor {
+  margin: 12px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle, rgba(128, 128, 128, 0.05));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-status-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 4px;
+}
+.settings-status-row {
+  display: grid;
+  grid-template-columns: 1fr auto 2fr;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+}
+.settings-status-row:nth-child(odd) {
+  background: var(--bg-subtle, rgba(128, 128, 128, 0.05));
+}
+.settings-status-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.settings-status-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.settings-status-badge.ok {
+  background: color-mix(in srgb, var(--success, #1a7f37) 16%, transparent);
+  color: var(--success, #1a7f37);
+}
+.settings-status-badge.muted {
+  background: var(--bg-subtle, rgba(128, 128, 128, 0.12));
+  color: var(--text-secondary);
+}
+.settings-status-path {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-list {
   display: flex;
   flex-direction: column;
