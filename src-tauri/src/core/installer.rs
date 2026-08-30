@@ -466,6 +466,68 @@ pub fn install_package_skill<R: tauri::Runtime>(
     })
 }
 
+/// CLI-friendly variant of [`install_package_skill`] that resolves the central
+/// repo path without a Tauri runtime handle (used by backup restore).
+pub fn install_package_skill_cli(
+    store: &SkillStore,
+    package: &str,
+    command: Option<&str>,
+    name: Option<String>,
+) -> Result<InstallResult> {
+    let package = package.trim();
+    if package.is_empty() {
+        anyhow::bail!("package name is required");
+    }
+
+    let output_dir = std::env::temp_dir().join(format!("skilldo-package-{}", Uuid::new_v4()));
+    run_package_command(package, command, &output_dir)?;
+    let (source_dir, source_subpath) = resolve_single_generated_skill(&output_dir, None)?;
+
+    let (metadata_name, description) = extract_skill_info(&source_dir, &output_dir);
+    let name = name
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(metadata_name);
+
+    let central_dir = resolve_central_repo_path_cli(store)?;
+    ensure_central_repo(&central_dir)?;
+    let central_path = central_dir.join(&name);
+    if central_path.exists() {
+        let _ = std::fs::remove_dir_all(&output_dir);
+        anyhow::bail!("skill already exists in central repo: {:?}", central_path);
+    }
+    copy_dir_recursive(&source_dir, &central_path)
+        .with_context(|| format!("copy {:?} -> {:?}", source_dir, central_path))?;
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    let now = now_ms();
+    let content_hash = compute_content_hash(&central_path);
+    let record = SkillRecord {
+        id: Uuid::new_v4().to_string(),
+        name,
+        description,
+        source_type: "package".to_string(),
+        source_ref: Some(package_source_ref(package, command)?),
+        source_subpath,
+        source_revision: None,
+        central_path: central_path.to_string_lossy().to_string(),
+        content_hash: content_hash.clone(),
+        created_at: now,
+        updated_at: now,
+        last_sync_at: None,
+        last_seen_at: now,
+        status: "ok".to_string(),
+    };
+    store.upsert_skill(&record)?;
+
+    Ok(InstallResult {
+        skill_id: record.id,
+        name: record.name,
+        central_path,
+        content_hash,
+    })
+}
+
 #[derive(Clone, Debug)]
 struct ParsedGitSource {
     clone_url: String,

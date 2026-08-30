@@ -7,8 +7,10 @@ import type {
   ExploreSourceConfigDto,
   GithubTokenStatusDto,
   OriginRules,
+  RestoreReportDto,
   ToolDirOverride,
   ToolStatusDto,
+  WebDavConfigDto,
 } from './types'
 
 type UpdateStatus = 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'done' | 'error'
@@ -42,6 +44,12 @@ type SettingsPageProps = {
   onImportConfig: () => Promise<void>
   onValidateGithubToken: (token: string) => Promise<GithubTokenStatusDto>
   toolStatus: ToolStatusDto | null
+  webdav: WebDavConfigDto | null
+  onSaveWebdav: (webdav: WebDavConfigDto) => Promise<void>
+  onBackupToFile: () => Promise<void>
+  onRestoreFromFile: () => Promise<RestoreReportDto>
+  onBackupWebdav: () => Promise<void>
+  onRestoreWebdav: () => Promise<RestoreReportDto>
 }
 
 const SettingsPage = ({
@@ -73,6 +81,12 @@ const SettingsPage = ({
   onImportConfig,
   onValidateGithubToken,
   toolStatus,
+  webdav,
+  onSaveWebdav,
+  onBackupToFile,
+  onRestoreFromFile,
+  onBackupWebdav,
+  onRestoreWebdav,
 }: SettingsPageProps) => {
   const [localToken, setLocalToken] = useState(githubToken)
   useEffect(() => {
@@ -209,6 +223,73 @@ const SettingsPage = ({
       )
     }
   }, [isTauri, onImportConfig, t])
+
+  // ---- WebDAV backup ----
+  const [wdUrl, setWdUrl] = useState(webdav?.url ?? '')
+  const [wdUser, setWdUser] = useState(webdav?.user ?? '')
+  const [wdPassword, setWdPassword] = useState(webdav?.password ?? '')
+  const [wdRemoteDir, setWdRemoteDir] = useState(webdav?.remoteDir ?? '')
+  const [restoreReport, setRestoreReport] = useState<RestoreReportDto | null>(null)
+  useEffect(() => {
+    setWdUrl(webdav?.url ?? '')
+    setWdUser(webdav?.user ?? '')
+    setWdPassword(webdav?.password ?? '')
+    setWdRemoteDir(webdav?.remoteDir ?? '')
+  }, [webdav])
+  const handleSaveWebdav = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      await onSaveWebdav({
+        url: wdUrl,
+        user: wdUser,
+        password: wdPassword,
+        remoteDir: wdRemoteDir,
+      })
+      setBackupMsg(t('saveWebdav') + ' ✓')
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : String(err))
+    }
+  }, [isTauri, onSaveWebdav, wdUrl, wdUser, wdPassword, wdRemoteDir, t])
+  const handleBackupWebdav = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      await onBackupWebdav()
+      setRestoreReport(null)
+      setBackupMsg(t('backupDone'))
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : String(err))
+    }
+  }, [isTauri, onBackupWebdav, t])
+  const handleRestoreWebdav = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      const report = await onRestoreWebdav()
+      setRestoreReport(report)
+      setBackupMsg(t('restoreDone', { summary: report.summary }))
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : String(err))
+    }
+  }, [isTauri, onRestoreWebdav, t])
+  const handleBackupToFile = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      await onBackupToFile()
+      setRestoreReport(null)
+      setBackupMsg(t('backupDone'))
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : String(err))
+    }
+  }, [isTauri, onBackupToFile, t])
+  const handleRestoreFromFile = useCallback(async () => {
+    if (!isTauri) return
+    try {
+      const report = await onRestoreFromFile()
+      setRestoreReport(report)
+      setBackupMsg(t('restoreDone', { summary: report.summary }))
+    } catch (err) {
+      setBackupMsg(err instanceof Error ? err.message : String(err))
+    }
+  }, [isTauri, onRestoreFromFile, t])
 
   const handleCheckUpdate = useCallback(async () => {
     if (!isTauri) return
@@ -720,6 +801,49 @@ const SettingsPage = ({
         )}
 
         <div className="settings-section-divider" />
+        <div className="settings-section-title">{t('webdav')}</div>
+        <div className="settings-helper" style={{ marginBottom: 12 }}>
+          {t('webdavHint')}
+        </div>
+        <div className="settings-webdav-grid">
+          <label className="settings-field">
+            <span>{t('webdavUrl')}</span>
+            <input
+              type="text"
+              value={wdUrl}
+              placeholder="https://dav.example.com/remote.php/dav/files/me"
+              onChange={(e) => setWdUrl(e.target.value)}
+            />
+          </label>
+          <label className="settings-field">
+            <span>{t('webdavUser')}</span>
+            <input type="text" value={wdUser} onChange={(e) => setWdUser(e.target.value)} />
+          </label>
+          <label className="settings-field">
+            <span>{t('webdavPassword')}</span>
+            <input
+              type="password"
+              value={wdPassword}
+              onChange={(e) => setWdPassword(e.target.value)}
+            />
+          </label>
+          <label className="settings-field">
+            <span>{t('webdavRemoteDir')}</span>
+            <input
+              type="text"
+              value={wdRemoteDir}
+              placeholder="skilldo"
+              onChange={(e) => setWdRemoteDir(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="settings-tool-dir-actions" style={{ marginTop: 12 }}>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={handleSaveWebdav}>
+            {t('saveWebdav')}
+          </button>
+        </div>
+
+        <div className="settings-section-divider" />
         <div className="settings-section-title">{t('configBackup')}</div>
         <div className="settings-helper" style={{ marginBottom: 12 }}>
           {t('configBackupHint')}
@@ -732,9 +856,73 @@ const SettingsPage = ({
             {t('importConfig')}
           </button>
         </div>
+        <div className="settings-helper" style={{ marginTop: 12 }}>
+          {t('webdavHint')}
+        </div>
+        <div className="settings-tool-dir-actions" style={{ marginTop: 8 }}>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={handleBackupToFile}>
+            {t('backupToFile')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={handleRestoreFromFile}
+          >
+            {t('restoreFromFile')}
+          </button>
+          <button className="btn btn-secondary btn-sm" type="button" onClick={handleBackupWebdav}>
+            {t('backupToWebdav')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={handleRestoreWebdav}
+          >
+            {t('restoreFromWebdav')}
+          </button>
+        </div>
         {backupMsg && (
           <div className="settings-helper" style={{ marginTop: 8 }}>
             {backupMsg}
+          </div>
+        )}
+        {restoreReport && (
+          <div className="settings-restore-report" style={{ marginTop: 12 }}>
+            <div className="settings-section-subtitle">{t('restoreReport')}</div>
+            {restoreReport.installed.length > 0 && (
+              <div className="settings-restore-group">
+                <span className="settings-restore-tag ok">{t('restoreInstalled')}</span>
+                <ul>
+                  {restoreReport.installed.map((name) => (
+                    <li key={name}>{name}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {restoreReport.skipped.length > 0 && (
+              <div className="settings-restore-group">
+                <span className="settings-restore-tag muted">{t('restoreSkipped')}</span>
+                <ul>
+                  {restoreReport.skipped.map((item) => (
+                    <li key={item.name}>
+                      {item.name} — {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {restoreReport.failed.length > 0 && (
+              <div className="settings-restore-group">
+                <span className="settings-restore-tag err">{t('restoreFailed')}</span>
+                <ul>
+                  {restoreReport.failed.map((item) => (
+                    <li key={item.name}>
+                      {item.name} — {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 

@@ -1,4 +1,5 @@
 pub mod app_config;
+pub mod backup;
 pub mod cache_cleanup;
 pub mod cancel_token;
 pub mod central_repo;
@@ -7,6 +8,7 @@ pub mod content_hash;
 pub mod explore_sources;
 pub mod featured_skills;
 pub mod git_fetcher;
+pub mod github_auth;
 pub mod github_download;
 pub mod github_search;
 pub mod installer;
@@ -17,6 +19,7 @@ pub mod skills_search;
 pub mod sync_engine;
 pub mod temp_cleanup;
 pub mod tool_adapters;
+pub mod webdav;
 
 use std::path::PathBuf;
 

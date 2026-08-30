@@ -37,6 +37,7 @@ import type {
   OnboardingPlan,
   OriginRules,
   PublishResultDto,
+  RestoreReportDto,
   TagWithCountDto,
   ToolOption,
   ToolStatusDto,
@@ -44,6 +45,7 @@ import type {
   CustomScanDirEntry,
   UpdateCheckResultDto,
   UpdateResultDto,
+  WebDavConfigDto,
 } from './components/skills/types'
 
 type SkillScopeState = Record<
@@ -131,6 +133,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'updated' | 'name'>('updated')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'global' | 'project'>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'syncable' | 'local'>('all')
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid')
   const [skillUpdateChecks, setSkillUpdateChecks] = useState<Record<string, UpdateCheckResultDto>>({})
   const [checkingSkillUpdates, setCheckingSkillUpdates] = useState(false)
@@ -738,6 +741,9 @@ function App() {
     const hasTagFilter = selectedTagIds.length > 0 || includeUntagged
     const filtered = managedSkills.filter((skill) => {
       if (scopeFilter !== 'all' && getSkillScope(skill) !== scopeFilter) return false
+      const syncable = skill.source_type === 'git' || skill.source_type === 'package'
+      if (sourceFilter === 'syncable' && !syncable) return false
+      if (sourceFilter === 'local' && syncable) return false
       if (hasTagFilter) {
         const matchesSelectedTag = skill.tags.some((tag) => selectedTagSet.has(tag.id))
         const matchesUntagged = includeUntagged && skill.tags.length === 0
@@ -766,6 +772,7 @@ function App() {
     searchQuery,
     selectedTagIds,
     sortBy,
+    sourceFilter,
   ])
   const untaggedCount = useMemo(
     () => managedSkills.filter((skill) => skill.tags.length === 0).length,
@@ -788,6 +795,7 @@ function App() {
     myGitRepos: [],
     officialGitRepos: [],
   })
+  const [webdav, setWebdav] = useState<WebDavConfigDto | null>(null)
 
   const handleExportConfig = useCallback(async () => {
     if (!isTauri) return
@@ -824,7 +832,59 @@ function App() {
     )
     if (sources) setExploreSources(sources)
     setToolStatus(await invokeTauri<ToolStatusDto>('get_tool_status').catch(() => null))
-  }, [invokeTauri, setGithubToken, setOriginRules, setCustomScanDirs, setExploreSources, setToolStatus])
+    const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
+    if (cfg) setWebdav(cfg.webdav ?? null)
+  }, [invokeTauri, setGithubToken, setOriginRules, setCustomScanDirs, setExploreSources, setToolStatus, setWebdav])
+
+  const handleSaveWebdav = useCallback(
+    async (next: WebDavConfigDto) => {
+      if (!isTauri) return
+      await invokeTauri('set_webdav_config', { webdav: next })
+      setWebdav(next)
+    },
+    [invokeTauri, isTauri],
+  )
+
+  const handleBackupToFile = useCallback(async () => {
+    if (!isTauri) return
+    const json = await invokeTauri<string>('export_full_backup_json')
+    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
+    const date = new Date().toISOString().slice(0, 10)
+    const path = await dialog.save({
+      defaultPath: `skilldo-backup-${date}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (path) {
+      await invokeTauri('write_text_file', { path, contents: json })
+    }
+  }, [isTauri, invokeTauri])
+
+  const handleRestoreFromFile = useCallback(async (): Promise<RestoreReportDto> => {
+    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
+    const selected = await dialog.open({
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      multiple: false,
+    })
+    if (!selected || Array.isArray(selected)) {
+      return { installed: [], skipped: [], failed: [], summary: 'no file selected' }
+    }
+    const report = await invokeTauri<RestoreReportDto>('restore_from_file', { path: selected })
+    const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
+    if (cfg) setWebdav(cfg.webdav ?? null)
+    return report
+  }, [invokeTauri, setWebdav])
+
+  const handleBackupWebdav = useCallback(async () => {
+    if (!isTauri) return
+    await invokeTauri('backup_webdav')
+  }, [isTauri, invokeTauri])
+
+  const handleRestoreWebdav = useCallback(async (): Promise<RestoreReportDto> => {
+    const report = await invokeTauri<RestoreReportDto>('restore_from_webdav')
+    const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
+    if (cfg) setWebdav(cfg.webdav ?? null)
+    return report
+  }, [invokeTauri, setWebdav])
 
   const handlePickStoragePath = useCallback(async () => {
     try {
@@ -946,9 +1006,14 @@ function App() {
       .join('、')
   }, [toolStatus, tools])
 
-  const handleOpenSettings = useCallback(() => {
+  const handleOpenSettings = useCallback(async () => {
     setActiveView('settings')
-  }, [])
+    // Load WebDAV config so the Settings form shows current values.
+    if (isTauri) {
+      const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
+      if (cfg) setWebdav(cfg.webdav ?? null)
+    }
+  }, [invokeTauri, isTauri, setWebdav])
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([loadManagedSkills(), loadPlan(), loadTags()])
@@ -1156,6 +1221,13 @@ function App() {
   const handleScopeFilterChange = useCallback(
     (value: 'all' | 'global' | 'project') => {
       setScopeFilter(value)
+    },
+    [],
+  )
+
+  const handleSourceFilterChange = useCallback(
+    (value: 'all' | 'syncable' | 'local') => {
+      setSourceFilter(value)
     },
     [],
   )
@@ -3024,6 +3096,7 @@ function App() {
               sortBy={sortBy}
               searchQuery={searchQuery}
               scopeFilter={scopeFilter}
+              sourceFilter={sourceFilter}
               viewMode={viewMode}
               tags={tags}
               selectedTagIds={selectedTagIds}
@@ -3035,6 +3108,7 @@ function App() {
               onSortChange={handleSortChange}
               onSearchChange={handleSearchChange}
               onScopeFilterChange={handleScopeFilterChange}
+              onSourceFilterChange={handleSourceFilterChange}
               onViewModeChange={setViewMode}
               onCheckUpdates={handleCheckSkillUpdates}
               onToggleTag={handleToggleTagFilter}
@@ -3109,6 +3183,12 @@ function App() {
             onImportConfig={handleImportConfig}
             onValidateGithubToken={handleValidateGithubToken}
             toolStatus={toolStatus}
+            webdav={webdav}
+            onSaveWebdav={handleSaveWebdav}
+            onBackupToFile={handleBackupToFile}
+            onRestoreFromFile={handleRestoreFromFile}
+            onBackupWebdav={handleBackupWebdav}
+            onRestoreWebdav={handleRestoreWebdav}
             t={t}
           />
         ) : (

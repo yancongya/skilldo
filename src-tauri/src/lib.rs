@@ -134,6 +134,12 @@ pub fn run() {
             commands::validate_github_token,
             commands::write_text_file,
             commands::read_text_file,
+            commands::export_full_backup_json,
+            commands::backup_to_file,
+            commands::backup_webdav,
+            commands::restore_from_file,
+            commands::restore_from_webdav,
+            commands::set_webdav_config,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

@@ -48,6 +48,7 @@ const SkillCardCompact = ({
   const copyValue = (github?.href ?? skill.source_ref ?? '').trim()
   const skillScope = getSkillScope(skill)
   const projectCount = getSkillProjects(skill).length
+  const syncable = skill.source_type === 'git' || skill.source_type === 'package'
   const sourceLabel = github?.label ?? getSkillSourceLabel(skill)
   const description = skill.description?.trim() || t('noSkillDescription')
 
@@ -76,6 +77,11 @@ const SkillCardCompact = ({
           </div>
           <div className="skill-card-compact-badges">
             <SkillOriginBadge skill={skill} t={t} compact />
+            {!syncable ? (
+              <span className="compact-local-chip" title={t('localSkillTooltip')}>
+                {t('localSkillBadge')}
+              </span>
+            ) : null}
             {updateCheck?.has_update || updateCheck?.has_local_changes ? (
               <span className="compact-update-chip">
                 {updateCheck.has_local_changes && !updateCheck.has_update

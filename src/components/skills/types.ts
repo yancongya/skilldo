@@ -201,6 +201,14 @@ export type OriginRules = {
   officialGitRepos: string[]
 }
 
+/// WebDAV connection profile used for remote backup / restore.
+export type WebDavConfigDto = {
+  url: string
+  user: string
+  password: string
+  remoteDir: string
+}
+
 /// Aggregated, serializable application configuration (backup / restore unit).
 export type AppConfigDto = {
   configVersion: number
@@ -213,6 +221,7 @@ export type AppConfigDto = {
   toolDirOverrides: ToolDirOverride[]
   customScanDirs: CustomScanDirEntry[]
   exploreSources: ExploreSourceConfigDto[]
+  webdav?: WebDavConfigDto | null
   exportedAt?: string | null
 }
 
@@ -222,4 +231,18 @@ export type GithubTokenStatusDto = {
   login?: string | null
   scopes: string[]
   error?: string | null
+}
+
+/// One skipped / failed skill in a restore report.
+export type RestoreItemDto = {
+  name: string
+  reason: string
+}
+
+/// Structured result of a backup restore.
+export type RestoreReportDto = {
+  installed: string[]
+  skipped: RestoreItemDto[]
+  failed: RestoreItemDto[]
+  summary: string
 }

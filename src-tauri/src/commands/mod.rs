@@ -5,9 +5,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
-use crate::core::app_config::{
-    export_config_json, parse_config_json, AppConfig, CustomScanDirEntry as CfgScanDir,
-    OriginRules as CfgOriginRules, ToolDirOverride as CfgToolOverride,
+use crate::core::app_config::{export_config_json, parse_config_json, AppConfig, WebDavConfig};
+use crate::core::backup::{export_full_backup, restore_full_backup, RestoreReport};
+use crate::core::webdav::{download_backup, upload_backup};
+// The aggregation logic now lives in `core::app_config`; re-export so the rest
+// of this module (and its command handlers) keeps resolving the same names.
+pub use crate::core::app_config::{
+    get_origin_rules_impl, has_tool_dir_override, load_app_config, normalize_rules,
+    resolve_tool_global_dir, save_app_config_impl, CUSTOM_SCAN_DIRS_KEY, ORIGIN_RULES_KEY,
+    TOOL_DIR_OVERRIDE_PREFIX,
 };
 use crate::core::cache_cleanup::{
     cleanup_git_cache_dirs, get_git_cache_cleanup_days as get_git_cache_cleanup_days_core,
@@ -44,9 +50,6 @@ use crate::core::tool_adapters::{
     resolve_project_path, supports_project_scope,
 };
 
-const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
-const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
-const ORIGIN_RULES_KEY: &str = "origin_rules_v1";
 const FEATURED_SKILLS_CACHE_KEY: &str = "featured_skills_cache";
 const BUNDLED_FEATURED_SKILLS_JSON: &str = include_str!("../../../featured-skills.json");
 const KNOWN_OFFICIAL_SKILL_SOURCES: &[(&str, &str)] = &[
@@ -112,23 +115,10 @@ const OFFICIAL_SOURCE_PATTERNS: &[&str] = &[
     ".codex/skills/.system",
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CustomScanDirEntry {
-    pub name: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct OriginRules {
-    #[serde(default)]
-    pub my_git_owners: Vec<String>,
-    #[serde(default)]
-    pub my_git_repos: Vec<String>,
-    #[serde(default)]
-    pub official_git_repos: Vec<String>,
-}
+// `CustomScanDirEntry` and `OriginRules` are owned by `core::app_config`
+// (single source of truth); re-export so the rest of this module keeps using
+// the same names without a second, divergent definition.
+pub use crate::core::app_config::{CustomScanDirEntry, OriginRules};
 
 #[derive(Debug, Deserialize)]
 struct FeaturedSkillsOriginData {
@@ -141,69 +131,6 @@ struct FeaturedSkillOriginEntry {
     name: String,
     #[serde(default)]
     source_url: String,
-}
-
-fn normalize_rule_item(value: &str) -> String {
-    value
-        .trim()
-        .trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .trim_start_matches("www.")
-        .trim_end_matches(".git")
-        .to_lowercase()
-}
-
-fn normalize_rules(mut rules: OriginRules) -> OriginRules {
-    rules.my_git_owners = rules
-        .my_git_owners
-        .into_iter()
-        .map(|item| normalize_rule_item(&item))
-        .filter(|item| !item.is_empty())
-        .collect();
-    rules.my_git_repos = rules
-        .my_git_repos
-        .into_iter()
-        .map(|item| normalize_rule_item(&item))
-        .filter(|item| !item.is_empty())
-        .collect();
-    rules.official_git_repos = rules
-        .official_git_repos
-        .into_iter()
-        .map(|item| normalize_rule_item(&item))
-        .filter(|item| !item.is_empty())
-        .collect();
-    rules.my_git_owners.sort();
-    rules.my_git_owners.dedup();
-    rules.my_git_repos.sort();
-    rules.my_git_repos.dedup();
-    rules.official_git_repos.sort();
-    rules.official_git_repos.dedup();
-    rules
-}
-
-fn get_origin_rules_impl(store: &SkillStore) -> anyhow::Result<OriginRules> {
-    let raw = store.get_setting(ORIGIN_RULES_KEY)?;
-    let rules = raw
-        .and_then(|json| serde_json::from_str::<OriginRules>(&json).ok())
-        .unwrap_or_default();
-    Ok(normalize_rules(rules))
-}
-
-fn resolve_tool_global_dir(adapter_key: &str, store: &SkillStore) -> anyhow::Result<String> {
-    let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, adapter_key);
-    if let Some(override_path) = store.get_setting(&override_key)? {
-        let expanded = expand_home_path(&override_path)?;
-        return Ok(expanded.to_string_lossy().to_string());
-    }
-    let adapter = adapter_by_key(adapter_key)
-        .ok_or_else(|| anyhow::anyhow!("unknown tool: {}", adapter_key))?;
-    let path = resolve_default_path(&adapter)?;
-    Ok(path.to_string_lossy().to_string())
-}
-
-fn has_tool_dir_override(adapter_key: &str, store: &SkillStore) -> anyhow::Result<bool> {
-    let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, adapter_key);
-    Ok(store.get_setting(&override_key)?.is_some())
 }
 
 fn is_tool_available(
@@ -1688,114 +1615,9 @@ pub fn set_origin_rules(
 }
 
 // ---------------------------------------------------------------------------
-// Unified app config (single source of truth used for backup / restore)
+// Unified app config — aggregation now lives in `core::app_config`.
+// The Tauri command handlers below delegate to those core functions.
 // ---------------------------------------------------------------------------
-
-/// Collect per-tool skills-directory overrides as canonical config entries.
-fn collect_tool_dir_overrides(store: &SkillStore) -> anyhow::Result<Vec<CfgToolOverride>> {
-    let adapters = crate::core::tool_adapters::default_tool_adapters();
-    let mut result = Vec::new();
-    for adapter in &adapters {
-        let key = adapter.id.as_key().to_string();
-        let has_override = has_tool_dir_override(&key, store)?;
-        if !is_tool_installed(adapter)? && !has_override {
-            continue;
-        }
-        let default_dir = resolve_default_path(adapter)?.to_string_lossy().to_string();
-        let current_dir = resolve_tool_global_dir(&key, store)?;
-        result.push(CfgToolOverride {
-            tool_key: key,
-            label: adapter.display_name.to_string(),
-            default_dir,
-            current_dir,
-            has_override,
-        });
-    }
-    Ok(result)
-}
-
-fn save_tool_dir_overrides(
-    store: &SkillStore,
-    overrides: &[CfgToolOverride],
-) -> anyhow::Result<()> {
-    for o in overrides {
-        let override_key = format!("{}{}", TOOL_DIR_OVERRIDE_PREFIX, o.tool_key);
-        if o.has_override {
-            store.set_setting(&override_key, &o.current_dir)?;
-        } else {
-            store.delete_setting(&override_key)?;
-        }
-    }
-    Ok(())
-}
-
-/// Convert between two structs with identical serde shapes via JSON round-trip.
-fn convert_via_json<T, U>(value: &T) -> anyhow::Result<U>
-where
-    T: Serialize,
-    U: serde::de::DeserializeOwned,
-{
-    let json = serde_json::to_value(value)?;
-    Ok(serde_json::from_value(json)?)
-}
-
-/// Aggregate every user-facing setting into a single `AppConfig`.
-fn load_app_config(store: &SkillStore) -> anyhow::Result<AppConfig> {
-    let language = store.get_setting("language")?;
-    let storage_path = store.get_setting("central_repo_path")?;
-    let git_cache_cleanup_days = get_git_cache_cleanup_days_core(store);
-    let git_cache_ttl_secs = get_git_cache_ttl_secs_core(store);
-    let github_token = store.get_setting("github_token")?.unwrap_or_default();
-    let origin_rules: CfgOriginRules = convert_via_json(&get_origin_rules_impl(store)?)?;
-    let tool_dir_overrides = collect_tool_dir_overrides(store)?;
-    let custom_scan_dirs: Vec<CfgScanDir> = match store.get_setting(CUSTOM_SCAN_DIRS_KEY)? {
-        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
-        None => Vec::new(),
-    };
-    let explore_sources = get_explore_sources_core(store)?;
-    Ok(AppConfig {
-        config_version: crate::core::app_config::CONFIG_VERSION,
-        language,
-        storage_path,
-        git_cache_cleanup_days,
-        git_cache_ttl_secs,
-        github_token,
-        origin_rules,
-        tool_dir_overrides,
-        custom_scan_dirs,
-        explore_sources,
-        exported_at: None,
-    })
-}
-
-/// Persist a full `AppConfig` back into the various sinks.
-fn save_app_config_impl(store: &SkillStore, cfg: &AppConfig) -> anyhow::Result<()> {
-    if let Some(language) = &cfg.language {
-        store.set_setting("language", language)?;
-    }
-    if let Some(path) = &cfg.storage_path {
-        store.set_setting("central_repo_path", path)?;
-    }
-    let cleanup_days = cfg.git_cache_cleanup_days.clamp(0, 3650);
-    let ttl_secs = cfg.git_cache_ttl_secs.clamp(0, 3600);
-    set_git_cache_cleanup_days_core(store, cleanup_days)?;
-    set_git_cache_ttl_secs_core(store, ttl_secs)?;
-    store.set_setting("github_token", cfg.github_token.trim())?;
-
-    let rules: OriginRules = convert_via_json(&cfg.origin_rules)?;
-    let normalized = normalize_rules(rules);
-    store.set_setting(ORIGIN_RULES_KEY, &serde_json::to_string(&normalized)?)?;
-
-    save_tool_dir_overrides(store, &cfg.tool_dir_overrides)?;
-
-    store.set_setting(
-        CUSTOM_SCAN_DIRS_KEY,
-        &serde_json::to_string(&cfg.custom_scan_dirs)?,
-    )?;
-
-    save_explore_sources_core(store, &cfg.explore_sources)?;
-    Ok(())
-}
 
 #[tauri::command]
 pub async fn get_app_config(store: State<'_, SkillStore>) -> Result<AppConfig, String> {
@@ -1851,81 +1673,9 @@ pub async fn import_config(
     .map_err(format_anyhow_error)
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GithubTokenStatus {
-    pub valid: bool,
-    pub login: Option<String>,
-    pub scopes: Vec<String>,
-    pub error: Option<String>,
-}
-
-fn compute_github_token_status(token: String) -> GithubTokenStatus {
-    if token.is_empty() {
-        return GithubTokenStatus {
-            valid: false,
-            login: None,
-            scopes: vec![],
-            error: Some("token 为空".to_string()),
-        };
-    }
-    let resp = reqwest::blocking::Client::new()
-        .get("https://api.github.com/user")
-        .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", crate::core::config::PRODUCT_NAME)
-        .header("Accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(15))
-        .send();
-    match resp {
-        Ok(response) => {
-            let status = response.status();
-            let scopes: Vec<String> = response
-                .headers()
-                .get("x-oauth-scopes")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| {
-                    s.split(',')
-                        .map(|x| x.trim().to_string())
-                        .filter(|x| !x.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
-            if status == 401 || status == 403 {
-                GithubTokenStatus {
-                    valid: false,
-                    login: None,
-                    scopes,
-                    error: Some(format!("GitHub 拒绝该 token（HTTP {}）", status)),
-                }
-            } else if status.is_success() {
-                let login = response.json::<serde_json::Value>().ok().and_then(|v| {
-                    v.get("login")
-                        .and_then(|l| l.as_str())
-                        .map(|s| s.to_string())
-                });
-                GithubTokenStatus {
-                    valid: true,
-                    login,
-                    scopes,
-                    error: None,
-                }
-            } else {
-                GithubTokenStatus {
-                    valid: false,
-                    login: None,
-                    scopes,
-                    error: Some(format!("GitHub 返回 HTTP {}", status)),
-                }
-            }
-        }
-        Err(e) => GithubTokenStatus {
-            valid: false,
-            login: None,
-            scopes: vec![],
-            error: Some(format!("网络错误: {}", e)),
-        },
-    }
-}
+// `GithubTokenStatus` and `compute_github_token_status` live in
+// `core::github_auth` (shared with the CLI); re-export for the command layer.
+pub use crate::core::github_auth::{compute_github_token_status, GithubTokenStatus};
 
 #[tauri::command]
 pub async fn validate_github_token(token: String) -> Result<GithubTokenStatus, String> {
@@ -1944,6 +1694,147 @@ pub async fn write_text_file(path: String, contents: String) -> Result<(), Strin
 #[tauri::command]
 pub async fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|err| format!("读取文件失败: {}", err))
+}
+
+// ---------------------------------------------------------------------------
+// Full-state backup / restore (settings + skills list)
+// ---------------------------------------------------------------------------
+
+/// One entry in a [`RestoreReportDto`] (a skipped or failed skill).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreItemDto {
+    pub name: String,
+    pub reason: String,
+}
+
+/// Structured result of a restore, for the GUI to render.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreReportDto {
+    pub installed: Vec<String>,
+    pub skipped: Vec<RestoreItemDto>,
+    pub failed: Vec<RestoreItemDto>,
+    pub summary: String,
+}
+
+fn to_report_dto(report: &RestoreReport) -> RestoreReportDto {
+    RestoreReportDto {
+        installed: report.installed.clone(),
+        skipped: report
+            .skipped
+            .iter()
+            .map(|(name, reason)| RestoreItemDto {
+                name: name.clone(),
+                reason: reason.clone(),
+            })
+            .collect(),
+        failed: report
+            .failed
+            .iter()
+            .map(|(name, reason)| RestoreItemDto {
+                name: name.clone(),
+                reason: reason.clone(),
+            })
+            .collect(),
+        summary: report.summary(),
+    }
+}
+
+/// Produce the combined backup blob as a JSON string (for the GUI to save via
+/// a file dialog).
+#[tauri::command]
+pub async fn export_full_backup_json(store: State<'_, SkillStore>) -> Result<String, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || export_full_backup(&store))
+        .await
+        .map_err(|err| err.to_string())?
+        .map_err(format_anyhow_error)
+}
+
+/// Write the combined backup blob to a local file.
+#[tauri::command]
+pub async fn backup_to_file(store: State<'_, SkillStore>, path: String) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
+        let json = export_full_backup(&store)?;
+        std::fs::write(&path, json).map_err(|err| anyhow::anyhow!("写入文件失败: {err}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Upload the combined backup to the configured WebDAV server.
+#[tauri::command]
+pub async fn backup_webdav(store: State<'_, SkillStore>) -> Result<String, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<String> {
+        let cfg = load_app_config(&store)?;
+        let wd = cfg
+            .webdav
+            .ok_or_else(|| anyhow::anyhow!("WebDAV 未配置，请先在设置中填写"))?;
+        let body = export_full_backup(&store)?;
+        upload_backup(&wd, &body)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Restore the combined backup from a local file.
+#[tauri::command]
+pub async fn restore_from_file(
+    store: State<'_, SkillStore>,
+    path: String,
+) -> Result<RestoreReportDto, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<RestoreReportDto> {
+        let raw =
+            std::fs::read_to_string(&path).map_err(|err| anyhow::anyhow!("读取文件失败: {err}"))?;
+        let report = restore_full_backup(&store, &raw)?;
+        Ok(to_report_dto(&report))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Restore the combined backup from the configured WebDAV server.
+#[tauri::command]
+pub async fn restore_from_webdav(store: State<'_, SkillStore>) -> Result<RestoreReportDto, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<RestoreReportDto> {
+        let cfg = load_app_config(&store)?;
+        let wd = cfg
+            .webdav
+            .ok_or_else(|| anyhow::anyhow!("WebDAV 未配置，请先在设置中填写"))?;
+        let raw = download_backup(&wd)?;
+        let report = restore_full_backup(&store, &raw)?;
+        Ok(to_report_dto(&report))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Persist only the WebDAV connection profile (loads fresh config, so it never
+/// clobbers other settings edited elsewhere).
+#[tauri::command]
+pub async fn set_webdav_config(
+    store: State<'_, SkillStore>,
+    webdav: WebDavConfig,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
+        let mut cfg = load_app_config(&store)?;
+        cfg.webdav = Some(webdav);
+        save_app_config_impl(&store, &cfg)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
 }
 
 fn manual_origin_record(

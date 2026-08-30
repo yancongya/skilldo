@@ -7,6 +7,7 @@ type FilterBarProps = {
   sortBy: 'updated' | 'name'
   searchQuery: string
   scopeFilter: 'all' | 'global' | 'project'
+  sourceFilter: 'all' | 'syncable' | 'local'
   viewMode: 'list' | 'grid'
   tags: TagWithCountDto[]
   selectedTagIds: number[]
@@ -18,6 +19,7 @@ type FilterBarProps = {
   onSortChange: (value: 'updated' | 'name') => void
   onSearchChange: (value: string) => void
   onScopeFilterChange: (value: 'all' | 'global' | 'project') => void
+  onSourceFilterChange: (value: 'all' | 'syncable' | 'local') => void
   onViewModeChange: (mode: 'list' | 'grid') => void
   onCheckUpdates: () => void
   onToggleTag: (tagId: number) => void
@@ -31,6 +33,7 @@ const FilterBar = ({
   sortBy,
   searchQuery,
   scopeFilter,
+  sourceFilter,
   viewMode,
   tags,
   selectedTagIds,
@@ -42,6 +45,7 @@ const FilterBar = ({
   onSortChange,
   onSearchChange,
   onScopeFilterChange,
+  onSourceFilterChange,
   onViewModeChange,
   onCheckUpdates,
   onToggleTag,
@@ -57,6 +61,11 @@ const FilterBar = ({
     { value: 'all', label: t('scope.all') },
     { value: 'global', label: t('scope.global') },
     { value: 'project', label: t('scope.project') },
+  ]
+  const sourceOptions: { value: 'all' | 'syncable' | 'local'; label: string }[] = [
+    { value: 'all', label: t('filterAll') },
+    { value: 'syncable', label: t('filterSyncable') },
+    { value: 'local', label: t('filterLocal') },
   ]
   const selectedTagSet = useMemo(() => new Set(selectedTagIds), [selectedTagIds])
   const selectedCount = selectedTagIds.length + (includeUntagged ? 1 : 0)
@@ -108,6 +117,23 @@ const FilterBar = ({
             }
           >
             {scopeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </button>
+        <button className="btn btn-secondary sort-btn" type="button">
+          {sourceOptions.find((option) => option.value === sourceFilter)?.label ?? t('filterAll')}
+          <ChevronDown size={12} />
+          <select
+            aria-label={t('source.filterLabel')}
+            value={sourceFilter}
+            onChange={(event) =>
+              onSourceFilterChange(event.target.value as 'all' | 'syncable' | 'local')
+            }
+          >
+            {sourceOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

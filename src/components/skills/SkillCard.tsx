@@ -56,6 +56,9 @@ const SkillCard = ({
   const copyValue = (github?.href ?? skill.source_ref ?? '').trim()
   const skillScope = getSkillScope(skill)
   const projectCount = getSkillProjects(skill).length
+  // A skill is "syncable" when it has a remote repo or package (git/package).
+  // `local` skills have no remote source to sync to/from.
+  const syncable = skill.source_type === 'git' || skill.source_type === 'package'
 
   const handleCopy = async () => {
     if (!copyValue) return
@@ -136,6 +139,11 @@ const SkillCard = ({
             </div>
           ) : null}
           <SkillOriginBadge skill={skill} t={t} />
+          {!syncable ? (
+            <span className="skill-local-badge" title={t('localSkillTooltip')}>
+              {t('localSkillBadge')}
+            </span>
+          ) : null}
           {updateCheck?.has_update || updateCheck?.has_local_changes ? (
             <span className="skill-update-badge">
               {updateCheck.has_local_changes && !updateCheck.has_update

@@ -17,10 +17,17 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::Serialize;
 
+use crate::core::app_config::{
+    export_config_json, load_app_config, parse_config_json, save_app_config_impl, AppConfig,
+    WebDavConfig,
+};
+use crate::core::backup::{export_full_backup, restore_full_backup, RestoreReport};
 use crate::core::explore_sources::{self, ExploreSourceConfig};
+use crate::core::github_auth::compute_github_token_status;
 use crate::core::installer;
 use crate::core::skill_store::{default_db_path_cli, SkillStore};
 use crate::core::tool_adapters;
+use crate::core::webdav::{download_backup, upload_backup};
 
 #[derive(Parser)]
 #[command(
@@ -44,7 +51,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// List skills currently managed by SkillDo.
-    List,
+    List {
+        /// Filter by syncability: all | syncable | local.
+        #[arg(long, default_value = "all", value_parser = ["all", "syncable", "local"])]
+        filter: String,
+    },
     /// Show installation status of supported AI tools.
     Status,
     /// Browse the skill market across configured sources.
@@ -121,12 +132,150 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
+    /// View or modify the unified application config (settings).
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+    /// Manage the GitHub token used for private/rate-limited fetches.
+    Github {
+        #[command(subcommand)]
+        action: GithubAction,
+    },
+    /// Back up the full state (settings + skills list) to a file or WebDAV.
+    Backup {
+        #[command(subcommand)]
+        target: BackupTarget,
+    },
+    /// Restore the full state from a file or WebDAV backup.
+    Restore {
+        #[command(subcommand)]
+        target: RestoreTarget,
+    },
 }
 
 #[derive(Subcommand)]
 enum SourcesAction {
     /// List configured explore sources.
     List,
+    /// Add a new explore source.
+    Add {
+        /// Display name for the source.
+        #[arg(long)]
+        name: String,
+        /// Source kind: featured_json | skills_sh | json_index | git_index.
+        #[arg(long)]
+        kind: String,
+        /// Endpoint URL or path for the source.
+        #[arg(long)]
+        endpoint: String,
+        /// Enable the source immediately (default: enabled).
+        #[arg(long, default_value_t = true)]
+        enabled: bool,
+    },
+    /// Edit an existing explore source.
+    Edit {
+        /// Source id to edit.
+        #[arg(long)]
+        id: String,
+        /// New display name.
+        #[arg(long)]
+        name: Option<String>,
+        /// New source kind.
+        #[arg(long)]
+        kind: Option<String>,
+        /// New endpoint URL or path.
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// New enabled flag.
+        #[arg(long)]
+        enabled: Option<bool>,
+    },
+    /// Remove an explore source.
+    Remove {
+        /// Source id to remove.
+        #[arg(long)]
+        id: String,
+    },
+    /// Enable an explore source.
+    Enable {
+        /// Source id to enable.
+        #[arg(long)]
+        id: String,
+    },
+    /// Disable an explore source.
+    Disable {
+        /// Source id to disable.
+        #[arg(long)]
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Print the full config (or a single key) as JSON / text.
+    Get {
+        /// Optional config key (language, storage_path, github_token,
+        /// git_cache_cleanup_days, git_cache_ttl_secs, webdav.url, ...).
+        /// Omit to print the whole config.
+        key: Option<String>,
+    },
+    /// Set a config value by key (dotted keys like `webdav.url` supported).
+    Set {
+        /// Config key to set.
+        key: String,
+        /// New value.
+        value: String,
+    },
+    /// Export the config (settings only) to a JSON file or stdout.
+    Export {
+        /// Output path. Prints to stdout when omitted.
+        path: Option<String>,
+    },
+    /// Import the config (settings only) from a JSON file.
+    Import {
+        /// Input path.
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+#[allow(clippy::enum_variant_names)]
+enum GithubAction {
+    /// Store the GitHub token.
+    TokenSet {
+        /// Personal access token.
+        token: String,
+    },
+    /// Print the stored GitHub token.
+    TokenGet,
+    /// Validate the stored (or provided) token against GitHub.
+    TokenValidate {
+        /// Optional token to validate; defaults to the stored one.
+        token: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BackupTarget {
+    /// Back up to a local JSON file (or stdout when no path given).
+    File {
+        /// Output path. Prints to stdout when omitted.
+        path: Option<String>,
+    },
+    /// Back up to the configured WebDAV server.
+    Webdav,
+}
+
+#[derive(Subcommand)]
+enum RestoreTarget {
+    /// Restore from a local JSON file.
+    File {
+        /// Input path.
+        path: String,
+    },
+    /// Restore from the configured WebDAV server.
+    Webdav,
 }
 
 /// Entry point invoked from the `skilldo` binary.
@@ -159,11 +308,48 @@ fn execute() -> Result<()> {
     let store = open_store(cli.db.as_ref())?;
 
     match cli.command {
-        Commands::List => cmd_list(&store, cli.json),
+        Commands::List { filter } => cmd_list(&store, &filter, cli.json),
         Commands::Status => cmd_status(cli.json),
         Commands::Explore { query } => cmd_explore(&store, query, cli.json),
         Commands::Sources { action } => match action {
             SourcesAction::List => cmd_sources_list(&store, cli.json),
+            SourcesAction::Add {
+                name,
+                kind,
+                endpoint,
+                enabled,
+            } => cmd_sources_add(&store, &name, &kind, &endpoint, enabled, cli.json),
+            SourcesAction::Edit {
+                id,
+                name,
+                kind,
+                endpoint,
+                enabled,
+            } => cmd_sources_edit(&store, &id, name, kind, endpoint, enabled, cli.json),
+            SourcesAction::Remove { id } => cmd_sources_remove(&store, &id, cli.json),
+            SourcesAction::Enable { id } => cmd_sources_toggle(&store, &id, true, cli.json),
+            SourcesAction::Disable { id } => cmd_sources_toggle(&store, &id, false, cli.json),
+        },
+        Commands::Config { action } => match action {
+            ConfigAction::Get { key } => cmd_config_get(&store, key.as_deref(), cli.json),
+            ConfigAction::Set { key, value } => cmd_config_set(&store, &key, &value, cli.json),
+            ConfigAction::Export { path } => cmd_config_export(&store, path.as_deref(), cli.json),
+            ConfigAction::Import { path } => cmd_config_import(&store, &path, cli.json),
+        },
+        Commands::Github { action } => match action {
+            GithubAction::TokenSet { token } => cmd_github_token_set(&store, &token, cli.json),
+            GithubAction::TokenGet => cmd_github_token_get(&store, cli.json),
+            GithubAction::TokenValidate { token } => {
+                cmd_github_token_validate(&store, token.as_deref(), cli.json)
+            }
+        },
+        Commands::Backup { target } => match target {
+            BackupTarget::File { path } => cmd_backup_file(&store, path.as_deref(), cli.json),
+            BackupTarget::Webdav => cmd_backup_webdav(&store, cli.json),
+        },
+        Commands::Restore { target } => match target {
+            RestoreTarget::File { path } => cmd_restore_file(&store, &path, cli.json),
+            RestoreTarget::Webdav => cmd_restore_webdav(&store, cli.json),
         },
         Commands::Install { url, name, yes } => cmd_install(&store, &url, name, yes, cli.json),
         Commands::Sync { skill, tool } => cmd_sync(&store, &skill, &tool, cli.json),
@@ -190,6 +376,7 @@ struct CliManagedSkill {
     description: Option<String>,
     source_type: String,
     source_ref: Option<String>,
+    syncable: bool,
     central_path: String,
     status: String,
     created_at: i64,
@@ -259,12 +446,19 @@ struct CliSyncResult {
 // Commands
 // ---------------------------------------------------------------------------
 
-fn cmd_list(store: &SkillStore, json: bool) -> Result<()> {
+fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
     let records = store
         .list_skills()
         .context("failed to list managed skills")?;
     let mut skills = Vec::with_capacity(records.len());
     for rec in records {
+        let syncable = rec.source_type == "git" || rec.source_type == "package";
+        // Apply the `--filter` argument.
+        match filter {
+            "syncable" if !syncable => continue,
+            "local" if syncable => continue,
+            _ => {}
+        }
         let targets = store
             .list_skill_targets(&rec.id)
             .unwrap_or_default()
@@ -283,6 +477,7 @@ fn cmd_list(store: &SkillStore, json: bool) -> Result<()> {
             description: rec.description,
             source_type: rec.source_type,
             source_ref: rec.source_ref,
+            syncable,
             central_path: rec.central_path,
             status: rec.status,
             created_at: rec.created_at,
@@ -297,10 +492,12 @@ fn cmd_list(store: &SkillStore, json: bool) -> Result<()> {
         println!("No managed skills yet.");
     } else {
         for s in &skills {
+            let kind = if s.syncable { "syncable" } else { "local" };
             println!(
-                "{}  [{}]  {}  -> {} target(s)",
+                "{}  [{}]  ({})  {}  -> {} target(s)",
                 s.name,
                 s.source_type,
+                kind,
                 s.central_path,
                 s.targets.len()
             );
@@ -397,6 +594,310 @@ fn cmd_sources_list(store: &SkillStore, json: bool) -> Result<()> {
 // ---------------------------------------------------------------------------
 // Write commands
 // ---------------------------------------------------------------------------
+
+// ===========================================================================
+// Config (settings) subcommands
+// ===========================================================================
+
+fn load_webdav_cfg(store: &SkillStore) -> Result<WebDavConfig> {
+    let cfg = load_app_config(store)?;
+    cfg.webdav.ok_or_else(|| {
+        anyhow::anyhow!("WebDAV 未配置，请先用 `skilldo config set webdav.url ...` 设置")
+    })
+}
+
+fn config_get_value(cfg: &AppConfig, key: &str) -> Option<String> {
+    match key {
+        "language" => cfg.language.clone(),
+        "storage_path" => cfg.storage_path.clone(),
+        "github_token" => Some(cfg.github_token.clone()),
+        "git_cache_cleanup_days" => Some(cfg.git_cache_cleanup_days.to_string()),
+        "git_cache_ttl_secs" => Some(cfg.git_cache_ttl_secs.to_string()),
+        "webdav.url" => cfg.webdav.as_ref().map(|w| w.url.clone()),
+        "webdav.user" => cfg.webdav.as_ref().map(|w| w.user.clone()),
+        "webdav.password" => cfg.webdav.as_ref().map(|w| w.password.clone()),
+        "webdav.remote_dir" => cfg.webdav.as_ref().map(|w| w.remote_dir.clone()),
+        _ => None,
+    }
+}
+
+fn config_set_value(cfg: &mut AppConfig, key: &str, value: &str) -> Result<()> {
+    match key {
+        "language" => cfg.language = Some(value.to_string()),
+        "storage_path" => cfg.storage_path = Some(value.to_string()),
+        "github_token" => cfg.github_token = value.to_string(),
+        "git_cache_cleanup_days" => {
+            cfg.git_cache_cleanup_days = value
+                .parse::<i64>()
+                .with_context(|| format!("无效的整数: {value}"))?
+        }
+        "git_cache_ttl_secs" => {
+            cfg.git_cache_ttl_secs = value
+                .parse::<i64>()
+                .with_context(|| format!("无效的整数: {value}"))?
+        }
+        "webdav.url" => {
+            cfg.webdav.get_or_insert_with(WebDavConfig::default).url = value.to_string()
+        }
+        "webdav.user" => {
+            cfg.webdav.get_or_insert_with(WebDavConfig::default).user = value.to_string()
+        }
+        "webdav.password" => {
+            cfg.webdav.get_or_insert_with(WebDavConfig::default).password = value.to_string()
+        }
+        "webdav.remote_dir" => {
+            cfg.webdav.get_or_insert_with(WebDavConfig::default).remote_dir = value.to_string()
+        }
+        other => anyhow::bail!(
+            "未知配置键: {other}（支持 language/storage_path/github_token/git_cache_cleanup_days/git_cache_ttl_secs/webdav.*）"
+        ),
+    }
+    Ok(())
+}
+
+fn cmd_config_get(store: &SkillStore, key: Option<&str>, _json: bool) -> Result<()> {
+    let cfg = load_app_config(store)?;
+    match key {
+        None => println!("{}", export_config_json(&cfg)),
+        Some(k) => {
+            let v = config_get_value(&cfg, k).unwrap_or_default();
+            if v.is_empty() {
+                anyhow::bail!("未知配置键: {k}");
+            }
+            println!("{v}");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_config_set(store: &SkillStore, key: &str, value: &str, _json: bool) -> Result<()> {
+    let mut cfg = load_app_config(store)?;
+    config_set_value(&mut cfg, key, value)?;
+    save_app_config_impl(store, &cfg)?;
+    println!("已更新配置: {key} = {value}");
+    Ok(())
+}
+
+fn cmd_config_export(store: &SkillStore, path: Option<&str>, _json: bool) -> Result<()> {
+    let cfg = load_app_config(store)?;
+    let json = export_config_json(&cfg);
+    match path {
+        Some(p) => {
+            std::fs::write(p, &json).with_context(|| format!("写入文件失败: {p}"))?;
+            println!("配置已导出到 {p}");
+        }
+        None => println!("{json}"),
+    }
+    Ok(())
+}
+
+fn cmd_config_import(store: &SkillStore, path: &str, _json: bool) -> Result<()> {
+    let raw = std::fs::read_to_string(path).with_context(|| format!("读取文件失败: {path}"))?;
+    let cfg = parse_config_json(&raw)?;
+    save_app_config_impl(store, &cfg)?;
+    println!("配置已从 {path} 导入");
+    Ok(())
+}
+
+// ===========================================================================
+// Github token subcommands
+// ===========================================================================
+
+fn cmd_github_token_set(store: &SkillStore, token: &str, _json: bool) -> Result<()> {
+    let mut cfg = load_app_config(store)?;
+    cfg.github_token = token.to_string();
+    save_app_config_impl(store, &cfg)?;
+    println!("GitHub token 已保存");
+    Ok(())
+}
+
+fn cmd_github_token_get(store: &SkillStore, _json: bool) -> Result<()> {
+    let cfg = load_app_config(store)?;
+    if cfg.github_token.is_empty() {
+        println!("(未配置 GitHub token)");
+    } else {
+        println!("{}", cfg.github_token);
+    }
+    Ok(())
+}
+
+fn cmd_github_token_validate(store: &SkillStore, token: Option<&str>, json: bool) -> Result<()> {
+    let token = match token {
+        Some(t) => t.to_string(),
+        None => load_app_config(store)?.github_token,
+    };
+    let status = compute_github_token_status(token);
+    if json {
+        print_json(&status)?;
+    } else if status.valid {
+        println!("token 有效");
+        if let Some(login) = &status.login {
+            println!("  登录用户: {login}");
+        }
+        if !status.scopes.is_empty() {
+            println!("  权限范围: {}", status.scopes.join(", "));
+        }
+    } else {
+        println!("token 无效: {}", status.error.unwrap_or_default());
+    }
+    Ok(())
+}
+
+// ===========================================================================
+// Explore sources management subcommands
+// ===========================================================================
+
+fn cmd_sources_add(
+    store: &SkillStore,
+    name: &str,
+    kind: &str,
+    endpoint: &str,
+    enabled: bool,
+    json: bool,
+) -> Result<()> {
+    let mut sources = explore_sources::get_explore_sources(store)?;
+    let id = format!(
+        "cli-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
+    sources.push(ExploreSourceConfig {
+        id,
+        name: name.to_string(),
+        kind: kind.to_string(),
+        endpoint: endpoint.to_string(),
+        enabled,
+        builtin: false,
+    });
+    explore_sources::save_explore_sources(store, &sources)?;
+    if json {
+        print_json(&sources)?;
+    } else {
+        println!("已添加源: {name} ({kind})");
+    }
+    Ok(())
+}
+
+fn cmd_sources_edit(
+    store: &SkillStore,
+    id: &str,
+    name: Option<String>,
+    kind: Option<String>,
+    endpoint: Option<String>,
+    enabled: Option<bool>,
+    json: bool,
+) -> Result<()> {
+    let mut sources = explore_sources::get_explore_sources(store)?;
+    let src = sources
+        .iter_mut()
+        .find(|s| s.id == id)
+        .ok_or_else(|| anyhow::anyhow!("未找到源: {id}"))?;
+    if let Some(v) = name {
+        src.name = v;
+    }
+    if let Some(v) = kind {
+        src.kind = v;
+    }
+    if let Some(v) = endpoint {
+        src.endpoint = v;
+    }
+    if let Some(v) = enabled {
+        src.enabled = v;
+    }
+    explore_sources::save_explore_sources(store, &sources)?;
+    if json {
+        print_json(&sources)?;
+    } else {
+        println!("已更新源: {id}");
+    }
+    Ok(())
+}
+
+fn cmd_sources_remove(store: &SkillStore, id: &str, json: bool) -> Result<()> {
+    let mut sources = explore_sources::get_explore_sources(store)?;
+    let before = sources.len();
+    sources.retain(|s| s.id != id);
+    if sources.len() == before {
+        anyhow::bail!("未找到源: {id}");
+    }
+    explore_sources::save_explore_sources(store, &sources)?;
+    if json {
+        print_json(&sources)?;
+    } else {
+        println!("已删除源: {id}");
+    }
+    Ok(())
+}
+
+fn cmd_sources_toggle(store: &SkillStore, id: &str, enabled: bool, json: bool) -> Result<()> {
+    let mut sources = explore_sources::get_explore_sources(store)?;
+    let src = sources
+        .iter_mut()
+        .find(|s| s.id == id)
+        .ok_or_else(|| anyhow::anyhow!("未找到源: {id}"))?;
+    src.enabled = enabled;
+    explore_sources::save_explore_sources(store, &sources)?;
+    if json {
+        print_json(&sources)?;
+    } else {
+        println!("源 {} 已{}", id, if enabled { "启用" } else { "禁用" });
+    }
+    Ok(())
+}
+
+// ===========================================================================
+// Backup / restore subcommands
+// ===========================================================================
+
+fn cmd_backup_file(store: &SkillStore, path: Option<&str>, _json: bool) -> Result<()> {
+    let json = export_full_backup(store)?;
+    match path {
+        Some(p) => {
+            std::fs::write(p, &json).with_context(|| format!("写入文件失败: {p}"))?;
+            println!("已备份到 {p}");
+        }
+        None => println!("{json}"),
+    }
+    Ok(())
+}
+
+fn cmd_backup_webdav(store: &SkillStore, _json: bool) -> Result<()> {
+    let wd = load_webdav_cfg(store)?;
+    let body = export_full_backup(store)?;
+    let remote = upload_backup(&wd, &body)?;
+    println!("已备份到 WebDAV: {remote}");
+    Ok(())
+}
+
+fn cmd_restore_file(store: &SkillStore, path: &str, _json: bool) -> Result<()> {
+    let raw = std::fs::read_to_string(path).with_context(|| format!("读取文件失败: {path}"))?;
+    let report = restore_full_backup(store, &raw)?;
+    print_restore_report(&report);
+    Ok(())
+}
+
+fn cmd_restore_webdav(store: &SkillStore, _json: bool) -> Result<()> {
+    let wd = load_webdav_cfg(store)?;
+    let raw = download_backup(&wd)?;
+    let report = restore_full_backup(store, &raw)?;
+    print_restore_report(&report);
+    Ok(())
+}
+
+fn print_restore_report(report: &RestoreReport) {
+    println!("恢复完成: {}", report.summary());
+    for name in &report.installed {
+        println!("  + 已安装: {name}");
+    }
+    for (name, reason) in &report.skipped {
+        println!("  - 跳过: {name} ({reason})");
+    }
+    for (name, err) in &report.failed {
+        println!("  ! 失败: {name} ({err})");
+    }
+}
 
 /// Resolve a skill name or ID to a skill ID. If the input looks like a UUID,
 /// try it directly; otherwise search by name.
