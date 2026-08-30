@@ -4,9 +4,8 @@ use anyhow::{Context, Result};
 use dirs::home_dir;
 use tauri::Manager;
 
+use super::config::CENTRAL_DIR_NAME;
 use super::skill_store::SkillStore;
-
-const CENTRAL_DIR_NAME: &str = ".skillshub";
 
 pub fn resolve_central_repo_path<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,

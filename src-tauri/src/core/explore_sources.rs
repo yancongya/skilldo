@@ -13,9 +13,9 @@ use super::expand_home_path;
 use super::skill_store::SkillStore;
 use super::skills_search::{search_skills_online_with_base, OnlineSkillResult};
 
+use super::config::FEATURED_SKILLS_URL;
+
 const EXPLORE_SOURCES_KEY: &str = "explore_sources_v1";
-const DEFAULT_FEATURED_URL: &str =
-    "https://raw.githubusercontent.com/yancongya/skills-hub/main/featured-skills.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -180,7 +180,7 @@ fn default_sources() -> Vec<ExploreSourceConfig> {
             id: "official-featured".to_string(),
             name: "Skills Hub Official".to_string(),
             kind: "featured_json".to_string(),
-            endpoint: DEFAULT_FEATURED_URL.to_string(),
+            endpoint: FEATURED_SKILLS_URL.to_string(),
             enabled: true,
             builtin: true,
         },

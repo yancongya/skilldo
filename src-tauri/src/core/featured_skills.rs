@@ -4,8 +4,7 @@ use serde::Deserialize;
 
 use super::skill_store::SkillStore;
 
-const FEATURED_SKILLS_URL: &str =
-    "https://raw.githubusercontent.com/yancongya/skills-hub/main/featured-skills.json";
+use super::config::FEATURED_SKILLS_URL;
 
 const CACHE_KEY: &str = "featured_skills_cache";
 

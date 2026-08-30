@@ -5,9 +5,8 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use tauri::Manager;
 
+use super::config::GIT_CACHE_DIR_NAME;
 use super::skill_store::SkillStore;
-
-const CACHE_DIR_NAME: &str = "skills-hub-git-cache";
 const CACHE_META_FILE: &str = ".skills-hub-cache.json";
 pub const GIT_CACHE_CLEANUP_DAYS_KEY: &str = "git_cache_cleanup_days";
 pub const DEFAULT_GIT_CACHE_CLEANUP_DAYS: i64 = 30;
@@ -65,7 +64,7 @@ pub fn cleanup_git_cache_dirs<R: tauri::Runtime>(
 }
 
 fn cleanup_git_cache_dirs_in(cache_dir: &Path, max_age: Duration) -> Result<usize> {
-    let cache_root = cache_dir.join(CACHE_DIR_NAME);
+    let cache_root = cache_dir.join(GIT_CACHE_DIR_NAME);
     if !cache_root.exists() {
         return Ok(0);
     }

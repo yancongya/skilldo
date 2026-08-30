@@ -1688,7 +1688,7 @@ fn clone_to_cache<R: tauri::Runtime>(
         .path()
         .app_cache_dir()
         .context("failed to resolve app cache dir")?;
-    let cache_root = cache_dir.join("skills-hub-git-cache");
+    let cache_root = cache_dir.join(super::config::GIT_CACHE_DIR_NAME);
     std::fs::create_dir_all(&cache_root)
         .with_context(|| format!("failed to create cache dir {:?}", cache_root))?;
 
@@ -1770,7 +1770,7 @@ fn clone_to_cache_subpath<R: tauri::Runtime>(
         .path()
         .app_cache_dir()
         .context("failed to resolve app cache dir")?;
-    let cache_root = cache_dir.join("skills-hub-git-cache");
+    let cache_root = cache_dir.join(super::config::GIT_CACHE_DIR_NAME);
     std::fs::create_dir_all(&cache_root)
         .with_context(|| format!("failed to create cache dir {:?}", cache_root))?;
 
@@ -1976,7 +1976,7 @@ use super::central_repo::resolve_central_repo_path_cli;
 /// `app.path().app_cache_dir().join("skills-hub-git-cache")`.
 fn git_cache_root_cli() -> Result<PathBuf> {
     let base = dirs::cache_dir().context("failed to resolve cache directory")?;
-    let root = base.join("skills-hub-git-cache");
+    let root = base.join(super::config::GIT_CACHE_DIR_NAME);
     std::fs::create_dir_all(&root)
         .with_context(|| format!("failed to create cache dir {:?}", root))?;
     Ok(root)
