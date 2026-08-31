@@ -224,6 +224,13 @@ export type AppConfigDto = {
   gitCacheTtlSecs: number
   githubToken: string
   originRules: OriginRules
+  currentAuthor: {
+    name: string
+    email: string
+    githubLogin: string
+    githubUrl: string
+    source: string
+  }
   toolDirOverrides: ToolDirOverride[]
   customScanDirs: CustomScanDirEntry[]
   exploreSources: ExploreSourceConfigDto[]
@@ -247,8 +254,51 @@ export type RestoreItemDto = {
 
 /// Structured result of a backup restore.
 export type RestoreReportDto = {
+  backupVersion?: number
+  databaseRestored?: boolean
   installed: string[]
   skipped: RestoreItemDto[]
   failed: RestoreItemDto[]
   summary: string
+}
+
+export type ProfileConflictDto = {
+  path: string
+  reason: string
+}
+
+export type ProfileSyncReportDto = {
+  profileId: string
+  deviceId: string
+  remoteFound: boolean
+  uploaded: boolean
+  changed: boolean
+  conflicts: ProfileConflictDto[]
+  conflictStrategy: 'abort' | 'local' | 'remote' | string
+  conflictsResolved: boolean
+  installed: string[]
+  updated: string[]
+  deleted: string[]
+  pendingDeletions: string[]
+  syncedTargets: string[]
+  removedTargets: string[]
+  skippedLocal: string[]
+  failures: [string, string][]
+}
+
+export type DevicePipelineReportDto = {
+  mode: 'status' | 'pull' | 'publish' | string
+  state: 'ready' | 'running' | 'completed' | 'partial' | 'conflict' | string
+  stages: { id: string; status: string; message: string }[]
+  profile: ProfileSyncReportDto | null
+  localAhead: number
+  remoteAhead: number
+  dirtyRepositories: number
+  pushableRepositories: number
+  pullableSkills: number
+  localOnlySkills: string[]
+  pushed: string[]
+  noChanges: string[]
+  backupRemotePath: string | null
+  failures: [string, string][]
 }

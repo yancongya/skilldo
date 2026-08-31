@@ -8,6 +8,8 @@ import type {
   GithubOwnerEntry,
   GithubTokenStatusDto,
   OriginRules,
+  ProfileSyncReportDto,
+  DevicePipelineReportDto,
   RestoreReportDto,
   ToolDirOverride,
   ToolStatusDto,
@@ -52,6 +54,16 @@ type SettingsPageProps = {
   onBackupWebdav: () => Promise<void>
   onRestoreWebdav: () => Promise<RestoreReportDto>
   onListGithubOwners: () => Promise<GithubOwnerEntry[]>
+  onProfileStatus: () => Promise<ProfileSyncReportDto>
+  onProfileSync: (applyDeletions: boolean) => Promise<ProfileSyncReportDto>
+  onProfileExport: () => Promise<void>
+  onProfileImport: (
+    strategy: 'abort' | 'local' | 'remote',
+  ) => Promise<ProfileSyncReportDto | null>
+  onProfileResolve: (strategy: 'local' | 'remote') => Promise<ProfileSyncReportDto>
+  onDeviceStatus: () => Promise<DevicePipelineReportDto>
+  onDevicePull: () => Promise<DevicePipelineReportDto>
+  onDevicePublish: () => Promise<DevicePipelineReportDto>
 }
 
 const SettingsPage = ({
@@ -90,6 +102,14 @@ const SettingsPage = ({
   onBackupWebdav,
   onRestoreWebdav,
   onListGithubOwners,
+  onProfileStatus,
+  onProfileSync,
+  onProfileExport,
+  onProfileImport,
+  onProfileResolve,
+  onDeviceStatus,
+  onDevicePull,
+  onDevicePublish,
 }: SettingsPageProps) => {
   const [localToken, setLocalToken] = useState(githubToken)
   useEffect(() => {
@@ -256,6 +276,29 @@ const SettingsPage = ({
   const [wdPassword, setWdPassword] = useState(webdav?.password ?? '')
   const [wdRemoteDir, setWdRemoteDir] = useState(webdav?.remoteDir ?? '')
   const [restoreReport, setRestoreReport] = useState<RestoreReportDto | null>(null)
+  const [profileReport, setProfileReport] = useState<ProfileSyncReportDto | null>(null)
+  const [deviceReport, setDeviceReport] = useState<DevicePipelineReportDto | null>(null)
+  const [deviceBusy, setDeviceBusy] = useState(false)
+
+  const runDeviceAction = useCallback(
+    async (mode: 'status' | 'pull' | 'publish') => {
+      if (mode === 'publish' && !window.confirm(t('devicePublishConfirm'))) return
+      setDeviceBusy(true)
+      try {
+        const report =
+          mode === 'status'
+            ? await onDeviceStatus()
+            : mode === 'pull'
+              ? await onDevicePull()
+              : await onDevicePublish()
+        setDeviceReport(report)
+      } finally {
+        setDeviceBusy(false)
+      }
+    },
+    [onDevicePublish, onDevicePull, onDeviceStatus, t],
+  )
+  const [profileBusy, setProfileBusy] = useState(false)
   useEffect(() => {
     setWdUrl(webdav?.url ?? '')
     setWdUser(webdav?.user ?? '')
@@ -316,6 +359,73 @@ const SettingsPage = ({
       setBackupMsg(err instanceof Error ? err.message : String(err))
     }
   }, [isTauri, onRestoreFromFile, t])
+
+  const runProfileAction = useCallback(
+    async (mode: 'status' | 'sync' | 'sync-delete') => {
+      if (!isTauri) return
+      if (mode === 'sync-delete' && !window.confirm(t('profileApplyDeletionsConfirm'))) return
+      setProfileBusy(true)
+      try {
+        const report =
+          mode === 'status' ? await onProfileStatus() : await onProfileSync(mode === 'sync-delete')
+        setProfileReport(report)
+        setBackupMsg(
+          report.conflicts.length > 0
+            ? t('profileConflictsFound', { count: report.conflicts.length })
+            : t('profileSyncDone'),
+        )
+      } catch (error) {
+        setBackupMsg(error instanceof Error ? error.message : String(error))
+      } finally {
+        setProfileBusy(false)
+      }
+    },
+    [isTauri, onProfileStatus, onProfileSync, t],
+  )
+
+  const runProfileFileAction = useCallback(
+    async (mode: 'export' | 'import') => {
+      if (!isTauri) return
+      setProfileBusy(true)
+      try {
+        if (mode === 'export') {
+          await onProfileExport()
+          setBackupMsg(t('profileExportDone'))
+        } else {
+          const report = await onProfileImport('abort')
+          if (report) {
+            setProfileReport(report)
+            setBackupMsg(
+              report.conflicts.length > 0
+                ? t('profileConflictsFound', { count: report.conflicts.length })
+                : t('profileImportDone'),
+            )
+          }
+        }
+      } catch (error) {
+        setBackupMsg(error instanceof Error ? error.message : String(error))
+      } finally {
+        setProfileBusy(false)
+      }
+    },
+    [isTauri, onProfileExport, onProfileImport, t],
+  )
+
+  const resolveProfile = useCallback(
+    async (strategy: 'local' | 'remote') => {
+      setProfileBusy(true)
+      try {
+        const report = await onProfileResolve(strategy)
+        setProfileReport(report)
+        setBackupMsg(t('profileResolved'))
+      } catch (error) {
+        setBackupMsg(error instanceof Error ? error.message : String(error))
+      } finally {
+        setProfileBusy(false)
+      }
+    },
+    [onProfileResolve, t],
+  )
 
   const handleCheckUpdate = useCallback(async () => {
     if (!isTauri) return
@@ -920,6 +1030,145 @@ const SettingsPage = ({
             {t('saveWebdav')}
           </button>
         </div>
+
+        <div className="settings-section-divider" />
+        <div className="settings-section-title">{t('profileSync')}</div>
+        <div className="settings-helper" style={{ marginBottom: 12 }}>
+          {t('profileSyncHint')}
+        </div>
+        <div className="settings-section-subtitle">{t('deviceSyncTitle')}</div>
+        <div className="settings-helper">{t('deviceSyncHint')}</div>
+        <div className="settings-tool-dir-actions">
+          <button className="btn btn-secondary btn-sm" type="button" disabled={deviceBusy} onClick={() => runDeviceAction('status')}>
+            {t('deviceStatus')}
+          </button>
+          <button className="btn btn-primary btn-sm" type="button" disabled={deviceBusy} onClick={() => runDeviceAction('pull')}>
+            {deviceBusy ? t('deviceWorking') : t('devicePull')}
+          </button>
+          <button className="btn btn-primary btn-sm" type="button" disabled={deviceBusy} onClick={() => runDeviceAction('publish')}>
+            {deviceBusy ? t('deviceWorking') : t('devicePublish')}
+          </button>
+        </div>
+        {deviceReport ? (
+          <div className="settings-restore-report" style={{ marginTop: 12 }}>
+            <div className="settings-helper">
+              {t('deviceSummary', {
+                state: deviceReport.state,
+                pushable: deviceReport.pushableRepositories,
+                dirty: deviceReport.dirtyRepositories,
+                pullable: deviceReport.pullableSkills,
+                failures: deviceReport.failures.length,
+              })}
+            </div>
+            {deviceReport.stages.map((item) => (
+              <div className="settings-helper" key={item.id}>
+                [{item.status}] {item.message}
+              </div>
+            ))}
+            {deviceReport.failures.map(([name, error]) => (
+              <div className="settings-update-error" key={`${name}-${error}`}>
+                <span>{name}</span><span>{error}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className="settings-section-subtitle" style={{ marginTop: 16 }}>{t('profileAdvancedTitle')}</div>
+        <div className="settings-tool-dir-actions">
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            disabled={profileBusy}
+            onClick={() => runProfileAction('status')}
+          >
+            {t('profileStatus')}
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            disabled={profileBusy}
+            onClick={() => runProfileAction('sync')}
+          >
+            {profileBusy ? t('profileSyncing') : t('profileSyncNow')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            disabled={profileBusy}
+            onClick={() => runProfileFileAction('export')}
+          >
+            {t('profileExport')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            disabled={profileBusy}
+            onClick={() => runProfileFileAction('import')}
+          >
+            {t('profileImport')}
+          </button>
+          {profileReport && profileReport.pendingDeletions.length > 0 ? (
+            <button
+              className="btn btn-danger btn-sm"
+              type="button"
+              disabled={profileBusy}
+              onClick={() => runProfileAction('sync-delete')}
+            >
+              {t('profileApplyDeletions', { count: profileReport.pendingDeletions.length })}
+            </button>
+          ) : null}
+        </div>
+        {profileReport ? (
+          <div className="settings-restore-report" style={{ marginTop: 12 }}>
+            <div className="settings-section-subtitle">
+              {t('profileDevice')}: <span className="mono">{profileReport.deviceId}</span>
+            </div>
+            <div className="settings-helper">
+              {t('profileSyncSummary', {
+                installed: profileReport.installed.length,
+                updated: profileReport.updated.length,
+                conflicts: profileReport.conflicts.length,
+                failures: profileReport.failures.length,
+              })}
+            </div>
+            {profileReport.skippedLocal.length > 0 ? (
+              <div className="settings-helper">
+                {t('profileLocalSkipped', { count: profileReport.skippedLocal.length })}
+              </div>
+            ) : null}
+            {profileReport.conflicts.map((conflict) => (
+              <div className="settings-update-error" key={conflict.path}>
+                <span className="mono">{conflict.path}</span>
+                <span>{conflict.reason}</span>
+              </div>
+            ))}
+            {profileReport.conflicts.length > 0 && !profileReport.conflictsResolved ? (
+              <div className="settings-tool-dir-actions" style={{ marginTop: 8 }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  disabled={profileBusy}
+                  onClick={() => resolveProfile('local')}
+                >
+                  {t('profileUseLocal')}
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  disabled={profileBusy}
+                  onClick={() => resolveProfile('remote')}
+                >
+                  {t('profileUseRemote')}
+                </button>
+              </div>
+            ) : null}
+            {profileReport.failures.map(([name, reason]) => (
+              <div className="settings-update-error" key={`${name}:${reason}`}>
+                <span>{name}</span>
+                <span>{reason}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         <div className="settings-section-divider" />
         <div className="settings-section-title">{t('configBackup')}</div>

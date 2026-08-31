@@ -83,6 +83,48 @@
 
 完整路径规则与检测逻辑见 [`src-tauri/src/core/tool_adapters/mod.rs`](../src-tauri/src/core/tool_adapters/mod.rs)。
 
+## 新设备安装（无需 clone 源码）
+
+可以从 [GitHub Releases](https://github.com/yancongya/skilldo/releases) 下载 macOS 或 Windows 客户端。只使用 CLI 时，可以一键安装独立二进制：
+
+```bash
+# macOS Intel / Apple Silicon 自动识别，并校验 SHA-256
+curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
+```
+
+```powershell
+# Windows x64 / ARM64 自动识别，并校验 SHA-256
+irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
+```
+
+Release 会同时发布四个 CLI 压缩包和对应 `.sha256` 文件。只有开发或自行构建时才需要 clone 完整仓库。
+
+## 新设备连接 WebDAV 并同步
+
+每台设备首次使用时都要输入一次 WebDAV 网址、用户名、密码和远程目录。客户端不填 NAS 物理路径，只填 HTTPS WebDAV 地址和远程目录。
+
+```bash
+skilldo config set webdav.url "https://dav.example.com" --json
+skilldo config set webdav.user "username" --json
+printf '%s' 'password' | skilldo config set webdav.password --stdin --json
+skilldo config set webdav.remote_dir "services/skillsdo" --json
+
+# 读取并验证配置（密码会自动脱敏）
+skilldo config get webdav --json
+skilldo device status --json
+
+# 拉取、合并并应用其他设备的状态
+skilldo device pull --json
+```
+
+桌面客户端中，在“设置 → WebDAV”填写同样的内容并保存，然后依次点击“检查设备状态”和“获取其他设备更新”。需要把当前状态发布给其他设备时，使用“发布到其他设备”或：
+
+```bash
+skilldo device publish --yes --json
+```
+
+不同设备的 Git/npm Skills 列表、标签和全局同步目标会取并集。来源/revision 不一致和“删除对修改”会保留为明确冲突，不会静默覆盖。本地独有且没有仓库来源的 Skills 无法在新设备自动重建。
+
 ## 开发
 
 ### 环境要求

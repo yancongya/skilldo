@@ -219,6 +219,12 @@ jobs:
           echo "=== Build completed ==="
           ls -la src-tauri/target/${{ matrix.target }}/release/bundle/ || true
 
+      - name: Build standalone CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/Cargo.toml --release --bin skilldo --target ${{ matrix.target }}
+
       - name: Verify codesign (optional)
         shell: bash
         run: |
@@ -293,6 +299,15 @@ jobs:
             echo "⚠️ 未找到 macOS .dmg（可选）" >&2
           fi
 
+          CLI="src-tauri/target/${TARGET}/release/skilldo"
+          if [ ! -x "${CLI}" ]; then
+            echo "❌ 未找到 standalone CLI: ${CLI}" >&2
+            exit 1
+          fi
+          CLI_ARCHIVE="skilldo-cli-macos-${ARCH}.tar.gz"
+          tar -czf "release-assets/${CLI_ARCHIVE}" -C "$(dirname "${CLI}")" skilldo
+          shasum -a 256 "release-assets/${CLI_ARCHIVE}" > "release-assets/${CLI_ARCHIVE}.sha256"
+
       - name: Prepare Windows Assets
         if: matrix.os == 'windows-2022'
         shell: bash
@@ -331,6 +346,18 @@ jobs:
 
           NEW_EXE="SkillDo-${VERSION}-Windows-${ARCH}.exe"
           cp "${EXE}" "release-assets/${NEW_EXE}"
+
+          CLI="src-tauri/target/${TARGET}/release/skilldo.exe"
+          if [ ! -f "${CLI}" ]; then
+            echo "❌ 未找到 standalone CLI: ${CLI}" >&2
+            exit 1
+          fi
+          CLI_ARCHIVE="skilldo-cli-windows-${ARCH}.zip"
+          mkdir -p release-assets/cli-stage
+          cp "${CLI}" release-assets/cli-stage/skilldo.exe
+          (cd release-assets/cli-stage && 7z a -tzip "../${CLI_ARCHIVE}" skilldo.exe)
+          rm -rf release-assets/cli-stage
+          sha256sum "release-assets/${CLI_ARCHIVE}" > "release-assets/${CLI_ARCHIVE}.sha256"
 
       - name: List prepared assets
         shell: bash

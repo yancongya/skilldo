@@ -17,7 +17,7 @@ use super::config::{FEATURED_SKILLS_URL, PRODUCT_NAME};
 
 const EXPLORE_SOURCES_KEY: &str = "explore_sources_v1";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExploreSourceConfig {
     pub id: String,

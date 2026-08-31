@@ -47,6 +47,8 @@ import type {
   UpdateResultDto,
   WebDavConfigDto,
   GithubOwnerEntry,
+  ProfileSyncReportDto,
+  DevicePipelineReportDto,
 } from './components/skills/types'
 
 type SkillScopeState = Record<
@@ -891,6 +893,85 @@ function App() {
     if (!isTauri) return []
     return await invokeTauri<GithubOwnerEntry[]>('list_github_owners')
   }, [isTauri, invokeTauri])
+
+  const handleProfileStatus = useCallback(async () => {
+    if (!isTauri) throw new Error(t('errors.notTauri'))
+    return await invokeTauri<ProfileSyncReportDto>('get_profile_sync_status')
+  }, [isTauri, invokeTauri, t])
+
+  const handleProfileSync = useCallback(
+    async (applyDeletions: boolean) => {
+      if (!isTauri) throw new Error(t('errors.notTauri'))
+      const report = await invokeTauri<ProfileSyncReportDto>('sync_profile', {
+        applyDeletions,
+      })
+      await loadManagedSkills()
+      return report
+    },
+    [isTauri, invokeTauri, loadManagedSkills, t],
+  )
+
+  const handleProfileExport = useCallback(async () => {
+    if (!isTauri) return
+    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
+    const date = new Date().toISOString().slice(0, 10)
+    const path = await dialog.save({
+      defaultPath: `skilldo-profile-${date}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (path) await invokeTauri('export_profile_to_file', { path })
+  }, [invokeTauri, isTauri])
+
+  const handleProfileImport = useCallback(
+    async (strategy: 'abort' | 'local' | 'remote') => {
+      const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
+      const selected = await dialog.open({
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+        multiple: false,
+      })
+      if (!selected || Array.isArray(selected)) return null
+      const report = await invokeTauri<ProfileSyncReportDto>('import_profile_from_file', {
+        path: selected,
+        strategy,
+        applyDeletions: false,
+      })
+      await loadManagedSkills()
+      return report
+    },
+    [invokeTauri, loadManagedSkills],
+  )
+
+  const handleProfileResolve = useCallback(
+    async (strategy: 'local' | 'remote') => {
+      const report = await invokeTauri<ProfileSyncReportDto>('resolve_profile_conflicts', {
+        strategy,
+        applyDeletions: false,
+      })
+      await loadManagedSkills()
+      return report
+    },
+    [invokeTauri, loadManagedSkills],
+  )
+
+  const handleDeviceStatus = useCallback(async () => {
+    return await invokeTauri<DevicePipelineReportDto>('get_device_sync_status')
+  }, [invokeTauri])
+
+  const handleDevicePull = useCallback(async () => {
+    const report = await invokeTauri<DevicePipelineReportDto>('pull_device_state', {
+      applyDeletions: false,
+    })
+    await loadManagedSkills()
+    return report
+  }, [invokeTauri, loadManagedSkills])
+
+  const handleDevicePublish = useCallback(async () => {
+    const report = await invokeTauri<DevicePipelineReportDto>('publish_device_state', {
+      confirmPush: true,
+    })
+    await loadManagedSkills()
+    return report
+  }, [invokeTauri, loadManagedSkills])
 
   const handlePickStoragePath = useCallback(async () => {
     try {
@@ -3196,6 +3277,14 @@ function App() {
             onBackupWebdav={handleBackupWebdav}
             onRestoreWebdav={handleRestoreWebdav}
             onListGithubOwners={handleListGithubOwners}
+            onProfileStatus={handleProfileStatus}
+            onProfileSync={handleProfileSync}
+            onProfileExport={handleProfileExport}
+            onProfileImport={handleProfileImport}
+            onProfileResolve={handleProfileResolve}
+            onDeviceStatus={handleDeviceStatus}
+            onDevicePull={handleDevicePull}
+            onDevicePublish={handleDevicePublish}
             t={t}
           />
         ) : (

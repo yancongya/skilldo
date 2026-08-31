@@ -141,6 +141,16 @@ pub fn run() {
             commands::restore_from_file,
             commands::restore_from_webdav,
             commands::set_webdav_config,
+            commands::get_profile_sync_status,
+            commands::get_device_sync_status,
+            commands::pull_device_state,
+            commands::publish_device_state,
+            commands::sync_profile,
+            commands::export_profile_to_file,
+            commands::import_profile_from_file,
+            commands::resolve_profile_conflicts,
+            commands::repair_sources,
+            commands::repair_source,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

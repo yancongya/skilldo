@@ -1,0 +1,4 @@
+interface:
+  display_name: "SkillDo Project Ops"
+  short_description: "Automatically operate SkillDo through its JSON CLI"
+  default_prompt: "Use the project SkillDo CLI to complete the requested configuration, backup, restore, or profile operation and report the structured result."

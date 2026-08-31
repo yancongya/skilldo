@@ -6,6 +6,22 @@ SkillDo manages AI Agent Skills from a single source of truth and syncs them to 
 
 ## Quick Start
 
+### Install without cloning
+
+Download the desktop installer from [GitHub Releases](https://github.com/yancongya/skilldo/releases), or install the standalone CLI directly:
+
+```bash
+# macOS (Apple Silicon or Intel; detects the architecture and verifies SHA-256)
+curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
+```
+
+```powershell
+# Windows PowerShell (x64 or ARM64; detects the architecture and verifies SHA-256)
+irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
+```
+
+The release provides `skilldo-cli-macos-aarch64.tar.gz`, `skilldo-cli-macos-x86_64.tar.gz`, `skilldo-cli-windows-x64.zip`, and `skilldo-cli-windows-arm64.zip`, each with a `.sha256` file. Cloning the source repository is only required for development.
+
 ### CLI (recommended for agents & automation)
 
 ```bash
@@ -19,9 +35,16 @@ skilldo sync --skill skill-creator --tool codex
 # Check status
 skilldo list --json
 skilldo status --json
+skilldo author detect --apply --json
+skilldo project skills --path . --json
 
 # Update all git-managed skills
 skilldo update --all --yes
+
+# Complete cross-device pipelines
+skilldo device status --json
+skilldo device pull --json
+skilldo device publish --yes --json
 
 # Browse the skill market
 skilldo explore --query "rag" --json
@@ -29,7 +52,7 @@ skilldo explore --query "rag" --json
 
 ### Desktop App
 
-Download the `.dmg` for macOS (or `.exe` for Windows, `.AppImage` for Linux) from [Releases](https://github.com/yancongya/skilldo/releases). The GUI provides visual skill management, explore, and one-click sync.
+Download the `.dmg` for macOS or `.exe` for Windows from [Releases](https://github.com/yancongya/skilldo/releases). The GUI provides visual skill management, explore, and one-click sync. Linux can currently be built from source but is not part of the release matrix.
 
 ### Development
 
@@ -44,19 +67,38 @@ npm run dev                # Web preview only (no backend)
 
 ## CLI Commands
 
+The desktop buttons and `scripts/skilldo-pull|publish` (`.sh`/`.bat`) call the same shared pipeline. Publish refreshes sources, pushes eligible owned repositories, records exact revisions, and then uploads both the portable Profile and lossless database backup. Local-only Skills are reported but cannot be reconstructed on another computer.
+
+When devices have different repository-backed or package-backed Skill lists, synchronization keeps their union. Concurrent tags and global tool targets for the same Skill are also combined. Source/revision disagreements and delete-versus-edit cases remain explicit conflicts so one device cannot silently replace or remove another device's state.
+
 | Command | Description |
 |---------|-------------|
 | `skilldo list [--json]` | List managed skills and sync targets |
 | `skilldo status [--json]` | Show which of 47+ AI tools are installed |
+| `skilldo device status\|pull\|publish [--yes] [--json]` | Inspect, retrieve, or publish complete cross-device state |
+| `skilldo author status\|detect\|set [--json]` | Detect or configure the current environment author without exposing the `gh` token |
+| `skilldo project skills [--path <project>] [--json]` | Discover project-local Skills across supported tool directories |
 | `skilldo explore [--query Q] [--json]` | Browse the skill market |
 | `skilldo install --url <repo> [--name] [--yes]` | Install from git URL or local path |
-| `skilldo sync --skill <name> --tool <key>` | Sync to a specific tool |
-| `skilldo unsync --skill <name> --tool <key>` | Remove from a tool |
+| `skilldo sync --skill <name> --tool <key> [--scope project --project-path <path>]` | Sync globally or into one project |
+| `skilldo unsync --skill <name> --tool <key> [--scope project --project-path <path>]` | Remove a global or project target |
+| `skilldo config get\|set <key> [value] [--stdin] [--json]` | Read/write scalar or structured config; use stdin for secrets |
 | `skilldo update --skill <name> [--yes]` | Update from source (auto git pull) |
 | `skilldo update --all [--yes]` | Update all git-managed skills |
 | `skilldo delete --skill <name> [--yes]` | Delete skill and all targets |
 | `skilldo push --skill <name> [-m "msg"]` | Commit & push git-managed skill |
 | `skilldo sources list [--json]` | List explore sources |
+| `skilldo backup file [path] [--json]` | Export a lossless SQLite snapshot in one JSON file |
+| `skilldo backup webdav [--json]` | Upload the lossless snapshot, including configured credentials |
+| `skilldo restore file <path> [--json]` | Validate and restore a local snapshot |
+| `skilldo restore webdav [--json]` | Validate and restore the WebDAV snapshot |
+| `skilldo profile status [--json]` | Preview the WebDAV profile merge without writing |
+| `skilldo profile sync [--yes] [--json]` | Merge, pull, install, and sync the shared device profile |
+| `skilldo repair sources [--apply] [--json]` | Audit local records and promote verified Git-worktree sources |
+| `skilldo repair source --skill <name> --url <repo> [--subpath <path>] [--apply] [--json]` | Verify a remote Skill identity, then reconnect one source |
+| `skilldo profile export <path> [--json]` | Export a portable Profile without WebDAV |
+| `skilldo profile import <path> [--strategy abort\|local\|remote] [--json]` | Merge an offline Profile |
+| `skilldo profile resolve --strategy local\|remote [--json]` | Resolve current WebDAV conflicts and synchronize |
 
 All commands support `--json` for agent-friendly structured output and `--yes` to skip confirmations.
 
@@ -83,6 +125,34 @@ All commands support `--json` for agent-friendly structured output and `--yes` t
 - **Three front-ends** share one `core/` engine and one SQLite database
 - CLI and GUI state stay in sync automatically
 - Agents discover `skilldo` via `SKILL.md` in their skill directories
+
+## Cross-device profiles
+
+On every new device, install either the desktop app or standalone CLI, then configure the same WebDAV endpoint. The NAS filesystem path is not entered on clients; use its HTTPS WebDAV URL and remote directory.
+
+```bash
+skilldo config set webdav.url "https://dav.example.com" --json
+skilldo config set webdav.user "username" --json
+printf '%s' 'password' | skilldo config set webdav.password --stdin --json
+skilldo config set webdav.remote_dir "services/skillsdo" --json
+
+# Verify the saved non-secret values and test remote Profile access
+skilldo config get webdav --json
+skilldo device status --json
+
+# Retrieve and merge the shared state
+skilldo device pull --json
+```
+
+In the desktop app, enter the same values under Settings → WebDAV, save them, choose **Check device state**, then **Get updates from other devices**. To publish changes back after reviewing them, use **Publish to other devices** or `skilldo device publish --yes --json`.
+
+The versioned `skilldo-profile.json` stores portable desired state: Git/package Skill sources and revisions, standard global targets, tags, manual origin rules, language, cache policy, and Explore sources. Git-managed Skills are cloned or pulled on the receiving computer. Independent Skill lists, tags, and targets are merged as a union.
+
+Passwords, WebDAV credentials, storage paths, custom scan directories, per-tool path overrides, project targets, and local-only Skills never enter the Profile. A new device must enter WebDAV credentials once before it can download anything. `config get` deliberately redacts the password. Deletions are reported as pending unless explicitly confirmed. Concurrent edits are merged against each device's last synchronized base; the upload uses WebDAV ETags to prevent overwriting a newer remote revision.
+
+If an older import was incorrectly recorded as local, run `skilldo repair sources --json` first. The audit reads standard `.agents/.skill-lock.json` provenance, content-matched Codex plugin manifests, and real Git worktrees. Review the structured report, then use `skilldo repair sources --apply --json`. Ambiguous central copies remain unresolved. For a confirmed source that lacks local metadata, use `repair source`; SkillDo clones the remote and verifies the selected directory contains a matching `SKILL.md` before writing.
+
+The separate `skilldo-backup.json` v2 format embeds a consistent SQLite image as Base64 with a SHA-256 checksum. It preserves every database table, ID, timestamp, setting, tag, origin record, target, discovery row, index, and sequence. At the user's request it also includes GitHub and WebDAV credentials, so the backup location must be private. Repository working trees and local-only skill files are filesystem content, not database data; use the Profile/Git flow to reconstruct repository skills on another computer.
 
 ## Supported Tools (47+)
 

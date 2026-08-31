@@ -27,7 +27,7 @@ use crate::core::tool_adapters::{
 pub const CONFIG_VERSION: u32 = 1;
 
 /// Source-classification rules (which remotes count as "mine" vs "official").
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OriginRules {
     #[serde(default)]
@@ -36,6 +36,23 @@ pub struct OriginRules {
     pub my_git_repos: Vec<String>,
     #[serde(default)]
     pub official_git_repos: Vec<String>,
+}
+
+/// Identity of the person operating this SkillDo environment. This is separate
+/// from repository/package authors recorded on individual installed Skills.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CurrentAuthorConfig {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub github_login: String,
+    #[serde(default)]
+    pub github_url: String,
+    #[serde(default)]
+    pub source: String,
 }
 
 /// A user-added local directory scanned for existing skills.
@@ -59,9 +76,9 @@ pub struct ToolDirOverride {
 
 /// WebDAV connection profile used for remote backup / restore.
 ///
-/// Persisted in its own settings key (`webdav_config`) and included in the
-/// portable config export so a restored machine can reconnect without
-/// re-entering credentials. (User accepted plaintext storage in the backup.)
+/// Persisted in its own settings key (`webdav_config`). Profile synchronization
+/// deliberately treats this as device-local data so credentials never enter
+/// the portable profile document.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct WebDavConfig {
@@ -97,6 +114,8 @@ pub struct AppConfig {
     pub github_token: String,
     #[serde(default)]
     pub origin_rules: OriginRules,
+    #[serde(default)]
+    pub current_author: CurrentAuthorConfig,
     #[serde(default)]
     pub tool_dir_overrides: Vec<ToolDirOverride>,
     #[serde(default)]
@@ -184,6 +203,8 @@ pub const TOOL_DIR_OVERRIDE_PREFIX: &str = "tool_global_dir_override_";
 pub const CUSTOM_SCAN_DIRS_KEY: &str = "custom_scan_dirs";
 /// Settings key holding the origin rules (JSON).
 pub const ORIGIN_RULES_KEY: &str = "origin_rules_v1";
+/// Settings key holding the current environment author's identity (JSON).
+pub const CURRENT_AUTHOR_KEY: &str = "current_author_v1";
 /// Settings key holding the WebDAV profile (JSON).
 pub const WEBDAV_CONFIG_KEY: &str = "webdav_config";
 
@@ -313,6 +334,10 @@ pub fn load_app_config(store: &SkillStore) -> anyhow::Result<AppConfig> {
     let git_cache_ttl_secs = get_git_cache_ttl_secs(store);
     let github_token = store.get_setting("github_token")?.unwrap_or_default();
     let origin_rules: OriginRules = convert_via_json(&get_origin_rules_impl(store)?)?;
+    let current_author = store
+        .get_setting(CURRENT_AUTHOR_KEY)?
+        .and_then(|json| serde_json::from_str::<CurrentAuthorConfig>(&json).ok())
+        .unwrap_or_default();
     let tool_dir_overrides = collect_tool_dir_overrides(store)?;
     let custom_scan_dirs: Vec<CustomScanDirEntry> = match store.get_setting(CUSTOM_SCAN_DIRS_KEY)? {
         Some(json) => serde_json::from_str(&json).unwrap_or_default(),
@@ -330,6 +355,7 @@ pub fn load_app_config(store: &SkillStore) -> anyhow::Result<AppConfig> {
         git_cache_ttl_secs,
         github_token,
         origin_rules,
+        current_author,
         tool_dir_overrides,
         custom_scan_dirs,
         explore_sources,
@@ -355,6 +381,10 @@ pub fn save_app_config_impl(store: &SkillStore, cfg: &AppConfig) -> anyhow::Resu
     let rules: OriginRules = convert_via_json(&cfg.origin_rules)?;
     let normalized = normalize_rules(rules);
     store.set_setting(ORIGIN_RULES_KEY, &serde_json::to_string(&normalized)?)?;
+    store.set_setting(
+        CURRENT_AUTHOR_KEY,
+        &serde_json::to_string(&cfg.current_author)?,
+    )?;
 
     save_tool_dir_overrides(store, &cfg.tool_dir_overrides)?;
 

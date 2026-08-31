@@ -142,6 +142,7 @@ name = "app"
 version = "0.6.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "dirs 5.0.1",
  "git2",

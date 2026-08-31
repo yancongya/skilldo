@@ -7,6 +7,7 @@ use tauri::State;
 
 use crate::core::app_config::{export_config_json, parse_config_json, AppConfig, WebDavConfig};
 use crate::core::backup::{export_full_backup, restore_full_backup, RestoreReport};
+use crate::core::device_sync::{device_publish, device_pull, device_status, DevicePipelineReport};
 use crate::core::webdav::{download_backup, upload_backup};
 // The aggregation logic now lives in `core::app_config`; re-export so the rest
 // of this module (and its command handlers) keeps resolving the same names.
@@ -38,10 +39,15 @@ use crate::core::installer::{
     update_managed_skill_from_source, GitSkillCandidate, InstallResult, LocalSkillCandidate,
 };
 use crate::core::onboarding::{build_onboarding_plan, OnboardingPlan};
+use crate::core::profile_sync::{
+    export_profile_json, import_profile_json, synchronize_profile, ConflictStrategy,
+    ProfileSyncReport,
+};
 use crate::core::skill_store::{SkillOriginRecord, SkillStore, SkillTargetRecord};
 use crate::core::skills_search::{
     search_skills_online as search_skills_online_core, OnlineSkillResult,
 };
+use crate::core::source_repair::{repair_skill_source, repair_skill_sources, SourceRepairReport};
 use crate::core::sync_engine::{
     copy_dir_recursive, sync_dir_for_tool_with_overwrite, sync_dir_hybrid, SyncMode,
 };
@@ -1797,6 +1803,8 @@ pub struct RestoreItemDto {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RestoreReportDto {
+    pub backup_version: u32,
+    pub database_restored: bool,
     pub installed: Vec<String>,
     pub skipped: Vec<RestoreItemDto>,
     pub failed: Vec<RestoreItemDto>,
@@ -1805,6 +1813,8 @@ pub struct RestoreReportDto {
 
 fn to_report_dto(report: &RestoreReport) -> RestoreReportDto {
     RestoreReportDto {
+        backup_version: report.backup_version,
+        database_restored: report.database_restored,
         installed: report.installed.clone(),
         skipped: report
             .skipped
@@ -1919,6 +1929,166 @@ pub async fn set_webdav_config(
     })
     .await
     .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Compare the local desired state with the remote WebDAV Profile.
+#[tauri::command]
+pub async fn get_profile_sync_status(
+    store: State<'_, SkillStore>,
+) -> Result<ProfileSyncReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        synchronize_profile(&store, true, false, ConflictStrategy::Abort)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Inspect the complete cross-device pipeline without changing local or remote state.
+#[tauri::command]
+pub async fn get_device_sync_status(
+    store: State<'_, SkillStore>,
+) -> Result<DevicePipelineReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || device_status(&store))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(format_anyhow_error)
+}
+
+/// Pull the WebDAV desired state and apply repositories, packages, settings and targets.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn pull_device_state(
+    store: State<'_, SkillStore>,
+    applyDeletions: bool,
+) -> Result<DevicePipelineReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || device_pull(&store, applyDeletions))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(format_anyhow_error)
+}
+
+/// Publish owned changes, the desired-state Profile, and the lossless database backup.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn publish_device_state(
+    store: State<'_, SkillStore>,
+    confirmPush: bool,
+) -> Result<DevicePipelineReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || device_publish(&store, confirmPush))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(format_anyhow_error)
+}
+
+/// Merge and apply the cross-device Profile, optionally propagating deletions.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn sync_profile(
+    store: State<'_, SkillStore>,
+    applyDeletions: bool,
+) -> Result<ProfileSyncReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        synchronize_profile(&store, false, applyDeletions, ConflictStrategy::Abort)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn export_profile_to_file(
+    store: State<'_, SkillStore>,
+    path: String,
+) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
+        std::fs::write(&path, export_profile_json(&store)?)
+            .map_err(|error| anyhow::anyhow!("写入 Profile 失败: {error}"))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn import_profile_from_file(
+    store: State<'_, SkillStore>,
+    path: String,
+    strategy: String,
+    applyDeletions: bool,
+) -> Result<ProfileSyncReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<ProfileSyncReport> {
+        let raw = std::fs::read_to_string(&path)
+            .map_err(|error| anyhow::anyhow!("读取 Profile 失败: {error}"))?;
+        import_profile_json(
+            &store,
+            &raw,
+            ConflictStrategy::parse(&strategy)?,
+            applyDeletions,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn resolve_profile_conflicts(
+    store: State<'_, SkillStore>,
+    strategy: String,
+    applyDeletions: bool,
+) -> Result<ProfileSyncReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        synchronize_profile(
+            &store,
+            false,
+            applyDeletions,
+            ConflictStrategy::parse(&strategy)?,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn repair_sources(
+    store: State<'_, SkillStore>,
+    apply: bool,
+) -> Result<SourceRepairReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || repair_skill_sources(&store, apply))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(format_anyhow_error)
+}
+
+#[allow(non_snake_case)]
+#[tauri::command]
+pub async fn repair_source(
+    store: State<'_, SkillStore>,
+    skill: String,
+    url: String,
+    subpath: Option<String>,
+    apply: bool,
+) -> Result<SourceRepairReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        repair_skill_source(&store, &skill, &url, subpath.as_deref(), apply)
+    })
+    .await
+    .map_err(|error| error.to_string())?
     .map_err(format_anyhow_error)
 }
 

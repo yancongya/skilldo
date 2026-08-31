@@ -593,3 +593,64 @@ fn error_context_includes_db_path() {
     let msg = format!("{:#}", err);
     assert!(msg.contains("failed to open db at"), "{msg}");
 }
+
+#[test]
+fn database_snapshot_roundtrips_every_table_and_secret() {
+    let (_dir, store) = make_store();
+    let skill = make_skill("snapshot-skill", "Snapshot", "/central/snapshot", 9);
+    store.upsert_skill(&skill).unwrap();
+    store.set_setting("github_token", "top-secret").unwrap();
+    store
+        .with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO discovered_skills
+                 (id, tool, found_path, name_guess, fingerprint, found_at, imported_skill_id)
+                 VALUES ('discovered-1', 'codex', '/tmp/found', 'Found', 'hash', 3, NULL)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO skill_tags (id, name, created_at, updated_at)
+                 VALUES (17, 'portable', 4, 5)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT INTO skill_tag_links (skill_id, tag_id, created_at)
+                 VALUES ('snapshot-skill', 17, 6)",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+    let snapshot = store.export_database_snapshot().unwrap();
+    store.delete_skill("snapshot-skill").unwrap();
+    store.delete_setting("github_token").unwrap();
+    store
+        .with_conn(|conn| {
+            conn.execute("DELETE FROM discovered_skills", [])?;
+            Ok(())
+        })
+        .unwrap();
+
+    store.import_database_snapshot(&snapshot).unwrap();
+
+    assert_eq!(
+        store.get_setting("github_token").unwrap().as_deref(),
+        Some("top-secret")
+    );
+    assert!(store.get_skill_by_id("snapshot-skill").unwrap().is_some());
+    assert_eq!(
+        store.get_skill_tags("snapshot-skill").unwrap()[0].name,
+        "portable"
+    );
+    let discovered: i64 = store
+        .with_conn(|conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM discovered_skills WHERE id='discovered-1'",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap();
+    assert_eq!(discovered, 1);
+}

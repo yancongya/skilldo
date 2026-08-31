@@ -10,7 +10,9 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::core::app_config::{load_app_config, save_app_config_impl, AppConfig};
 use crate::core::installer::{
@@ -66,16 +68,33 @@ impl SkillTargetBackupEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FullBackup {
+    #[serde(default)]
+    pub backup_version: u32,
     pub config: AppConfig,
     pub skills: Vec<SkillBackupEntry>,
+    /// A byte-for-byte consistent SQLite image. This is the authoritative v2
+    /// payload; `config` and `skills` remain for readability and v1 clients.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<DatabaseSnapshot>,
     /// Export timestamp (unix seconds) for human reference.
     #[serde(default)]
     pub exported_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseSnapshot {
+    pub encoding: String,
+    pub sha256: String,
+    pub bytes: String,
+}
+
 /// Outcome of a restore: what was (re)installed, what was skipped, what failed.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreReport {
+    pub backup_version: u32,
+    pub database_restored: bool,
     pub installed: Vec<String>,
     pub skipped: Vec<(String, String)>,
     pub failed: Vec<(String, String)>,
@@ -95,7 +114,13 @@ impl RestoreReport {
 
 /// Build the combined backup blob (pretty JSON) from the current store.
 pub fn export_full_backup(store: &SkillStore) -> Result<String> {
-    let config = load_app_config(store)?.sanitized_for_export();
+    let config = load_app_config(store)?;
+    let database_bytes = store.export_database_snapshot()?;
+    let database = DatabaseSnapshot {
+        encoding: "base64".to_string(),
+        sha256: hex::encode(Sha256::digest(&database_bytes)),
+        bytes: BASE64.encode(database_bytes),
+    };
     let records = store.list_skills().context("列出已管理技能失败")?;
     let mut skills = Vec::with_capacity(records.len());
     for rec in &records {
@@ -124,8 +149,10 @@ pub fn export_full_backup(store: &SkillStore) -> Result<String> {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let backup = FullBackup {
+        backup_version: 2,
         config,
         skills,
+        database: Some(database),
         exported_at: secs.to_string(),
     };
     serde_json::to_string_pretty(&backup).context("序列化备份失败")
@@ -136,6 +163,12 @@ pub fn parse_full_backup(raw: &str) -> Result<FullBackup> {
     let backup: FullBackup =
         serde_json::from_str(raw).map_err(|err| anyhow::anyhow!("备份 JSON 解析失败: {err}"))?;
     backup.config.validate()?;
+    if backup.backup_version > 2 {
+        anyhow::bail!(
+            "备份文件版本 v{} 高于当前支持版本 v2",
+            backup.backup_version
+        );
+    }
     Ok(backup)
 }
 
@@ -145,6 +178,24 @@ pub fn parse_full_backup(raw: &str) -> Result<FullBackup> {
 ///    skipping `local` skills (not portable) and skills that already exist.
 pub fn restore_full_backup(store: &SkillStore, raw: &str) -> Result<RestoreReport> {
     let mut backup = parse_full_backup(raw)?;
+    if let Some(database) = &backup.database {
+        if database.encoding != "base64" {
+            anyhow::bail!("不支持的数据库快照编码: {}", database.encoding);
+        }
+        let bytes = BASE64
+            .decode(&database.bytes)
+            .context("解码数据库快照失败")?;
+        let checksum = hex::encode(Sha256::digest(&bytes));
+        if checksum != database.sha256 {
+            anyhow::bail!("数据库快照 SHA256 校验失败");
+        }
+        store.import_database_snapshot(&bytes)?;
+        return Ok(RestoreReport {
+            backup_version: backup.backup_version,
+            database_restored: true,
+            ..RestoreReport::default()
+        });
+    }
     let current_config = load_app_config(store)?;
     backup.config.preserve_missing_secrets_from(&current_config);
     save_app_config_impl(store, &backup.config)?;
@@ -156,7 +207,10 @@ pub fn restore_full_backup(store: &SkillStore, raw: &str) -> Result<RestoreRepor
         .map(|record| (record.name, record.id))
         .collect();
 
-    let mut report = RestoreReport::default();
+    let mut report = RestoreReport {
+        backup_version: backup.backup_version,
+        ..RestoreReport::default()
+    };
     for entry in &backup.skills {
         let skill_id = if let Some(existing_id) = existing.get(&entry.name) {
             report
@@ -285,5 +339,41 @@ mod tests {
             CONFIG_VERSION + 1
         );
         assert!(parse_full_backup(&raw).is_err());
+    }
+
+    #[test]
+    fn v2_backup_restores_exact_database_settings() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = SkillStore::new(source_dir.path().join("source.db"));
+        source.ensure_schema().unwrap();
+        source.set_setting("github_token", "secret-token").unwrap();
+        source
+            .set_setting("custom_future_setting", "preserved")
+            .unwrap();
+
+        let raw = export_full_backup(&source).unwrap();
+        let parsed = parse_full_backup(&raw).unwrap();
+        assert_eq!(parsed.backup_version, 2);
+        assert!(parsed.database.is_some());
+        assert!(raw.contains("secret-token"));
+
+        let target_dir = tempfile::tempdir().unwrap();
+        let target = SkillStore::new(target_dir.path().join("target.db"));
+        target.ensure_schema().unwrap();
+        let report = restore_full_backup(&target, &raw).unwrap();
+
+        assert!(report.database_restored);
+        assert_eq!(report.backup_version, 2);
+        assert_eq!(
+            target.get_setting("github_token").unwrap().as_deref(),
+            Some("secret-token")
+        );
+        assert_eq!(
+            target
+                .get_setting("custom_future_setting")
+                .unwrap()
+                .as_deref(),
+            Some("preserved")
+        );
     }
 }

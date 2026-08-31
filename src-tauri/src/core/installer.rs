@@ -59,14 +59,24 @@ pub fn install_local_skill<R: tauri::Runtime>(
     let content_hash = compute_content_hash(&central_path);
     let description = parse_skill_md(&central_path.join("SKILL.md")).and_then(|(_, desc)| desc);
 
+    let detected_git = super::source_repair::detect_git_source(source_path)?
+        .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
     let record = SkillRecord {
         id: Uuid::new_v4().to_string(),
         name,
         description,
-        source_type: "local".to_string(),
-        source_ref: Some(source_path.to_string_lossy().to_string()),
-        source_subpath: None,
-        source_revision: None,
+        source_type: if detected_git.is_some() {
+            "git"
+        } else {
+            "local"
+        }
+        .to_string(),
+        source_ref: detected_git
+            .as_ref()
+            .map(|git| git.remote_url.clone())
+            .or_else(|| Some(source_path.to_string_lossy().to_string())),
+        source_subpath: detected_git.as_ref().and_then(|git| git.subpath.clone()),
+        source_revision: detected_git.as_ref().and_then(|git| git.revision.clone()),
         central_path: central_path.to_string_lossy().to_string(),
         content_hash: content_hash.clone(),
         created_at: now,
@@ -2361,11 +2371,17 @@ pub fn install_local_skill_cli(
     let cp_str = central_path.to_string_lossy().to_string();
     let all_skills = store.list_skills()?;
     if let Some(existing) = all_skills.iter().find(|s| s.central_path == cp_str) {
-        // Touch the existing record to keep it fresh.
+        // Touch the existing record and reconnect verified Git metadata when a
+        // previously imported central copy is installed from its worktree.
         let mut patched = existing.clone();
         patched.last_seen_at = now_ms();
         patched.status = "ok".to_string();
         store.upsert_skill(&patched)?;
+        if let Some(detected) = super::source_repair::detect_git_source(source_path)?
+            .or_else(|| super::source_repair::detect_recorded_source(&patched.name, &central_path))
+        {
+            super::source_repair::apply_detected_source(store, &patched, &detected)?;
+        }
         let content_hash = compute_content_hash(&central_path);
         return Ok(InstallResult {
             skill_id: patched.id,
@@ -2379,14 +2395,24 @@ pub fn install_local_skill_cli(
     let content_hash = compute_content_hash(&central_path);
     let description = parse_skill_md(&central_path.join("SKILL.md")).and_then(|(_, desc)| desc);
 
+    let detected_git = super::source_repair::detect_git_source(source_path)?
+        .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
     let record = SkillRecord {
         id: Uuid::new_v4().to_string(),
         name,
         description,
-        source_type: "local".to_string(),
-        source_ref: Some(source_path.to_string_lossy().to_string()),
-        source_subpath: None,
-        source_revision: None,
+        source_type: if detected_git.is_some() {
+            "git"
+        } else {
+            "local"
+        }
+        .to_string(),
+        source_ref: detected_git
+            .as_ref()
+            .map(|git| git.remote_url.clone())
+            .or_else(|| Some(source_path.to_string_lossy().to_string())),
+        source_subpath: detected_git.as_ref().and_then(|git| git.subpath.clone()),
+        source_revision: detected_git.as_ref().and_then(|git| git.revision.clone()),
         central_path: central_path.to_string_lossy().to_string(),
         content_hash: content_hash.clone(),
         created_at: now,
@@ -2767,9 +2793,7 @@ pub fn delete_skill_cli(store: &SkillStore, skill_id: &str) -> Result<()> {
     let targets = store.list_skill_targets(skill_id)?;
     for target in &targets {
         let target_path = PathBuf::from(&target.target_path);
-        if target_path.is_symlink() || target_path.exists() {
-            let _ = std::fs::remove_file(&target_path);
-        }
+        let _ = remove_sync_target_path(&target_path);
     }
 
     // Remove central repo copy.
@@ -2786,17 +2810,49 @@ pub fn delete_skill_cli(store: &SkillStore, skill_id: &str) -> Result<()> {
 
 /// CLI variant: remove a single target (unsync) and clean up the symlink.
 pub fn unsync_skill_cli(store: &SkillStore, skill_id: &str, tool_key: &str) -> Result<()> {
+    unsync_skill_target_cli(store, skill_id, tool_key, "global", None)
+}
+
+/// Runtime-independent unsync for both global and project-scoped targets.
+pub fn unsync_skill_target_cli(
+    store: &SkillStore,
+    skill_id: &str,
+    tool_key: &str,
+    scope: &str,
+    project_path: Option<&str>,
+) -> Result<()> {
+    let project_path = project_path
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let target = store
-        .find_skill_target(skill_id, tool_key, "global", None)?
-        .ok_or_else(|| anyhow::anyhow!("target not found: skill={} tool={}", skill_id, tool_key))?;
+        .find_skill_target(skill_id, tool_key, scope, project_path)?
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "target not found: skill={} tool={} scope={} project={:?}",
+                skill_id,
+                tool_key,
+                scope,
+                project_path
+            )
+        })?;
 
     let target_path = PathBuf::from(&target.target_path);
-    if target_path.is_symlink() || target_path.exists() {
-        let _ = std::fs::remove_file(&target_path);
+    remove_sync_target_path(&target_path)?;
+
+    store.delete_skill_target(skill_id, tool_key, scope, project_path)?;
+
+    Ok(())
+}
+
+fn remove_sync_target_path(path: &Path) -> Result<()> {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return Ok(());
+    };
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        std::fs::remove_file(path).with_context(|| format!("remove target {:?}", path))?;
+    } else if metadata.is_dir() {
+        std::fs::remove_dir_all(path).with_context(|| format!("remove target {:?}", path))?;
     }
-
-    store.delete_skill_target(skill_id, tool_key, "global", None)?;
-
     Ok(())
 }
 

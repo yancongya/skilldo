@@ -12,6 +12,12 @@ use anyhow::{Context, Result};
 
 use crate::core::app_config::WebDavConfig;
 
+#[derive(Debug, Clone)]
+pub struct WebDavDocument {
+    pub body: String,
+    pub etag: Option<String>,
+}
+
 /// A small WebDAV client bound to a single server profile.
 pub struct WebDavClient {
     base: String,
@@ -103,10 +109,69 @@ impl WebDavClient {
             anyhow::bail!("下载文件失败 (HTTP {})", status)
         }
     }
+
+    /// Download a document together with its ETag. Missing documents return `None`.
+    pub fn get_optional(&self, remote_path: &str) -> Result<Option<WebDavDocument>> {
+        let url = self.full_url(remote_path);
+        let resp = self
+            .auth(self.client.get(&url))
+            .send()
+            .context("GET 请求失败")?;
+        let status = resp.status();
+        if status.is_success() {
+            let etag = resp
+                .headers()
+                .get(reqwest::header::ETAG)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            return Ok(Some(WebDavDocument {
+                body: resp.text().context("读取响应内容失败")?,
+                etag,
+            }));
+        }
+        if status == 404 {
+            return Ok(None);
+        }
+        anyhow::bail!("下载文件失败 (HTTP {})", status)
+    }
+
+    /// Upload with optimistic concurrency. `expected_etag=None` creates only
+    /// when the document does not already exist.
+    pub fn put_conditional(
+        &self,
+        remote_path: &str,
+        body: &str,
+        expected_etag: Option<&str>,
+    ) -> Result<Option<String>> {
+        let url = self.full_url(remote_path);
+        let request = self
+            .auth(self.client.put(&url))
+            .header("Content-Type", "application/json")
+            .body(body.to_string());
+        let request = if let Some(etag) = expected_etag {
+            request.header(reqwest::header::IF_MATCH, etag)
+        } else {
+            request.header(reqwest::header::IF_NONE_MATCH, "*")
+        };
+        let resp = request.send().context("条件 PUT 请求失败")?;
+        let status = resp.status();
+        if status == 412 || status == 409 {
+            anyhow::bail!("PROFILE_REMOTE_CONFLICT|远端 Profile 已被其他设备更新，请重新同步")
+        }
+        if !status.is_success() {
+            anyhow::bail!("上传文件失败 (HTTP {})", status);
+        }
+        Ok(resp
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string))
+    }
 }
 
 /// Remote file name used for the combined backup blob.
 pub const BACKUP_REMOTE_FILE: &str = "skilldo-backup.json";
+pub const PROFILE_REMOTE_FILE: &str = "skilldo-profile.json";
 
 /// Compute the remote path for the backup file given a (possibly empty)
 /// `remote_dir` profile setting.
@@ -162,9 +227,40 @@ pub fn download_backup(cfg: &WebDavConfig) -> Result<String> {
     client.get(&remote_path)
 }
 
+pub fn profile_remote_path(remote_dir: &str) -> String {
+    let dir = remote_dir
+        .trim()
+        .trim_start_matches('/')
+        .trim_end_matches('/');
+    if dir.is_empty() {
+        PROFILE_REMOTE_FILE.to_string()
+    } else {
+        format!("{dir}/{PROFILE_REMOTE_FILE}")
+    }
+}
+
+pub fn prepare_remote_dir(cfg: &WebDavConfig) -> Result<WebDavClient> {
+    let client = WebDavClient::new(cfg)?;
+    for dir in collection_paths(&cfg.remote_dir)? {
+        client.mkcol(&dir)?;
+    }
+    Ok(client)
+}
+
 #[cfg(test)]
 mod tests {
+    use mockito::Matcher;
+
     use super::*;
+
+    fn config(url: String) -> WebDavConfig {
+        WebDavConfig {
+            url,
+            user: String::new(),
+            password: String::new(),
+            remote_dir: String::new(),
+        }
+    }
 
     #[test]
     fn collection_paths_builds_each_parent() {
@@ -186,5 +282,82 @@ mod tests {
             backup_remote_path("/backups/skilldo/"),
             "backups/skilldo/skilldo-backup.json"
         );
+        assert_eq!(
+            profile_remote_path("/backups/skilldo/"),
+            "backups/skilldo/skilldo-profile.json"
+        );
+    }
+
+    #[test]
+    fn get_optional_returns_body_and_etag() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("GET", "/skilldo-profile.json")
+            .with_status(200)
+            .with_header("etag", "\"profile-7\"")
+            .with_body("{\"profileVersion\":1}")
+            .create();
+
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+        let document = client.get_optional(PROFILE_REMOTE_FILE).unwrap().unwrap();
+
+        request.assert();
+        assert_eq!(document.etag.as_deref(), Some("\"profile-7\""));
+        assert_eq!(document.body, "{\"profileVersion\":1}");
+    }
+
+    #[test]
+    fn conditional_put_uses_etag_for_existing_document() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("PUT", "/skilldo-profile.json")
+            .match_header("if-match", "\"profile-7\"")
+            .match_header("content-type", Matcher::Regex("application/json.*".into()))
+            .with_status(204)
+            .with_header("etag", "\"profile-8\"")
+            .create();
+
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+        let etag = client
+            .put_conditional(PROFILE_REMOTE_FILE, "{}", Some("\"profile-7\""))
+            .unwrap();
+
+        request.assert();
+        assert_eq!(etag.as_deref(), Some("\"profile-8\""));
+    }
+
+    #[test]
+    fn conditional_put_creates_only_when_missing() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("PUT", "/skilldo-profile.json")
+            .match_header("if-none-match", "*")
+            .with_status(201)
+            .create();
+
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+        client
+            .put_conditional(PROFILE_REMOTE_FILE, "{}", None)
+            .unwrap();
+
+        request.assert();
+    }
+
+    #[test]
+    fn conditional_put_reports_remote_race() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("PUT", "/skilldo-profile.json")
+            .match_header("if-match", "\"stale\"")
+            .with_status(412)
+            .create();
+
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+        let error = client
+            .put_conditional(PROFILE_REMOTE_FILE, "{}", Some("\"stale\""))
+            .unwrap_err();
+
+        request.assert();
+        assert!(error.to_string().starts_with("PROFILE_REMOTE_CONFLICT|"));
     }
 }

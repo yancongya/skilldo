@@ -290,6 +290,53 @@ fn installs_local_skill_and_updates_from_source() {
 }
 
 #[test]
+fn cli_reinstall_reconnects_existing_local_record_to_git_source() {
+    let (_dir, store) = make_store();
+    let central_root = tempfile::tempdir().unwrap();
+    set_central_path(&store, central_root.path());
+    let central_path = central_root.path().join("reconnect");
+    fs::create_dir_all(&central_path).unwrap();
+    fs::write(central_path.join("SKILL.md"), "# Reconnect").unwrap();
+    store
+        .upsert_skill(&SkillRecord {
+            id: "existing-id".to_string(),
+            name: "reconnect".to_string(),
+            description: None,
+            source_type: "local".to_string(),
+            source_ref: Some(central_path.to_string_lossy().to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: central_path.to_string_lossy().to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        })
+        .unwrap();
+
+    let repo_dir = tempfile::tempdir().unwrap();
+    let candidate = repo_dir.path().join("skills/reconnect");
+    fs::create_dir_all(&candidate).unwrap();
+    fs::write(candidate.join("SKILL.md"), "# Reconnect").unwrap();
+    let repo = init_git_repo(repo_dir.path());
+    repo.remote("origin", "https://github.com/example/skills.git")
+        .unwrap();
+
+    let result =
+        super::install_local_skill_cli(&store, &candidate, Some("reconnect".to_string())).unwrap();
+    assert_eq!(result.skill_id, "existing-id");
+    let repaired = store.get_skill_by_id("existing-id").unwrap().unwrap();
+    assert_eq!(repaired.source_type, "git");
+    assert_eq!(
+        repaired.source_ref.as_deref(),
+        Some("https://github.com/example/skills.git")
+    );
+    assert_eq!(repaired.source_subpath.as_deref(), Some("skills/reconnect"));
+}
+
+#[test]
 fn lists_and_installs_git_skills_without_network() {
     let app = tauri::test::mock_app();
     let (_dir, store) = make_store();

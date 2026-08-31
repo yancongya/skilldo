@@ -1,14 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{backup::Backup, params, Connection};
 use tauri::Manager;
 
 const DB_FILE_NAME: &str = "skills_hub.db";
 const LEGACY_APP_IDENTIFIERS: &[&str] = &["com.tauri.dev", "com.tauri.dev.skillshub"];
 
 // Schema versioning: bump when making changes and add a migration step.
-const SCHEMA_VERSION: i32 = 6;
+pub(crate) const SCHEMA_VERSION: i32 = 6;
 
 // Minimal schema for MVP: skills, skill_targets, settings, discovered_skills(optional).
 const SCHEMA_V1: &str = r#"
@@ -251,6 +251,72 @@ impl SkillStore {
             conn.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
             Ok(())
         })
+    }
+
+    /// Produce a consistent SQLite image containing every table, index,
+    /// sequence, setting, and metadata row currently stored by SkillDo.
+    pub fn export_database_snapshot(&self) -> Result<Vec<u8>> {
+        let snapshot_path = self
+            .db_path
+            .with_extension(format!("snapshot-{}.db", uuid::Uuid::new_v4()));
+        let result = (|| -> Result<Vec<u8>> {
+            let source = Connection::open(&self.db_path)
+                .with_context(|| format!("failed to open db at {:?}", self.db_path))?;
+            let mut destination = Connection::open(&snapshot_path)
+                .with_context(|| format!("failed to create snapshot at {snapshot_path:?}"))?;
+            Backup::new(&source, &mut destination)?.run_to_completion(
+                64,
+                std::time::Duration::from_millis(10),
+                None,
+            )?;
+            drop(destination);
+            std::fs::read(&snapshot_path)
+                .with_context(|| format!("failed to read snapshot at {snapshot_path:?}"))
+        })();
+        let _ = std::fs::remove_file(&snapshot_path);
+        result
+    }
+
+    /// Replace all database contents from a validated SQLite image. The live
+    /// database file remains in place, so desktop and CLI paths stay stable.
+    pub fn import_database_snapshot(&self, bytes: &[u8]) -> Result<()> {
+        let snapshot_path = self
+            .db_path
+            .with_extension(format!("restore-{}.db", uuid::Uuid::new_v4()));
+        let result = (|| -> Result<()> {
+            std::fs::write(&snapshot_path, bytes)
+                .with_context(|| format!("failed to stage snapshot at {snapshot_path:?}"))?;
+            let source = Connection::open(&snapshot_path).context("打开快照数据库失败")?;
+            let integrity: String = source
+                .query_row("PRAGMA integrity_check;", [], |row| row.get(0))
+                .context("检查快照完整性失败")?;
+            if integrity != "ok" {
+                anyhow::bail!("快照数据库完整性检查失败: {integrity}");
+            }
+            let version: i32 = source.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+            if version > SCHEMA_VERSION {
+                anyhow::bail!("快照数据库版本 {version} 高于当前支持版本 {SCHEMA_VERSION}");
+            }
+            let required_table: i64 = source.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'",
+                [],
+                |row| row.get(0),
+            )?;
+            if required_table != 1 {
+                anyhow::bail!("快照不是有效的 SkillDo 数据库");
+            }
+            let mut destination = Connection::open(&self.db_path)
+                .with_context(|| format!("failed to open db at {:?}", self.db_path))?;
+            Backup::new(&source, &mut destination)?.run_to_completion(
+                64,
+                std::time::Duration::from_millis(10),
+                None,
+            )?;
+            Ok(())
+        })();
+        let _ = std::fs::remove_file(&snapshot_path);
+        result?;
+        self.ensure_schema()
     }
 
     #[allow(dead_code)]

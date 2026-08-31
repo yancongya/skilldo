@@ -11,21 +11,30 @@
 //! - `--json` emits structured JSON suitable for programmatic consumption.
 //! - Errors print to stderr and exit with a non-zero code.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::Read;
 use std::path::PathBuf;
+use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::core::app_config::{
     export_config_json, load_app_config, parse_config_json, save_app_config_impl, AppConfig,
-    WebDavConfig,
+    CurrentAuthorConfig, WebDavConfig,
 };
 use crate::core::backup::{export_full_backup, restore_full_backup, RestoreReport};
+use crate::core::device_sync::{device_publish, device_pull, device_status, DevicePipelineReport};
 use crate::core::explore_sources::{self, ExploreSourceConfig};
 use crate::core::github_auth::compute_github_token_status;
 use crate::core::installer;
+use crate::core::profile_sync::{
+    export_profile_json, import_profile_json, synchronize_profile, ConflictStrategy,
+    ProfileSyncReport,
+};
 use crate::core::skill_store::{default_db_path_cli, SkillStore};
+use crate::core::source_repair::{repair_skill_source, repair_skill_sources};
 use crate::core::tool_adapters;
 use crate::core::webdav::{download_backup, upload_backup};
 
@@ -89,6 +98,12 @@ enum Commands {
         /// Target tool key (e.g. claude_code, codex, cursor).
         #[arg(long)]
         tool: String,
+        /// Target scope: global or project.
+        #[arg(long, default_value = "global", value_parser = ["global", "project"])]
+        scope: String,
+        /// Project root, required when --scope project.
+        #[arg(long)]
+        project_path: Option<String>,
     },
     /// Remove a skill from a specific AI tool (unsync).
     Unsync {
@@ -98,6 +113,12 @@ enum Commands {
         /// Target tool key.
         #[arg(long)]
         tool: String,
+        /// Target scope: global or project.
+        #[arg(long, default_value = "global", value_parser = ["global", "project"])]
+        scope: String,
+        /// Project root, required when --scope project.
+        #[arg(long)]
+        project_path: Option<String>,
     },
     /// Update a skill from its source.
     Update {
@@ -142,6 +163,16 @@ enum Commands {
         #[command(subcommand)]
         action: GithubAction,
     },
+    /// Detect and configure the current environment author.
+    Author {
+        #[command(subcommand)]
+        action: AuthorAction,
+    },
+    /// Inspect project-local Skill directories supported by installed tools.
+    Project {
+        #[command(subcommand)]
+        action: ProjectAction,
+    },
     /// Back up the full state (settings + skills list) to a file or WebDAV.
     Backup {
         #[command(subcommand)]
@@ -151,6 +182,21 @@ enum Commands {
     Restore {
         #[command(subcommand)]
         target: RestoreTarget,
+    },
+    /// Synchronize the portable desired-state profile across computers.
+    Profile {
+        #[command(subcommand)]
+        action: ProfileAction,
+    },
+    /// Run the complete cross-device status, pull, or publish workflow.
+    Device {
+        #[command(subcommand)]
+        action: DeviceAction,
+    },
+    /// Audit or repair managed Skill source metadata.
+    Repair {
+        #[command(subcommand)]
+        action: RepairAction,
     },
 }
 
@@ -225,7 +271,10 @@ enum ConfigAction {
         /// Config key to set.
         key: String,
         /// New value.
-        value: String,
+        value: Option<String>,
+        /// Read the value from stdin (recommended for secrets).
+        #[arg(long, default_value_t = false)]
+        stdin: bool,
     },
     /// Export the config (settings only) to a JSON file or stdout.
     Export {
@@ -236,6 +285,37 @@ enum ConfigAction {
     Import {
         /// Input path.
         path: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthorAction {
+    /// Show configured author plus locally detected gh/git identity.
+    Status,
+    /// Detect the author from authenticated gh, falling back to git config.
+    Detect {
+        /// Persist the detected identity and add its GitHub login to myGitOwners.
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+    },
+    /// Explicitly set the current environment author.
+    Set {
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        email: Option<String>,
+        #[arg(long)]
+        github_login: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectAction {
+    /// List Skill folders found in all supported project-local directories.
+    Skills {
+        /// Project root (defaults to current directory).
+        #[arg(long)]
+        path: Option<String>,
     },
 }
 
@@ -278,10 +358,122 @@ enum RestoreTarget {
     Webdav,
 }
 
+#[derive(Subcommand)]
+enum ProfileAction {
+    /// Compare local and remote profiles without changing either side.
+    Status,
+    /// Merge, apply, update Git skills, and upload the resulting profile.
+    Sync {
+        /// Also apply deletions propagated from another computer.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Export the portable Profile to a local JSON file.
+    Export {
+        /// Output file path.
+        path: String,
+    },
+    /// Import and apply a local Profile JSON file.
+    Import {
+        /// Input file path.
+        path: String,
+        /// Conflict strategy: abort | local | remote.
+        #[arg(long, default_value = "abort", value_parser = ["abort", "local", "remote"])]
+        strategy: String,
+        /// Also apply deletions from the imported Profile.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Resolve current WebDAV conflicts and synchronize.
+    Resolve {
+        /// Select local or remote values for every reported conflict.
+        #[arg(long, value_parser = ["local", "remote"])]
+        strategy: String,
+        /// Also apply deletions selected by the resolved Profile.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum DeviceAction {
+    /// Inspect local, repository, and WebDAV state without changing it.
+    Status,
+    /// Pull the WebDAV Profile and apply repository/package/config changes.
+    Pull {
+        /// Also apply deletions propagated by another device.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Refresh sources, push owned changes, then upload Profile and full backup.
+    Publish {
+        /// Allow Git commits and pushes for owned repositories.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RepairAction {
+    /// Detect local records whose source path belongs to a Git repository.
+    Sources {
+        /// Apply high-confidence repairs. Omit for a read-only dry run.
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+    },
+    /// Reconnect one Skill to a verified Git remote and subpath.
+    Source {
+        /// Skill ID or name.
+        #[arg(long)]
+        skill: String,
+        /// Git repository URL. The repository is cloned before any write.
+        #[arg(long)]
+        url: String,
+        /// Directory containing SKILL.md inside the repository.
+        #[arg(long)]
+        subpath: Option<String>,
+        /// Apply after remote identity validation. Omit for a dry run.
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+    },
+}
+
 /// Entry point invoked from the `skilldo` binary.
 pub fn run() {
-    if let Err(err) = execute() {
-        eprintln!("error: {:#}", err);
+    let wants_json = std::env::args().any(|arg| arg == "--json");
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => {
+            use clap::error::ErrorKind;
+            if matches!(
+                error.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                print!("{error}");
+                return;
+            }
+            if wants_json {
+                let output = serde_json::json!({
+                    "ok": false,
+                    "error": error.to_string()
+                });
+                eprintln!("{}", serde_json::to_string(&output).unwrap_or_default());
+            } else {
+                let _ = error.print();
+            }
+            std::process::exit(2);
+        }
+    };
+    if let Err(err) = execute(cli) {
+        if wants_json {
+            let output = serde_json::json!({
+                "ok": false,
+                "error": format!("{err:#}")
+            });
+            eprintln!("{}", serde_json::to_string(&output).unwrap_or_default());
+        } else {
+            eprintln!("error: {:#}", err);
+        }
         std::process::exit(1);
     }
 }
@@ -303,8 +495,7 @@ fn open_store(db: Option<&PathBuf>) -> Result<SkillStore> {
     Ok(store)
 }
 
-fn execute() -> Result<()> {
-    let cli = Cli::parse();
+fn execute(cli: Cli) -> Result<()> {
     let store = open_store(cli.db.as_ref())?;
 
     match cli.command {
@@ -332,7 +523,9 @@ fn execute() -> Result<()> {
         },
         Commands::Config { action } => match action {
             ConfigAction::Get { key } => cmd_config_get(&store, key.as_deref(), cli.json),
-            ConfigAction::Set { key, value } => cmd_config_set(&store, &key, &value, cli.json),
+            ConfigAction::Set { key, value, stdin } => {
+                cmd_config_set(&store, &key, value.as_deref(), stdin, cli.json)
+            }
             ConfigAction::Export { path } => cmd_config_export(&store, path.as_deref(), cli.json),
             ConfigAction::Import { path } => cmd_config_import(&store, &path, cli.json),
         },
@@ -343,6 +536,18 @@ fn execute() -> Result<()> {
                 cmd_github_token_validate(&store, token.as_deref(), cli.json)
             }
         },
+        Commands::Author { action } => match action {
+            AuthorAction::Status => cmd_author_status(&store, cli.json),
+            AuthorAction::Detect { apply } => cmd_author_detect(&store, apply, cli.json),
+            AuthorAction::Set {
+                name,
+                email,
+                github_login,
+            } => cmd_author_set(&store, name, email, github_login, cli.json),
+        },
+        Commands::Project { action } => match action {
+            ProjectAction::Skills { path } => cmd_project_skills(path.as_deref(), cli.json),
+        },
         Commands::Backup { target } => match target {
             BackupTarget::File { path } => cmd_backup_file(&store, path.as_deref(), cli.json),
             BackupTarget::Webdav => cmd_backup_webdav(&store, cli.json),
@@ -351,9 +556,62 @@ fn execute() -> Result<()> {
             RestoreTarget::File { path } => cmd_restore_file(&store, &path, cli.json),
             RestoreTarget::Webdav => cmd_restore_webdav(&store, cli.json),
         },
+        Commands::Profile { action } => match action {
+            ProfileAction::Status => cmd_profile_status(&store, cli.json),
+            ProfileAction::Sync { yes } => cmd_profile_sync(&store, yes, cli.json),
+            ProfileAction::Export { path } => cmd_profile_export(&store, &path, cli.json),
+            ProfileAction::Import {
+                path,
+                strategy,
+                yes,
+            } => cmd_profile_import(&store, &path, &strategy, yes, cli.json),
+            ProfileAction::Resolve { strategy, yes } => {
+                cmd_profile_resolve(&store, &strategy, yes, cli.json)
+            }
+        },
+        Commands::Device { action } => match action {
+            DeviceAction::Status => cmd_device(&store, device_status(&store)?, cli.json),
+            DeviceAction::Pull { yes } => cmd_device(&store, device_pull(&store, yes)?, cli.json),
+            DeviceAction::Publish { yes } => {
+                cmd_device(&store, device_publish(&store, yes)?, cli.json)
+            }
+        },
+        Commands::Repair { action } => match action {
+            RepairAction::Sources { apply } => cmd_repair_sources(&store, apply, cli.json),
+            RepairAction::Source {
+                skill,
+                url,
+                subpath,
+                apply,
+            } => cmd_repair_source(&store, &skill, &url, subpath.as_deref(), apply, cli.json),
+        },
         Commands::Install { url, name, yes } => cmd_install(&store, &url, name, yes, cli.json),
-        Commands::Sync { skill, tool } => cmd_sync(&store, &skill, &tool, cli.json),
-        Commands::Unsync { skill, tool } => cmd_unsync(&store, &skill, &tool, cli.json),
+        Commands::Sync {
+            skill,
+            tool,
+            scope,
+            project_path,
+        } => cmd_sync(
+            &store,
+            &skill,
+            &tool,
+            &scope,
+            project_path.as_deref(),
+            cli.json,
+        ),
+        Commands::Unsync {
+            skill,
+            tool,
+            scope,
+            project_path,
+        } => cmd_unsync(
+            &store,
+            &skill,
+            &tool,
+            &scope,
+            project_path.as_deref(),
+            cli.json,
+        ),
         Commands::Update { skill, all, yes } => cmd_update(&store, &skill, all, yes, cli.json),
         Commands::Delete { skill, yes } => cmd_delete(&store, &skill, yes, cli.json),
         Commands::Push {
@@ -376,12 +634,46 @@ struct CliManagedSkill {
     description: Option<String>,
     source_type: String,
     source_ref: Option<String>,
+    source_subpath: Option<String>,
+    source_revision: Option<String>,
+    content_hash: Option<String>,
     syncable: bool,
     central_path: String,
     status: String,
     created_at: i64,
     updated_at: i64,
+    last_sync_at: Option<i64>,
+    author: CliSkillAuthor,
+    origin: Option<CliSkillOrigin>,
+    tags: Vec<String>,
     targets: Vec<CliSkillTarget>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliSkillAuthor {
+    kind: String,
+    name: Option<String>,
+    provider: Option<String>,
+    repository: Option<String>,
+    read_only: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliSkillOrigin {
+    kind: String,
+    role: String,
+    provider: Option<String>,
+    remote_url: Option<String>,
+    owner: Option<String>,
+    repo: Option<String>,
+    branch: Option<String>,
+    subpath: Option<String>,
+    update_strategy: String,
+    publish_strategy: String,
+    manual_override: bool,
+    reason: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -389,9 +681,12 @@ struct CliManagedSkill {
 struct CliSkillTarget {
     tool: String,
     scope: String,
+    project_path: Option<String>,
     target_path: String,
     mode: String,
     status: String,
+    last_error: Option<String>,
+    synced_at: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -438,6 +733,8 @@ struct CliSyncResult {
     success: bool,
     skill_id: String,
     tool: String,
+    scope: String,
+    project_path: Option<String>,
     target_path: String,
     mode: String,
 }
@@ -447,6 +744,7 @@ struct CliSyncResult {
 // ---------------------------------------------------------------------------
 
 fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
+    let config = load_app_config(store)?;
     let records = store
         .list_skills()
         .context("failed to list managed skills")?;
@@ -459,6 +757,112 @@ fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
             "local" if syncable => continue,
             _ => {}
         }
+        let origin_record = store.get_skill_origin(&rec.id)?;
+        let fallback_origin = origin_record.is_none().then(|| {
+            let (owner, repo) = rec
+                .source_ref
+                .as_deref()
+                .map(parse_github_repository)
+                .unwrap_or_default();
+            let is_current = owner.as_deref().is_some_and(|value| {
+                config
+                    .origin_rules
+                    .my_git_owners
+                    .iter()
+                    .any(|mine| mine.eq_ignore_ascii_case(value))
+            });
+            CliSkillOrigin {
+                kind: rec.source_type.clone(),
+                role: if rec.source_type == "local" || is_current {
+                    "mine"
+                } else {
+                    "repository"
+                }
+                .to_string(),
+                provider: Some(
+                    if rec.source_type == "package" {
+                        "npm"
+                    } else {
+                        &rec.source_type
+                    }
+                    .to_string(),
+                ),
+                remote_url: rec.source_ref.clone(),
+                owner,
+                repo,
+                branch: None,
+                subpath: rec.source_subpath.clone(),
+                update_strategy: if rec.source_type == "git" {
+                    "git_pull"
+                } else if rec.source_type == "package" {
+                    "package_refresh"
+                } else {
+                    "local_copy"
+                }
+                .to_string(),
+                publish_strategy: if is_current && rec.source_type == "git" {
+                    "git_push"
+                } else {
+                    "none"
+                }
+                .to_string(),
+                manual_override: false,
+                reason: Some("derived from Skill source metadata for CLI output".to_string()),
+            }
+        });
+        let origin = origin_record
+            .as_ref()
+            .map(|item| CliSkillOrigin {
+                kind: item.origin_kind.clone(),
+                role: item.origin_role.clone(),
+                provider: item.provider.clone(),
+                remote_url: item.remote_url.clone(),
+                owner: item.owner.clone(),
+                repo: item.repo.clone(),
+                branch: item.branch.clone(),
+                subpath: item.subpath.clone(),
+                update_strategy: item.update_strategy.clone(),
+                publish_strategy: item.publish_strategy.clone(),
+                manual_override: item.manual_override,
+                reason: item.reason.clone(),
+            })
+            .or(fallback_origin);
+        let package_author = if rec.source_type == "package" {
+            rec.source_ref.as_deref().and_then(|source| {
+                source
+                    .trim_start_matches("npm:")
+                    .strip_prefix('@')
+                    .and_then(|value| value.split('/').next())
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+        } else {
+            None
+        };
+        let author = CliSkillAuthor {
+            kind: if origin.as_ref().is_some_and(|item| item.role == "mine") {
+                "current".to_string()
+            } else {
+                "thirdParty".to_string()
+            },
+            name: origin
+                .as_ref()
+                .and_then(|item| item.owner.clone())
+                .or(package_author),
+            provider: origin.as_ref().and_then(|item| item.provider.clone()),
+            repository: origin
+                .as_ref()
+                .and_then(|item| match (&item.owner, &item.repo) {
+                    (Some(owner), Some(repo)) => Some(format!("{owner}/{repo}")),
+                    _ => None,
+                }),
+            read_only: true,
+        };
+        let tags = store
+            .get_skill_tags(&rec.id)?
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
         let targets = store
             .list_skill_targets(&rec.id)
             .unwrap_or_default()
@@ -466,9 +870,12 @@ fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
             .map(|t| CliSkillTarget {
                 tool: t.tool,
                 scope: t.scope,
+                project_path: t.project_path,
                 target_path: t.target_path,
                 mode: t.mode,
                 status: t.status,
+                last_error: t.last_error,
+                synced_at: t.synced_at,
             })
             .collect();
         skills.push(CliManagedSkill {
@@ -477,11 +884,18 @@ fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
             description: rec.description,
             source_type: rec.source_type,
             source_ref: rec.source_ref,
+            source_subpath: rec.source_subpath,
+            source_revision: rec.source_revision,
+            content_hash: rec.content_hash,
             syncable,
             central_path: rec.central_path,
             status: rec.status,
             created_at: rec.created_at,
             updated_at: rec.updated_at,
+            last_sync_at: rec.last_sync_at,
+            author,
+            origin,
+            tags,
             targets,
         });
     }
@@ -508,6 +922,28 @@ fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
         println!("\n{} skill(s) total.", skills.len());
     }
     Ok(())
+}
+
+fn parse_github_repository(source: &str) -> (Option<String>, Option<String>) {
+    let normalized = source
+        .trim()
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .replace("git@github.com:", "https://github.com/");
+    let Some((_, tail)) = normalized.split_once("github.com/") else {
+        return (None, None);
+    };
+    let mut parts = tail.split('/');
+    (
+        parts
+            .next()
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        parts
+            .next()
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+    )
 }
 
 fn cmd_status(json: bool) -> Result<()> {
@@ -606,75 +1042,117 @@ fn load_webdav_cfg(store: &SkillStore) -> Result<WebDavConfig> {
     })
 }
 
-fn config_get_value(cfg: &AppConfig, key: &str) -> Option<String> {
-    match key {
-        "language" => cfg.language.clone(),
-        "storage_path" => cfg.storage_path.clone(),
-        "github_token" => Some(cfg.github_token.clone()),
-        "git_cache_cleanup_days" => Some(cfg.git_cache_cleanup_days.to_string()),
-        "git_cache_ttl_secs" => Some(cfg.git_cache_ttl_secs.to_string()),
-        "webdav.url" => cfg.webdav.as_ref().map(|w| w.url.clone()),
-        "webdav.user" => cfg.webdav.as_ref().map(|w| w.user.clone()),
-        "webdav.password" => cfg.webdav.as_ref().map(|w| w.password.clone()),
-        "webdav.remote_dir" => cfg.webdav.as_ref().map(|w| w.remote_dir.clone()),
-        _ => None,
-    }
+fn config_key_path(key: &str) -> Vec<&str> {
+    key.split('.').collect()
+}
+
+fn canonical_config_key(key: &str) -> String {
+    key.split('.')
+        .map(|part| match part {
+            "storage_path" => "storagePath",
+            "github_token" => "githubToken",
+            "git_cache_cleanup_days" => "gitCacheCleanupDays",
+            "git_cache_ttl_secs" => "gitCacheTtlSecs",
+            "origin_rules" => "originRules",
+            "current_author" => "currentAuthor",
+            "tool_dir_overrides" => "toolDirOverrides",
+            "custom_scan_dirs" => "customScanDirs",
+            "explore_sources" => "exploreSources",
+            "my_git_owners" => "myGitOwners",
+            "my_git_repos" => "myGitRepos",
+            "official_git_repos" => "officialGitRepos",
+            "github_login" => "githubLogin",
+            "github_url" => "githubUrl",
+            "remote_dir" => "remoteDir",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 fn config_set_value(cfg: &mut AppConfig, key: &str, value: &str) -> Result<()> {
-    match key {
-        "language" => cfg.language = Some(value.to_string()),
-        "storage_path" => cfg.storage_path = Some(value.to_string()),
-        "github_token" => cfg.github_token = value.to_string(),
-        "git_cache_cleanup_days" => {
-            cfg.git_cache_cleanup_days = value
-                .parse::<i64>()
-                .with_context(|| format!("无效的整数: {value}"))?
-        }
-        "git_cache_ttl_secs" => {
-            cfg.git_cache_ttl_secs = value
-                .parse::<i64>()
-                .with_context(|| format!("无效的整数: {value}"))?
-        }
-        "webdav.url" => {
-            cfg.webdav.get_or_insert_with(WebDavConfig::default).url = value.to_string()
-        }
-        "webdav.user" => {
-            cfg.webdav.get_or_insert_with(WebDavConfig::default).user = value.to_string()
-        }
-        "webdav.password" => {
-            cfg.webdav.get_or_insert_with(WebDavConfig::default).password = value.to_string()
-        }
-        "webdav.remote_dir" => {
-            cfg.webdav.get_or_insert_with(WebDavConfig::default).remote_dir = value.to_string()
-        }
-        other => anyhow::bail!(
-            "未知配置键: {other}（支持 language/storage_path/github_token/git_cache_cleanup_days/git_cache_ttl_secs/webdav.*）"
-        ),
+    if key.starts_with("webdav.") && cfg.webdav.is_none() {
+        cfg.webdav = Some(WebDavConfig::default());
     }
+    let mut root = serde_json::to_value(&*cfg)?;
+    let canonical_key = canonical_config_key(key);
+    let path = config_key_path(&canonical_key);
+    let parsed = serde_json::from_str::<serde_json::Value>(value)
+        .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
+    let mut cursor = &mut root;
+    for part in &path[..path.len().saturating_sub(1)] {
+        cursor = cursor
+            .as_object_mut()
+            .and_then(|map| map.get_mut(*part))
+            .ok_or_else(|| anyhow::anyhow!("未知配置键: {key}"))?;
+    }
+    let leaf = path
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("配置键不能为空"))?;
+    let map = cursor
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("配置键不是对象路径: {key}"))?;
+    if !map.contains_key(*leaf) {
+        anyhow::bail!("未知配置键: {key}");
+    }
+    map.insert((*leaf).to_string(), parsed);
+    *cfg = serde_json::from_value(root).with_context(|| format!("配置值类型不匹配: {key}"))?;
+    cfg.validate()?;
     Ok(())
 }
 
-fn cmd_config_get(store: &SkillStore, key: Option<&str>, _json: bool) -> Result<()> {
+fn cmd_config_get(store: &SkillStore, key: Option<&str>, json: bool) -> Result<()> {
     let cfg = load_app_config(store)?;
     match key {
+        None if json => print_json(&cfg.sanitized_for_export())?,
         None => println!("{}", export_config_json(&cfg)),
         Some(k) => {
-            let v = config_get_value(&cfg, k).unwrap_or_default();
-            if v.is_empty() {
-                anyhow::bail!("未知配置键: {k}");
+            let mut value = serde_json::to_value(cfg.sanitized_for_export())?;
+            let canonical_key = canonical_config_key(k);
+            for part in config_key_path(&canonical_key) {
+                value = value
+                    .get(part)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("未知配置键: {k}"))?;
             }
-            println!("{v}");
+            if json {
+                print_json(&serde_json::json!({"key": k, "value": value}))?;
+            } else {
+                match value {
+                    serde_json::Value::String(text) => println!("{text}"),
+                    other => println!("{}", serde_json::to_string_pretty(&other)?),
+                }
+            }
         }
     }
     Ok(())
 }
 
-fn cmd_config_set(store: &SkillStore, key: &str, value: &str, _json: bool) -> Result<()> {
+fn cmd_config_set(
+    store: &SkillStore,
+    key: &str,
+    value: Option<&str>,
+    stdin: bool,
+    json: bool,
+) -> Result<()> {
+    if stdin && value.is_some() {
+        anyhow::bail!("不能同时提供 value 和 --stdin");
+    }
+    let mut stdin_value = String::new();
+    let value = if stdin {
+        std::io::stdin().read_to_string(&mut stdin_value)?;
+        stdin_value.trim_end_matches(['\r', '\n'])
+    } else {
+        value.ok_or_else(|| anyhow::anyhow!("缺少配置值；也可以使用 --stdin"))?
+    };
     let mut cfg = load_app_config(store)?;
     config_set_value(&mut cfg, key, value)?;
     save_app_config_impl(store, &cfg)?;
-    if matches!(key, "github_token" | "webdav.password") {
+    if json {
+        print_json(
+            &serde_json::json!({"ok": true, "key": key, "sensitive": matches!(key, "github_token" | "webdav.password")}),
+        )?;
+    } else if matches!(key, "github_token" | "webdav.password") {
         println!("已更新配置: {key} = [已隐藏]");
     } else {
         println!("已更新配置: {key} = {value}");
@@ -682,26 +1160,272 @@ fn cmd_config_set(store: &SkillStore, key: &str, value: &str, _json: bool) -> Re
     Ok(())
 }
 
-fn cmd_config_export(store: &SkillStore, path: Option<&str>, _json: bool) -> Result<()> {
+fn cmd_config_export(store: &SkillStore, path: Option<&str>, json_output: bool) -> Result<()> {
     let cfg = load_app_config(store)?;
     let json = export_config_json(&cfg);
     match path {
         Some(p) => {
             std::fs::write(p, &json).with_context(|| format!("写入文件失败: {p}"))?;
-            println!("配置已导出到 {p}");
+            if json_output {
+                print_json(&serde_json::json!({"ok": true, "path": p}))?;
+            } else {
+                println!("配置已导出到 {p}");
+            }
         }
         None => println!("{json}"),
     }
     Ok(())
 }
 
-fn cmd_config_import(store: &SkillStore, path: &str, _json: bool) -> Result<()> {
+fn cmd_config_import(store: &SkillStore, path: &str, json: bool) -> Result<()> {
     let raw = std::fs::read_to_string(path).with_context(|| format!("读取文件失败: {path}"))?;
     let mut cfg = parse_config_json(&raw)?;
     let current = load_app_config(store)?;
     cfg.preserve_missing_secrets_from(&current);
     save_app_config_impl(store, &cfg)?;
-    println!("配置已从 {path} 导入");
+    if json {
+        print_json(&serde_json::json!({"ok": true, "path": path}))?;
+    } else {
+        println!("配置已从 {path} 导入");
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+struct DetectedAuthor {
+    name: String,
+    email: String,
+    github_login: String,
+    github_url: String,
+    source: String,
+    gh_authenticated: bool,
+}
+
+fn command_text(program: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(program).args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn detect_local_author() -> DetectedAuthor {
+    if let Some(raw) = command_text("gh", &["api", "user"]) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let login = value
+                .get("login")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            if !login.is_empty() {
+                return DetectedAuthor {
+                    name: value
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(login)
+                        .to_string(),
+                    email: value
+                        .get("email")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    github_login: login.to_string(),
+                    github_url: value
+                        .get("html_url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    source: "gh".to_string(),
+                    gh_authenticated: true,
+                };
+            }
+        }
+    }
+    DetectedAuthor {
+        name: command_text("git", &["config", "--global", "user.name"]).unwrap_or_default(),
+        email: command_text("git", &["config", "--global", "user.email"]).unwrap_or_default(),
+        source: "git".to_string(),
+        ..DetectedAuthor::default()
+    }
+}
+
+fn cmd_author_status(store: &SkillStore, json: bool) -> Result<()> {
+    let configured = load_app_config(store)?.current_author;
+    let detected = detect_local_author();
+    let output = serde_json::json!({"configured": configured, "detected": detected});
+    if json {
+        print_json(&output)?;
+    } else {
+        println!(
+            "当前作者: {}",
+            if configured.name.is_empty() {
+                "(未设置)"
+            } else {
+                &configured.name
+            }
+        );
+        println!(
+            "GitHub: {}",
+            if detected.github_login.is_empty() {
+                "(未检测到登录)"
+            } else {
+                &detected.github_login
+            }
+        );
+    }
+    Ok(())
+}
+
+fn cmd_author_detect(store: &SkillStore, apply: bool, json: bool) -> Result<()> {
+    let detected = detect_local_author();
+    if detected.name.is_empty() && detected.github_login.is_empty() && detected.email.is_empty() {
+        anyhow::bail!("未检测到 gh 登录或全局 git 作者信息");
+    }
+    if apply {
+        let mut cfg = load_app_config(store)?;
+        cfg.current_author = CurrentAuthorConfig {
+            name: detected.name.clone(),
+            email: detected.email.clone(),
+            github_login: detected.github_login.clone(),
+            github_url: detected.github_url.clone(),
+            source: detected.source.clone(),
+        };
+        if !detected.github_login.is_empty() {
+            cfg.origin_rules
+                .my_git_owners
+                .push(detected.github_login.clone());
+        }
+        save_app_config_impl(store, &cfg)?;
+        if !detected.github_login.is_empty() {
+            for skill in store.list_skills()? {
+                let Some(mut origin) = store.get_skill_origin(&skill.id)? else {
+                    continue;
+                };
+                if origin.manual_override
+                    || origin.origin_kind == "official"
+                    || origin.origin_role == "official"
+                {
+                    continue;
+                }
+                if origin.origin_kind == "git" {
+                    let is_current = origin
+                        .owner
+                        .as_deref()
+                        .is_some_and(|owner| owner.eq_ignore_ascii_case(&detected.github_login));
+                    origin.origin_role = if is_current { "mine" } else { "repository" }.to_string();
+                    origin.publish_strategy =
+                        if is_current { "git_push" } else { "none" }.to_string();
+                    origin.reason = Some(
+                        if is_current {
+                            "repository owner matches detected current GitHub author"
+                        } else {
+                            "repository owner differs from detected current GitHub author"
+                        }
+                        .to_string(),
+                    );
+                    store.upsert_skill_origin(&origin)?;
+                }
+            }
+        }
+    }
+    let output = serde_json::json!({"ok": true, "applied": apply, "author": detected});
+    if json {
+        print_json(&output)?;
+    } else {
+        println!("{}", serde_json::to_string_pretty(&output)?);
+    }
+    Ok(())
+}
+
+fn cmd_author_set(
+    store: &SkillStore,
+    name: Option<String>,
+    email: Option<String>,
+    github_login: Option<String>,
+    json: bool,
+) -> Result<()> {
+    let mut cfg = load_app_config(store)?;
+    if let Some(value) = name {
+        cfg.current_author.name = value;
+    }
+    if let Some(value) = email {
+        cfg.current_author.email = value;
+    }
+    if let Some(value) = github_login {
+        cfg.current_author.github_login = value.clone();
+        cfg.current_author.github_url = if value.is_empty() {
+            String::new()
+        } else {
+            format!("https://github.com/{value}")
+        };
+        cfg.origin_rules.my_git_owners.push(value);
+    }
+    cfg.current_author.source = "manual".to_string();
+    save_app_config_impl(store, &cfg)?;
+    if json {
+        print_json(&serde_json::json!({"ok": true, "author": cfg.current_author}))?;
+    } else {
+        println!("当前环境作者已更新");
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectSkillEntry {
+    name: String,
+    path: String,
+    relative_dir: String,
+    tools: Vec<String>,
+}
+
+fn cmd_project_skills(project_path: Option<&str>, json: bool) -> Result<()> {
+    let root = match project_path {
+        Some(value) => PathBuf::from(value),
+        None => std::env::current_dir()?,
+    }
+    .canonicalize()
+    .context("项目路径不存在")?;
+    let mut dirs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for adapter in tool_adapters::default_tool_adapters() {
+        if tool_adapters::supports_project_scope(&adapter) {
+            let relative = tool_adapters::project_relative_skills_dir(&adapter).to_string();
+            dirs.entry(relative)
+                .or_default()
+                .insert(adapter.id.as_key().to_string());
+        }
+    }
+    let mut entries = Vec::new();
+    for (relative, tools) in dirs {
+        let skills_dir = root.join(&relative);
+        let Ok(children) = std::fs::read_dir(&skills_dir) else {
+            continue;
+        };
+        for child in children.flatten() {
+            let skill_path = child.path();
+            if skill_path.is_dir() && skill_path.join("SKILL.md").is_file() {
+                entries.push(ProjectSkillEntry {
+                    name: child.file_name().to_string_lossy().to_string(),
+                    path: skill_path.to_string_lossy().to_string(),
+                    relative_dir: relative.clone(),
+                    tools: tools.iter().cloned().collect(),
+                });
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name).then(a.path.cmp(&b.path)));
+    if json {
+        print_json(&serde_json::json!({"projectPath": root, "skills": entries}))?;
+    } else {
+        for entry in &entries {
+            println!(
+                "{}  {}  [{}]",
+                entry.name,
+                entry.path,
+                entry.tools.join(",")
+            );
+        }
+        println!("\n{} project Skill(s).", entries.len());
+    }
     Ok(())
 }
 
@@ -709,17 +1433,26 @@ fn cmd_config_import(store: &SkillStore, path: &str, _json: bool) -> Result<()> 
 // Github token subcommands
 // ===========================================================================
 
-fn cmd_github_token_set(store: &SkillStore, token: &str, _json: bool) -> Result<()> {
+fn cmd_github_token_set(store: &SkillStore, token: &str, json: bool) -> Result<()> {
     let mut cfg = load_app_config(store)?;
     cfg.github_token = token.to_string();
     save_app_config_impl(store, &cfg)?;
-    println!("GitHub token 已保存");
+    if json {
+        print_json(&serde_json::json!({"ok": true, "configured": true}))?;
+    } else {
+        println!("GitHub token 已保存");
+    }
     Ok(())
 }
 
-fn cmd_github_token_get(store: &SkillStore, _json: bool) -> Result<()> {
+fn cmd_github_token_get(store: &SkillStore, json: bool) -> Result<()> {
     let cfg = load_app_config(store)?;
-    if cfg.github_token.is_empty() {
+    if json {
+        print_json(&serde_json::json!({
+            "configured": !cfg.github_token.is_empty(),
+            "token": cfg.github_token
+        }))?;
+    } else if cfg.github_token.is_empty() {
         println!("(未配置 GitHub token)");
     } else {
         println!("{}", cfg.github_token);
@@ -857,38 +1590,54 @@ fn cmd_sources_toggle(store: &SkillStore, id: &str, enabled: bool, json: bool) -
 // Backup / restore subcommands
 // ===========================================================================
 
-fn cmd_backup_file(store: &SkillStore, path: Option<&str>, _json: bool) -> Result<()> {
-    let json = export_full_backup(store)?;
+fn cmd_backup_file(store: &SkillStore, path: Option<&str>, json_output: bool) -> Result<()> {
+    let backup = export_full_backup(store)?;
     match path {
         Some(p) => {
-            std::fs::write(p, &json).with_context(|| format!("写入文件失败: {p}"))?;
-            println!("已备份到 {p}");
+            std::fs::write(p, &backup).with_context(|| format!("写入文件失败: {p}"))?;
+            if json_output {
+                print_json(&serde_json::json!({"ok": true, "target": "file", "path": p}))?;
+            } else {
+                println!("已备份到 {p}");
+            }
         }
-        None => println!("{json}"),
+        None => println!("{backup}"),
     }
     Ok(())
 }
 
-fn cmd_backup_webdav(store: &SkillStore, _json: bool) -> Result<()> {
+fn cmd_backup_webdav(store: &SkillStore, json: bool) -> Result<()> {
     let wd = load_webdav_cfg(store)?;
     let body = export_full_backup(store)?;
     let remote = upload_backup(&wd, &body)?;
-    println!("已备份到 WebDAV: {remote}");
+    if json {
+        print_json(&serde_json::json!({"ok": true, "target": "webdav", "remotePath": remote}))?;
+    } else {
+        println!("已备份到 WebDAV: {remote}");
+    }
     Ok(())
 }
 
-fn cmd_restore_file(store: &SkillStore, path: &str, _json: bool) -> Result<()> {
+fn cmd_restore_file(store: &SkillStore, path: &str, json: bool) -> Result<()> {
     let raw = std::fs::read_to_string(path).with_context(|| format!("读取文件失败: {path}"))?;
     let report = restore_full_backup(store, &raw)?;
-    print_restore_report(&report);
+    if json {
+        print_json(&report)?;
+    } else {
+        print_restore_report(&report);
+    }
     Ok(())
 }
 
-fn cmd_restore_webdav(store: &SkillStore, _json: bool) -> Result<()> {
+fn cmd_restore_webdav(store: &SkillStore, json: bool) -> Result<()> {
     let wd = load_webdav_cfg(store)?;
     let raw = download_backup(&wd)?;
     let report = restore_full_backup(store, &raw)?;
-    print_restore_report(&report);
+    if json {
+        print_json(&report)?;
+    } else {
+        print_restore_report(&report);
+    }
     Ok(())
 }
 
@@ -902,6 +1651,177 @@ fn print_restore_report(report: &RestoreReport) {
     }
     for (name, err) in &report.failed {
         println!("  ! 失败: {name} ({err})");
+    }
+}
+
+fn print_profile_report(report: &ProfileSyncReport) {
+    println!("Profile: {}", report.profile_id);
+    println!("Device: {}", report.device_id);
+    println!(
+        "remote={} changed={} uploaded={} conflicts={} failures={}",
+        report.remote_found,
+        report.changed,
+        report.uploaded,
+        report.conflicts.len(),
+        report.failures.len()
+    );
+    for conflict in &report.conflicts {
+        println!("  ! conflict {}: {}", conflict.path, conflict.reason);
+    }
+    for name in &report.installed {
+        println!("  + installed: {name}");
+    }
+    for name in &report.updated {
+        println!("  ↑ updated: {name}");
+    }
+    for name in &report.deleted {
+        println!("  - deleted: {name}");
+    }
+    for name in &report.pending_deletions {
+        println!("  ? pending deletion: {name} (rerun with --yes)");
+    }
+    for name in &report.skipped_local {
+        println!("  · local-only: {name}");
+    }
+    for (name, error) in &report.failures {
+        println!("  ! {name}: {error}");
+    }
+}
+
+fn cmd_device(_store: &SkillStore, report: DevicePipelineReport, json: bool) -> Result<()> {
+    if json {
+        return print_json(&report);
+    }
+    println!("Device {}: {}", report.mode, report.state);
+    for item in &report.stages {
+        println!("  [{}] {}: {}", item.status, item.id, item.message);
+    }
+    println!(
+        "pushable={} dirty={} pullable={} local-only={} pushed={} failures={}",
+        report.pushable_repositories,
+        report.dirty_repositories,
+        report.pullable_skills,
+        report.local_only_skills.len(),
+        report.pushed.len(),
+        report.failures.len()
+    );
+    for (name, error) in &report.failures {
+        println!("  ! {name}: {error}");
+    }
+    Ok(())
+}
+
+fn cmd_profile_status(store: &SkillStore, json: bool) -> Result<()> {
+    let report = synchronize_profile(store, true, false, ConflictStrategy::Abort)?;
+    if json {
+        print_json(&report)
+    } else {
+        print_profile_report(&report);
+        Ok(())
+    }
+}
+
+fn cmd_profile_sync(store: &SkillStore, apply_deletions: bool, json: bool) -> Result<()> {
+    let report = synchronize_profile(store, false, apply_deletions, ConflictStrategy::Abort)?;
+    if json {
+        print_json(&report)
+    } else {
+        print_profile_report(&report);
+        Ok(())
+    }
+}
+
+fn cmd_profile_export(store: &SkillStore, path: &str, json: bool) -> Result<()> {
+    let profile = export_profile_json(store)?;
+    std::fs::write(path, profile).with_context(|| format!("写入 Profile 失败: {path}"))?;
+    if json {
+        print_json(&serde_json::json!({"ok": true, "path": path}))
+    } else {
+        println!("Profile 已导出到 {path}");
+        Ok(())
+    }
+}
+
+fn cmd_profile_import(
+    store: &SkillStore,
+    path: &str,
+    strategy: &str,
+    apply_deletions: bool,
+    json: bool,
+) -> Result<()> {
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("读取 Profile 失败: {path}"))?;
+    let report = import_profile_json(
+        store,
+        &raw,
+        ConflictStrategy::parse(strategy)?,
+        apply_deletions,
+    )?;
+    if json {
+        print_json(&report)
+    } else {
+        print_profile_report(&report);
+        Ok(())
+    }
+}
+
+fn cmd_profile_resolve(
+    store: &SkillStore,
+    strategy: &str,
+    apply_deletions: bool,
+    json: bool,
+) -> Result<()> {
+    let report = synchronize_profile(
+        store,
+        false,
+        apply_deletions,
+        ConflictStrategy::parse(strategy)?,
+    )?;
+    if json {
+        print_json(&report)
+    } else {
+        print_profile_report(&report);
+        Ok(())
+    }
+}
+
+fn cmd_repair_sources(store: &SkillStore, apply: bool, json: bool) -> Result<()> {
+    let report = repair_skill_sources(store, apply)?;
+    if json {
+        print_json(&report)
+    } else {
+        println!(
+            "scanned={} repairable={} applied={} unresolved={} already-portable={}",
+            report.scanned,
+            report.repairable,
+            report.applied,
+            report.unresolved,
+            report.already_portable
+        );
+        for item in &report.items {
+            println!("  {} {}: {}", item.status, item.name, item.reason);
+        }
+        Ok(())
+    }
+}
+
+fn cmd_repair_source(
+    store: &SkillStore,
+    skill: &str,
+    url: &str,
+    subpath: Option<&str>,
+    apply: bool,
+    json: bool,
+) -> Result<()> {
+    let report = repair_skill_source(store, skill, url, subpath, apply)?;
+    if json {
+        print_json(&report)
+    } else {
+        println!(
+            "scanned={} repairable={} applied={} already-portable={}",
+            report.scanned, report.repairable, report.applied, report.already_portable
+        );
+        Ok(())
     }
 }
 
@@ -965,12 +1885,16 @@ fn cmd_install(
             }
         }
         let result = installer::install_local_skill_cli(store, &path, name)?;
+        let source_type = store
+            .get_skill_by_id(&result.skill_id)?
+            .map(|skill| skill.source_type)
+            .unwrap_or_else(|| "local".to_string());
         let out = CliInstallResult {
             success: true,
             skill_id: result.skill_id,
             name: result.name,
             central_path: result.central_path.to_string_lossy().to_string(),
-            source_type: "local".to_string(),
+            source_type,
         };
         if json {
             print_json(&out)?;
@@ -1008,13 +1932,23 @@ fn cmd_install(
     Ok(())
 }
 
-fn cmd_sync(store: &SkillStore, skill_name: &str, tool_key: &str, json: bool) -> Result<()> {
+fn cmd_sync(
+    store: &SkillStore,
+    skill_name: &str,
+    tool_key: &str,
+    scope: &str,
+    project_path: Option<&str>,
+    json: bool,
+) -> Result<()> {
     let skill_id = resolve_skill_id(store, skill_name)?;
-    let outcome = installer::sync_skill_to_tool_cli(store, &skill_id, tool_key)?;
+    let outcome =
+        installer::sync_skill_target_cli(store, &skill_id, tool_key, scope, project_path)?;
     let out = CliSyncResult {
         success: true,
         skill_id,
         tool: tool_key.to_string(),
+        scope: scope.to_string(),
+        project_path: project_path.map(str::to_string),
         target_path: outcome.target_path.to_string_lossy().to_string(),
         mode: format!("{:?}", outcome.mode_used),
     };
@@ -1030,14 +1964,23 @@ fn cmd_sync(store: &SkillStore, skill_name: &str, tool_key: &str, json: bool) ->
     Ok(())
 }
 
-fn cmd_unsync(store: &SkillStore, skill_name: &str, tool_key: &str, json: bool) -> Result<()> {
+fn cmd_unsync(
+    store: &SkillStore,
+    skill_name: &str,
+    tool_key: &str,
+    scope: &str,
+    project_path: Option<&str>,
+    json: bool,
+) -> Result<()> {
     let skill_id = resolve_skill_id(store, skill_name)?;
-    installer::unsync_skill_cli(store, &skill_id, tool_key)?;
+    installer::unsync_skill_target_cli(store, &skill_id, tool_key, scope, project_path)?;
     if json {
         let out = serde_json::json!({
             "success": true,
             "skillId": skill_id,
             "tool": tool_key,
+            "scope": scope,
+            "projectPath": project_path,
         });
         print_json(&out)?;
     } else {
@@ -1276,5 +2219,158 @@ mod tests {
             .to_string_lossy()
             .contains(crate::core::skill_store::APP_IDENTIFIER));
         assert!(path.to_string_lossy().ends_with("skills_hub.db"));
+    }
+
+    #[test]
+    fn parses_offline_profile_and_conflict_commands() {
+        let export = Cli::try_parse_from(["skilldo", "profile", "export", "profile.json"])
+            .expect("parse profile export");
+        assert!(matches!(
+            export.command,
+            Commands::Profile {
+                action: ProfileAction::Export { .. }
+            }
+        ));
+
+        let resolve = Cli::try_parse_from([
+            "skilldo",
+            "profile",
+            "resolve",
+            "--strategy",
+            "remote",
+            "--json",
+        ])
+        .expect("parse profile resolve");
+        assert!(resolve.json);
+        assert!(matches!(
+            resolve.command,
+            Commands::Profile {
+                action: ProfileAction::Resolve { strategy, .. }
+            } if strategy == "remote"
+        ));
+    }
+
+    #[test]
+    fn parses_device_pipelines() {
+        let pull = Cli::try_parse_from(["skilldo", "device", "pull", "--json"])
+            .expect("parse device pull");
+        assert!(matches!(
+            pull.command,
+            Commands::Device {
+                action: DeviceAction::Pull { yes: false }
+            }
+        ));
+        let publish = Cli::try_parse_from(["skilldo", "device", "publish", "--yes"])
+            .expect("parse device publish");
+        assert!(matches!(
+            publish.command,
+            Commands::Device {
+                action: DeviceAction::Publish { yes: true }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_source_repair_dry_run_and_apply() {
+        let dry_run = Cli::try_parse_from(["skilldo", "repair", "sources", "--json"])
+            .expect("parse source repair dry run");
+        assert!(dry_run.json);
+        assert!(matches!(
+            dry_run.command,
+            Commands::Repair {
+                action: RepairAction::Sources { apply: false }
+            }
+        ));
+
+        let apply = Cli::try_parse_from(["skilldo", "repair", "sources", "--apply", "--json"])
+            .expect("parse source repair apply");
+        assert!(matches!(
+            apply.command,
+            Commands::Repair {
+                action: RepairAction::Sources { apply: true }
+            }
+        ));
+
+        let one = Cli::try_parse_from([
+            "skilldo",
+            "repair",
+            "source",
+            "--skill",
+            "demo",
+            "--url",
+            "https://github.com/example/repo.git",
+            "--subpath",
+            "skills/demo",
+            "--apply",
+            "--json",
+        ])
+        .expect("parse explicit source repair");
+        assert!(matches!(
+            one.command,
+            Commands::Repair {
+                action: RepairAction::Source { apply: true, .. }
+            }
+        ));
+    }
+
+    #[test]
+    fn parses_project_scope_author_and_stdin_config_commands() {
+        let sync = Cli::try_parse_from([
+            "skilldo",
+            "sync",
+            "--skill",
+            "demo",
+            "--tool",
+            "codex",
+            "--scope",
+            "project",
+            "--project-path",
+            "/tmp/project",
+            "--json",
+        ])
+        .expect("parse project sync");
+        assert!(matches!(
+            sync.command,
+            Commands::Sync { scope, project_path: Some(path), .. }
+                if scope == "project" && path == "/tmp/project"
+        ));
+
+        let author = Cli::try_parse_from(["skilldo", "author", "detect", "--apply", "--json"])
+            .expect("parse author detect");
+        assert!(matches!(
+            author.command,
+            Commands::Author {
+                action: AuthorAction::Detect { apply: true }
+            }
+        ));
+
+        let secret = Cli::try_parse_from([
+            "skilldo",
+            "config",
+            "set",
+            "webdav.password",
+            "--stdin",
+            "--json",
+        ])
+        .expect("parse stdin config");
+        assert!(matches!(
+            secret.command,
+            Commands::Config {
+                action: ConfigAction::Set {
+                    value: None,
+                    stdin: true,
+                    ..
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn structured_config_keys_remain_typed() {
+        let mut cfg = AppConfig::default();
+        config_set_value(&mut cfg, "origin_rules.my_git_owners", "[\"Example\"]").unwrap();
+        config_set_value(&mut cfg, "current_author.github_login", "example").unwrap();
+        assert_eq!(cfg.origin_rules.my_git_owners, vec!["Example"]);
+        assert_eq!(cfg.current_author.github_login, "example");
     }
 }
