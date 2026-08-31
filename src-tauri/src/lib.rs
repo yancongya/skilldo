@@ -132,6 +132,7 @@ pub fn run() {
             commands::export_config,
             commands::import_config,
             commands::validate_github_token,
+            commands::list_github_owners,
             commands::write_text_file,
             commands::read_text_file,
             commands::export_full_backup_json,

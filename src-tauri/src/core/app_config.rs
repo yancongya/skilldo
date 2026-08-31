@@ -129,11 +129,37 @@ impl AppConfig {
         }
         Ok(())
     }
+
+    /// Return a portable copy that does not expose authentication secrets.
+    pub fn sanitized_for_export(&self) -> Self {
+        let mut sanitized = self.clone();
+        sanitized.github_token.clear();
+        if let Some(webdav) = &mut sanitized.webdav {
+            webdav.password.clear();
+        }
+        sanitized
+    }
+
+    /// Keep locally configured credentials when importing a sanitized backup.
+    pub fn preserve_missing_secrets_from(&mut self, current: &Self) {
+        if self.github_token.is_empty() {
+            self.github_token = current.github_token.clone();
+        }
+        if let (Some(imported), Some(existing)) = (&mut self.webdav, &current.webdav) {
+            if imported.password.is_empty()
+                && imported.url == existing.url
+                && imported.user == existing.user
+            {
+                imported.password = existing.password.clone();
+            }
+        }
+    }
 }
 
 /// Serialize a config to a pretty JSON string for backup export.
 pub fn export_config_json(cfg: &AppConfig) -> String {
-    serde_json::to_string_pretty(cfg).expect("AppConfig is always serializable")
+    serde_json::to_string_pretty(&cfg.sanitized_for_export())
+        .expect("AppConfig is always serializable")
 }
 
 /// Parse a config from a JSON backup string, validating schema / version.
@@ -344,4 +370,51 @@ pub fn save_app_config_impl(store: &SkillStore, cfg: &AppConfig) -> anyhow::Resu
         None => store.delete_setting(WEBDAV_CONFIG_KEY)?,
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn config_with_secrets() -> AppConfig {
+        AppConfig {
+            config_version: CONFIG_VERSION,
+            github_token: "github-secret".to_string(),
+            webdav: Some(WebDavConfig {
+                url: "https://dav.example.test".to_string(),
+                user: "user".to_string(),
+                password: "webdav-secret".to_string(),
+                remote_dir: "skilldo".to_string(),
+            }),
+            ..AppConfig::default()
+        }
+    }
+
+    #[test]
+    fn exported_config_redacts_credentials() {
+        let exported = export_config_json(&config_with_secrets());
+        assert!(!exported.contains("github-secret"));
+        assert!(!exported.contains("webdav-secret"));
+        let parsed: AppConfig = serde_json::from_str(&exported).unwrap();
+        assert!(parsed.github_token.is_empty());
+        assert_eq!(parsed.webdav.unwrap().password, "");
+    }
+
+    #[test]
+    fn import_preserves_matching_local_credentials() {
+        let current = config_with_secrets();
+        let mut imported = current.sanitized_for_export();
+        imported.preserve_missing_secrets_from(&current);
+        assert_eq!(imported.github_token, "github-secret");
+        assert_eq!(imported.webdav.unwrap().password, "webdav-secret");
+    }
+
+    #[test]
+    fn import_does_not_reuse_webdav_password_for_another_server() {
+        let current = config_with_secrets();
+        let mut imported = current.sanitized_for_export();
+        imported.webdav.as_mut().unwrap().url = "https://other.example.test".to_string();
+        imported.preserve_missing_secrets_from(&current);
+        assert_eq!(imported.webdav.unwrap().password, "");
+    }
 }

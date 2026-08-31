@@ -674,7 +674,11 @@ fn cmd_config_set(store: &SkillStore, key: &str, value: &str, _json: bool) -> Re
     let mut cfg = load_app_config(store)?;
     config_set_value(&mut cfg, key, value)?;
     save_app_config_impl(store, &cfg)?;
-    println!("已更新配置: {key} = {value}");
+    if matches!(key, "github_token" | "webdav.password") {
+        println!("已更新配置: {key} = [已隐藏]");
+    } else {
+        println!("已更新配置: {key} = {value}");
+    }
     Ok(())
 }
 
@@ -693,7 +697,9 @@ fn cmd_config_export(store: &SkillStore, path: Option<&str>, _json: bool) -> Res
 
 fn cmd_config_import(store: &SkillStore, path: &str, _json: bool) -> Result<()> {
     let raw = std::fs::read_to_string(path).with_context(|| format!("读取文件失败: {path}"))?;
-    let cfg = parse_config_json(&raw)?;
+    let mut cfg = parse_config_json(&raw)?;
+    let current = load_app_config(store)?;
+    cfg.preserve_missing_secrets_from(&current);
     save_app_config_impl(store, &cfg)?;
     println!("配置已从 {path} 导入");
     Ok(())

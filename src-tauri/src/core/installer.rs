@@ -7,6 +7,7 @@ use std::process::Command;
 use tauri::Manager;
 use uuid::Uuid;
 
+use super::app_config::resolve_tool_global_dir;
 use super::cache_cleanup::get_git_cache_ttl_secs;
 use super::cancel_token::CancelToken;
 use super::central_repo::{ensure_central_repo, resolve_central_repo_path};
@@ -16,8 +17,8 @@ use super::github_download::{download_github_directory, parse_github_api_params}
 use super::skill_store::{SkillRecord, SkillStore};
 use super::sync_engine::copy_dir_recursive;
 use super::sync_engine::sync_dir_copy_with_overwrite;
-use super::tool_adapters::adapter_by_key;
 use super::tool_adapters::is_tool_installed;
+use super::tool_adapters::{adapter_by_key, resolve_project_path, supports_project_scope};
 
 pub struct InstallResult {
     pub skill_id: String,
@@ -2669,21 +2670,58 @@ pub fn sync_skill_to_tool_cli(
     skill_id: &str,
     tool_key: &str,
 ) -> Result<super::sync_engine::SyncOutcome> {
+    sync_skill_target_cli(store, skill_id, tool_key, "global", None)
+}
+
+/// CLI/runtime-independent sync used by backup restore for global and project targets.
+pub fn sync_skill_target_cli(
+    store: &SkillStore,
+    skill_id: &str,
+    tool_key: &str,
+    scope: &str,
+    project_path: Option<&str>,
+) -> Result<super::sync_engine::SyncOutcome> {
     let record = store
         .get_skill_by_id(skill_id)?
         .ok_or_else(|| anyhow::anyhow!("skill not found: {}", skill_id))?;
-
-    let adapter =
-        adapter_by_key(tool_key).ok_or_else(|| anyhow::anyhow!("unknown tool: {}", tool_key))?;
 
     let central_path = std::path::PathBuf::from(&record.central_path);
     if !central_path.exists() {
         anyhow::bail!("central path not found: {:?}", central_path);
     }
 
-    let target_path = super::tool_adapters::resolve_default_path(&adapter)
-        .context(format!("cannot resolve path for tool: {}", tool_key))?
-        .join(&record.name);
+    let scope = scope.trim();
+    if scope != "global" && scope != "project" {
+        anyhow::bail!("unsupported target scope: {}", scope);
+    }
+    let project_path = project_path.map(str::trim).filter(|path| !path.is_empty());
+    let target_root = if let Some(custom_dir) = tool_key.strip_prefix("custom:") {
+        if scope != "global" {
+            anyhow::bail!("custom targets only support global scope");
+        }
+        if custom_dir.trim().is_empty() {
+            anyhow::bail!("custom target path is empty");
+        }
+        PathBuf::from(custom_dir)
+    } else {
+        let adapter = adapter_by_key(tool_key)
+            .ok_or_else(|| anyhow::anyhow!("unknown tool: {}", tool_key))?;
+        if scope == "project" {
+            if !supports_project_scope(&adapter) {
+                anyhow::bail!("tool does not support project scope: {}", tool_key);
+            }
+            let root = project_path
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("project path is required for project target"))?;
+            if !root.is_dir() {
+                anyhow::bail!("project path does not exist: {:?}", root);
+            }
+            resolve_project_path(&adapter, &root)?
+        } else {
+            PathBuf::from(resolve_tool_global_dir(tool_key, store)?)
+        }
+    };
+    let target_path = target_root.join(&record.name);
 
     if let Some(parent) = target_path.parent() {
         std::fs::create_dir_all(parent).with_context(|| format!("create {:?}", parent))?;
@@ -2693,22 +2731,28 @@ pub fn sync_skill_to_tool_cli(
         super::sync_engine::sync_dir_hybrid_with_overwrite(&central_path, &target_path, true)?;
 
     // Record or update target in DB.
-    let existing = store.find_skill_target(skill_id, tool_key, "global", None)?;
-    if existing.is_none() {
-        let record = super::skill_store::SkillTargetRecord {
-            id: Uuid::new_v4().to_string(),
-            skill_id: skill_id.to_string(),
-            tool: tool_key.to_string(),
-            scope: "global".to_string(),
-            project_path: None,
-            target_path: target_path.to_string_lossy().to_string(),
-            mode: format!("{:?}", outcome.mode_used),
-            status: "ok".to_string(),
-            last_error: None,
-            synced_at: None,
-        };
-        store.upsert_skill_target(&record)?;
-    }
+    let existing = store.find_skill_target(skill_id, tool_key, scope, project_path)?;
+    let target_record = super::skill_store::SkillTargetRecord {
+        id: existing
+            .map(|item| item.id)
+            .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        skill_id: skill_id.to_string(),
+        tool: tool_key.to_string(),
+        scope: scope.to_string(),
+        project_path: project_path.map(str::to_string),
+        target_path: target_path.to_string_lossy().to_string(),
+        mode: match outcome.mode_used {
+            super::sync_engine::SyncMode::Auto => "auto",
+            super::sync_engine::SyncMode::Symlink => "symlink",
+            super::sync_engine::SyncMode::Junction => "junction",
+            super::sync_engine::SyncMode::Copy => "copy",
+        }
+        .to_string(),
+        status: "ok".to_string(),
+        last_error: None,
+        synced_at: Some(now_ms()),
+    };
+    store.upsert_skill_target(&target_record)?;
 
     Ok(outcome)
 }

@@ -261,7 +261,7 @@ fn get_managed_skills_backfills_known_npx_installed_official_skill() {
 }
 
 #[test]
-fn origin_rules_do_not_classify_my_git_owner_automatically() {
+fn origin_rules_classify_my_git_owner_automatically() {
     let rules = OriginRules {
         my_git_owners: vec!["yancongya".to_string()],
         my_git_repos: vec![],
@@ -275,8 +275,27 @@ fn origin_rules_do_not_classify_my_git_owner_automatically() {
         &rules,
     );
     assert_eq!(inferred.origin_kind, "git");
-    assert_eq!(inferred.origin_role, "repository");
-    assert_eq!(inferred.publish_strategy, "none");
+    assert_eq!(inferred.origin_role, "mine");
+    assert_eq!(inferred.publish_strategy, "git_push");
+}
+
+#[test]
+fn origin_rules_classify_ssh_github_remote_as_mine() {
+    let rules = normalize_rules(OriginRules {
+        my_git_owners: vec!["example".to_string()],
+        my_git_repos: vec![],
+        official_git_repos: vec![],
+    });
+    let inferred = infer_source_origin(
+        "git",
+        Some("git@github.com:example/my-skill.git"),
+        "/tmp/central",
+        &rules,
+    );
+    assert_eq!(inferred.owner.as_deref(), Some("example"));
+    assert_eq!(inferred.repo.as_deref(), Some("my-skill"));
+    assert_eq!(inferred.origin_role, "mine");
+    assert_eq!(inferred.publish_strategy, "git_push");
 }
 
 #[test]
@@ -351,7 +370,7 @@ fn origin_rules_classify_local_git_repo_as_repository() {
 }
 
 #[test]
-fn origin_rules_do_not_classify_matched_local_git_repo_as_mine() {
+fn origin_rules_classify_matched_local_git_repo_as_mine() {
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().join("my-skill");
     std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -373,6 +392,6 @@ fn origin_rules_do_not_classify_matched_local_git_repo_as_mine() {
         &rules,
     );
     assert_eq!(inferred.origin_kind, "git");
-    assert_eq!(inferred.origin_role, "repository");
-    assert_eq!(inferred.publish_strategy, "none");
+    assert_eq!(inferred.origin_role, "mine");
+    assert_eq!(inferred.publish_strategy, "git_push");
 }

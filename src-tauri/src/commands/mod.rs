@@ -158,15 +158,17 @@ fn custom_tool_dir(tool_key: &str) -> Option<PathBuf> {
 }
 
 fn normalize_source_ref(source: &str) -> String {
-    source
+    let normalized = source
         .trim()
         .to_lowercase()
         .trim_start_matches("git+")
+        .trim_start_matches("ssh://")
         .trim_end_matches(".git")
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_start_matches("www.")
-        .replace('\\', "/")
+        .replace('\\', "/");
+    normalized.replace("git@github.com:", "github.com/")
 }
 
 fn is_official_source(source: &str) -> bool {
@@ -179,6 +181,31 @@ fn is_official_source(source: &str) -> bool {
 fn matches_repo_rule(source: &str, rules: &[String]) -> bool {
     let normalized = normalize_source_ref(source);
     rules.iter().any(|rule| normalized.contains(rule))
+}
+
+/// Check whether an owner or owner/repo pair is listed in the user's `my_git_owners` or `my_git_repos`.
+fn matches_my_git_rules(owner: Option<&str>, repo: Option<&str>, rules: &OriginRules) -> bool {
+    if let Some(o) = owner {
+        let o_lower = o.to_lowercase();
+        if rules
+            .my_git_owners
+            .iter()
+            .any(|r| r.to_lowercase() == o_lower)
+        {
+            return true;
+        }
+    }
+    if let (Some(o), Some(r)) = (owner, repo) {
+        let key = format!("{}/{}", o, r).to_lowercase();
+        if rules
+            .my_git_repos
+            .iter()
+            .any(|rule| rule.to_lowercase() == key)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn normalize_skill_key(value: &str) -> String {
@@ -336,16 +363,31 @@ fn infer_source_origin(
         let (owner, repo) = source_ref
             .map(parse_github_owner_repo)
             .unwrap_or((None, None));
+        // Check if the owner/repo matches the user's "my git" rules.
+        let is_mine = matches_my_git_rules(owner.as_deref(), repo.as_deref(), rules);
+        let (origin_role, publish_strategy, reason) = if is_mine {
+            (
+                "mine".to_string(),
+                "git_push".to_string(),
+                "source_type is git and matches my_git_owners/my_git_repos".to_string(),
+            )
+        } else {
+            (
+                "repository".to_string(),
+                "none".to_string(),
+                "source_type is git".to_string(),
+            )
+        };
         return InferredOrigin {
             origin_kind: "git".to_string(),
-            origin_role: "repository".to_string(),
+            origin_role,
             provider: Some("git".to_string()),
             remote_url: remote,
             owner,
             repo,
             update_strategy: "git_pull".to_string(),
-            publish_strategy: "none".to_string(),
-            reason: "source_type is git".to_string(),
+            publish_strategy,
+            reason,
         };
     }
 
@@ -384,16 +426,30 @@ fn infer_source_origin(
                     };
                 }
                 let (owner, repo) = parse_github_owner_repo(&remote);
+                let is_mine = matches_my_git_rules(owner.as_deref(), repo.as_deref(), rules);
+                let (origin_role, publish_strategy, reason) = if is_mine {
+                    (
+                        "mine".to_string(),
+                        "git_push".to_string(),
+                        "local git remote matches my_git_owners/my_git_repos".to_string(),
+                    )
+                } else {
+                    (
+                        "repository".to_string(),
+                        "none".to_string(),
+                        "local source path is inside a git repository".to_string(),
+                    )
+                };
                 return InferredOrigin {
                     origin_kind: "git".to_string(),
-                    origin_role: "repository".to_string(),
+                    origin_role,
                     provider: Some("git".to_string()),
                     remote_url: Some(remote),
                     owner,
                     repo,
                     update_strategy: "git_pull".to_string(),
-                    publish_strategy: "none".to_string(),
-                    reason: "local source path is inside a git repository".to_string(),
+                    publish_strategy,
+                    reason,
                 };
             }
             return InferredOrigin {
@@ -1529,6 +1585,10 @@ pub async fn publish_managed_skill(
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let origin = store.get_skill_origin(&skillId)?;
+        // Permission guard: only "my" skills (origin_role == "mine") can be pushed.
+        if origin.as_ref().map(|item| item.origin_role.as_str()) != Some("mine") {
+            anyhow::bail!("this skill is not yours — only skills matched via my_git_owners/my_git_repos can be pushed");
+        }
         if origin.as_ref().map(|item| item.publish_strategy.as_str()) != Some("git_push") {
             anyhow::bail!("this skill is not configured for Git push");
         }
@@ -1664,7 +1724,9 @@ pub async fn import_config(
 ) -> Result<AppConfig, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<AppConfig> {
-        let cfg = parse_config_json(&json)?;
+        let mut cfg = parse_config_json(&json)?;
+        let current = load_app_config(&store)?;
+        cfg.preserve_missing_secrets_from(&current);
         save_app_config_impl(&store, &cfg)?;
         Ok(cfg)
     })
@@ -1675,7 +1737,9 @@ pub async fn import_config(
 
 // `GithubTokenStatus` and `compute_github_token_status` live in
 // `core::github_auth` (shared with the CLI); re-export for the command layer.
-pub use crate::core::github_auth::{compute_github_token_status, GithubTokenStatus};
+pub use crate::core::github_auth::{
+    compute_github_token_status, GithubOwnerEntry, GithubTokenStatus,
+};
 
 #[tauri::command]
 pub async fn validate_github_token(token: String) -> Result<GithubTokenStatus, String> {
@@ -1684,6 +1748,27 @@ pub async fn validate_github_token(token: String) -> Result<GithubTokenStatus, S
         .await
         .map_err(|err| err.to_string())?;
     Ok(status)
+}
+
+/// List unique GitHub owners/orgs from the authenticated user's repos.
+#[tauri::command]
+pub async fn list_github_owners(
+    store: State<'_, SkillStore>,
+) -> Result<Vec<GithubOwnerEntry>, String> {
+    let store = store.inner().clone();
+    let token = store
+        .get_setting("github_token")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    if token.is_empty() {
+        return Err("GitHub token 未配置".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::core::github_auth::list_github_owners(token)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())
 }
 
 #[tauri::command]

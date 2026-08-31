@@ -201,6 +201,12 @@ export type OriginRules = {
   officialGitRepos: string[]
 }
 
+export type GithubOwnerEntry = {
+  login: string
+  repoCount: number
+  avatarUrl?: string | null
+}
+
 /// WebDAV connection profile used for remote backup / restore.
 export type WebDavConfigDto = {
   url: string

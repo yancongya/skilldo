@@ -46,6 +46,7 @@ import type {
   UpdateCheckResultDto,
   UpdateResultDto,
   WebDavConfigDto,
+  GithubOwnerEntry,
 } from './components/skills/types'
 
 type SkillScopeState = Record<
@@ -885,6 +886,11 @@ function App() {
     if (cfg) setWebdav(cfg.webdav ?? null)
     return report
   }, [invokeTauri, setWebdav])
+
+  const handleListGithubOwners = useCallback(async () => {
+    if (!isTauri) return []
+    return await invokeTauri<GithubOwnerEntry[]>('list_github_owners')
+  }, [isTauri, invokeTauri])
 
   const handlePickStoragePath = useCallback(async () => {
     try {
@@ -3189,6 +3195,7 @@ function App() {
             onRestoreFromFile={handleRestoreFromFile}
             onBackupWebdav={handleBackupWebdav}
             onRestoreWebdav={handleRestoreWebdav}
+            onListGithubOwners={handleListGithubOwners}
             t={t}
           />
         ) : (

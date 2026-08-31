@@ -5,6 +5,7 @@ import type { Update } from '@tauri-apps/plugin-updater'
 import type {
   CustomScanDirEntry,
   ExploreSourceConfigDto,
+  GithubOwnerEntry,
   GithubTokenStatusDto,
   OriginRules,
   RestoreReportDto,
@@ -50,6 +51,7 @@ type SettingsPageProps = {
   onRestoreFromFile: () => Promise<RestoreReportDto>
   onBackupWebdav: () => Promise<void>
   onRestoreWebdav: () => Promise<RestoreReportDto>
+  onListGithubOwners: () => Promise<GithubOwnerEntry[]>
 }
 
 const SettingsPage = ({
@@ -87,6 +89,7 @@ const SettingsPage = ({
   onRestoreFromFile,
   onBackupWebdav,
   onRestoreWebdav,
+  onListGithubOwners,
 }: SettingsPageProps) => {
   const [localToken, setLocalToken] = useState(githubToken)
   useEffect(() => {
@@ -148,6 +151,29 @@ const SettingsPage = ({
       setValidating(false)
     }
   }, [isTauri, localToken, onValidateGithubToken])
+
+  // ---- Discovered GitHub owners ----
+  const [discoveredOwners, setDiscoveredOwners] = useState<GithubOwnerEntry[]>([])
+  const [loadingOwners, setLoadingOwners] = useState(false)
+  const handleDiscoverOwners = useCallback(async () => {
+    if (!isTauri) return
+    setLoadingOwners(true)
+    try {
+      const owners = await onListGithubOwners()
+      setDiscoveredOwners(owners)
+    } catch {
+      setDiscoveredOwners([])
+    } finally {
+      setLoadingOwners(false)
+    }
+  }, [isTauri, onListGithubOwners])
+  const handleAddOwner = useCallback(
+    (login: string) => {
+      const next = { ...originRules, myGitOwners: [...new Set([...originRules.myGitOwners, login])] }
+      onOriginRulesChange(next)
+    },
+    [originRules, onOriginRulesChange],
+  )
 
   // ---- Skill sources management (unified config) ----
   const [sourceEditor, setSourceEditor] = useState<{
@@ -529,6 +555,58 @@ const SettingsPage = ({
         <button className="btn btn-primary btn-sm" type="button" onClick={handleSaveOriginRules}>
           {t('save')}
         </button>
+
+        {/* Discover GitHub owners from repos */}
+        {localToken ? (
+          <>
+            <div className="settings-field" style={{ marginTop: 16 }}>
+              <label className="settings-label">{t('originRules.discoveredOwners')}</label>
+              <div className="settings-helper" style={{ marginBottom: 8 }}>
+                {t('originRules.discoveredOwnersHint')}
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                onClick={handleDiscoverOwners}
+                disabled={loadingOwners}
+              >
+                {loadingOwners ? '...' : t('discover')}
+              </button>
+              {discoveredOwners.length > 0 ? (
+                <div className="github-owners-grid">
+                  {discoveredOwners.map((owner) => {
+                    const isAlreadyMine = originRules.myGitOwners.includes(owner.login)
+                    return (
+                      <div className="github-owner-card" key={owner.login}>
+                        {owner.avatarUrl ? (
+                          <img src={owner.avatarUrl} alt={owner.login} className="github-owner-avatar" />
+                        ) : null}
+                        <div className="github-owner-info">
+                          <span className="github-owner-login">{owner.login}</span>
+                          <span className="github-owner-repo-count">
+                            {t('originRules.repoCount', { count: owner.repoCount })}
+                          </span>
+                        </div>
+                        <button
+                          className={`btn btn-sm ${isAlreadyMine ? 'btn-disabled' : 'btn-secondary'}`}
+                          type="button"
+                          onClick={() => handleAddOwner(owner.login)}
+                          disabled={isAlreadyMine}
+                        >
+                          {isAlreadyMine ? '✓' : t('originRules.addAsMyOwner')}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <div className="settings-helper" style={{ marginTop: 8, fontStyle: 'italic' }}>
+            {t('originRules.noGithubToken')}
+          </div>
+        )}
 
         <div className="settings-section-divider" />
         <div className="settings-section-title">{t('manageSources')}</div>

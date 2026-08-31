@@ -53,8 +53,8 @@ impl WebDavClient {
         format!("{}/{}", self.base, path)
     }
 
-    /// Ensure a remote directory (WebDAV collection) exists. A `405` (already
-    /// exists) or `409` (created as side-effect) is treated as success.
+    /// Ensure a remote directory (WebDAV collection) exists. A `405` means
+    /// the collection already exists and is treated as success.
     pub fn mkcol(&self, dir: &str) -> Result<()> {
         let url = self.full_url(dir);
         let method = reqwest::Method::from_bytes(b"MKCOL").context("非法 HTTP 方法 MKCOL")?;
@@ -63,7 +63,7 @@ impl WebDavClient {
             .send()
             .context("MKCOL 请求失败")?;
         let status = resp.status();
-        if status.is_success() || status == 405 || status == 409 {
+        if status.is_success() || status == 405 {
             Ok(())
         } else {
             anyhow::bail!("创建远程目录失败 (HTTP {})", status)
@@ -122,18 +122,34 @@ pub fn backup_remote_path(remote_dir: &str) -> String {
     }
 }
 
+fn collection_paths(remote_dir: &str) -> Result<Vec<String>> {
+    let mut paths = Vec::new();
+    let mut current = String::new();
+    for segment in remote_dir
+        .trim()
+        .trim_matches('/')
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
+        if segment == "." || segment == ".." {
+            anyhow::bail!("WebDAV 远程目录不能包含 . 或 ..");
+        }
+        if !current.is_empty() {
+            current.push('/');
+        }
+        current.push_str(segment);
+        paths.push(current.clone());
+    }
+    Ok(paths)
+}
+
 /// Convenience: serialize `body` and PUT it to the backup location, creating
 /// the remote directory first. Returns the remote path actually written.
 pub fn upload_backup(cfg: &WebDavConfig, body: &str) -> Result<String> {
     let client = WebDavClient::new(cfg)?;
     let remote_path = backup_remote_path(&cfg.remote_dir);
-    if !cfg.remote_dir.trim().is_empty() {
-        let dir = cfg
-            .remote_dir
-            .trim()
-            .trim_start_matches('/')
-            .trim_end_matches('/');
-        let _ = client.mkcol(dir);
+    for dir in collection_paths(&cfg.remote_dir)? {
+        client.mkcol(&dir)?;
     }
     client.put(&remote_path, body)?;
     Ok(remote_path)
@@ -144,4 +160,31 @@ pub fn download_backup(cfg: &WebDavConfig) -> Result<String> {
     let client = WebDavClient::new(cfg)?;
     let remote_path = backup_remote_path(&cfg.remote_dir);
     client.get(&remote_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_paths_builds_each_parent() {
+        assert_eq!(
+            collection_paths("/backups/skilldo/").unwrap(),
+            vec!["backups", "backups/skilldo"]
+        );
+    }
+
+    #[test]
+    fn collection_paths_rejects_parent_traversal() {
+        assert!(collection_paths("backups/../private").is_err());
+    }
+
+    #[test]
+    fn backup_path_handles_empty_and_nested_directories() {
+        assert_eq!(backup_remote_path(""), BACKUP_REMOTE_FILE);
+        assert_eq!(
+            backup_remote_path("/backups/skilldo/"),
+            "backups/skilldo/skilldo-backup.json"
+        );
+    }
 }

@@ -834,3 +834,89 @@ fn collect_skill_dirs_deduplicates_known_root_containers() {
     assert_eq!(dirs.len(), 1);
     assert!(dirs[0].ends_with("skills/technical-writer"));
 }
+
+#[test]
+fn sync_skill_target_cli_restores_global_override() {
+    let (dir, store) = make_store();
+    let central_path = dir.path().join("central/demo");
+    fs::create_dir_all(&central_path).unwrap();
+    fs::write(central_path.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    store
+        .upsert_skill(&SkillRecord {
+            id: "restore-global".to_string(),
+            name: "demo".to_string(),
+            description: None,
+            source_type: "git".to_string(),
+            source_ref: Some("https://github.com/example/demo".to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: central_path.to_string_lossy().to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        })
+        .unwrap();
+    let target_root = dir.path().join("codex-override");
+    store
+        .set_setting(
+            "tool_global_dir_override_codex",
+            target_root.to_string_lossy().as_ref(),
+        )
+        .unwrap();
+
+    super::sync_skill_target_cli(&store, "restore-global", "codex", "global", None).unwrap();
+
+    assert!(target_root.join("demo").exists());
+    let targets = store.list_skill_targets("restore-global").unwrap();
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].scope, "global");
+}
+
+#[test]
+fn sync_skill_target_cli_restores_project_scope() {
+    let (dir, store) = make_store();
+    let central_path = dir.path().join("central/demo");
+    fs::create_dir_all(&central_path).unwrap();
+    fs::write(central_path.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    store
+        .upsert_skill(&SkillRecord {
+            id: "restore-project".to_string(),
+            name: "demo".to_string(),
+            description: None,
+            source_type: "git".to_string(),
+            source_ref: Some("https://github.com/example/demo".to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: central_path.to_string_lossy().to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        })
+        .unwrap();
+    let project_root = dir.path().join("project");
+    fs::create_dir_all(&project_root).unwrap();
+
+    super::sync_skill_target_cli(
+        &store,
+        "restore-project",
+        "codex",
+        "project",
+        Some(project_root.to_string_lossy().as_ref()),
+    )
+    .unwrap();
+
+    let targets = store.list_skill_targets("restore-project").unwrap();
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].scope, "project");
+    assert_eq!(
+        targets[0].project_path.as_deref(),
+        Some(project_root.to_string_lossy().as_ref())
+    );
+    assert!(Path::new(&targets[0].target_path).exists());
+}
