@@ -31,6 +31,7 @@ use crate::core::explore_sources::{
     save_explore_sources as save_explore_sources_core, ExploreSkill, ExploreSourceConfig,
 };
 use crate::core::featured_skills::{fetch_featured_skills, FeaturedSkill};
+use crate::core::github_publish::{repoify_skill as core_repoify_skill, RepoifyResult};
 use crate::core::github_search::{search_github_repos, RepoSummary};
 use crate::core::installer::{
     check_all_managed_skill_updates, check_managed_skill_update, install_git_skill,
@@ -1605,6 +1606,37 @@ pub async fn publish_managed_skill(
             commit: res.commit,
             pushed: res.pushed,
         })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+/// Repo-ify a local (not-yet-Git) skill: create a GitHub repository, push the
+/// central path contents, and record the origin so future updates use the git
+/// publish path. Repository name defaults to a slug of the skill name; owner
+/// defaults to the authenticated GitHub user.
+#[tauri::command]
+#[allow(non_snake_case)]
+pub async fn repoify_skill(
+    _app: tauri::AppHandle,
+    store: State<'_, SkillStore>,
+    skillId: String,
+    repoName: Option<String>,
+    owner: Option<String>,
+    private: Option<bool>,
+    message: Option<String>,
+) -> Result<RepoifyResult, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        core_repoify_skill(
+            &store,
+            &skillId,
+            repoName.as_deref(),
+            owner.as_deref(),
+            private.unwrap_or(false),
+            message.as_deref(),
+        )
     })
     .await
     .map_err(|err| err.to_string())?

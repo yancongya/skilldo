@@ -96,6 +96,7 @@ pub fn run() {
             commands::check_managed_skill_update_cmd,
             commands::check_all_managed_skill_updates_cmd,
             commands::publish_managed_skill,
+            commands::repoify_skill,
             commands::search_github,
             commands::get_github_token,
             commands::set_github_token,

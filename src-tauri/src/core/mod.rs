@@ -11,6 +11,7 @@ pub mod featured_skills;
 pub mod git_fetcher;
 pub mod github_auth;
 pub mod github_download;
+pub mod github_publish;
 pub mod github_search;
 pub mod installer;
 pub mod onboarding;

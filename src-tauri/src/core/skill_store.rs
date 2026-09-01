@@ -563,6 +563,23 @@ impl SkillStore {
         })
     }
 
+    /// Mark a skill as sourced from a Git repository (used after repo-ification
+    /// so subsequent updates route through `publish_managed_skill_to_remote`).
+    pub fn update_skill_source(
+        &self,
+        skill_id: &str,
+        source_type: &str,
+        source_ref: &str,
+    ) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE skills SET source_type = ?1, source_ref = ?2 WHERE id = ?3",
+                params![source_type, source_ref, skill_id],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn delete_skill(&self, skill_id: &str) -> Result<()> {
         self.with_conn(|conn| {
             conn.execute("DELETE FROM skills WHERE id = ?1", params![skill_id])?;

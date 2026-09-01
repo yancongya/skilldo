@@ -27,6 +27,7 @@ use crate::core::backup::{export_full_backup, restore_full_backup, RestoreReport
 use crate::core::device_sync::{device_publish, device_pull, device_status, DevicePipelineReport};
 use crate::core::explore_sources::{self, ExploreSourceConfig};
 use crate::core::github_auth::compute_github_token_status;
+use crate::core::github_publish::RepoNameStrategy;
 use crate::core::installer;
 use crate::core::profile_sync::{
     export_profile_json, import_profile_json, synchronize_profile, ConflictStrategy,
@@ -150,6 +151,28 @@ enum Commands {
         #[arg(short, long)]
         message: Option<String>,
         /// Skip confirmation prompts (agent mode).
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Repo-ify a local (not-yet-Git) skill: create a GitHub repo, push, and
+    /// track it so future updates go through the standard publish path.
+    Publish {
+        /// Skill ID or name to repo-ify.
+        #[arg(long)]
+        skill: String,
+        /// GitHub repository name (defaults to a slug of the skill name).
+        #[arg(long)]
+        repo_name: Option<String>,
+        /// Owner/org for the new repository (defaults to the authenticated user).
+        #[arg(long)]
+        owner: Option<String>,
+        /// Create a private repository.
+        #[arg(long, default_value_t = false)]
+        private: bool,
+        /// Commit message.
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Skip confirmation prompts (agent mode). External push still requires this.
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
@@ -619,6 +642,23 @@ fn execute(cli: Cli) -> Result<()> {
             message,
             yes,
         } => cmd_push(&store, &skill, message.as_deref(), yes, cli.json),
+        Commands::Publish {
+            skill,
+            repo_name,
+            owner,
+            private,
+            message,
+            yes,
+        } => cmd_publish_repoify(
+            &store,
+            &skill,
+            repo_name.as_deref(),
+            owner.as_deref(),
+            private,
+            message.as_deref(),
+            yes,
+            cli.json,
+        ),
     }
 }
 
@@ -2001,13 +2041,14 @@ fn cmd_update(
         }
         let mut results = Vec::new();
         for skill in &git_skills {
+            let previous_revision = skill.source_revision.clone();
             match installer::update_managed_skill_from_source_cli(store, &skill.id) {
                 Ok(result) => {
                     results.push(CliUpdateResult {
                         success: true,
                         skill_id: result.skill_id,
                         name: result.name,
-                        previous_revision: result.source_revision.clone(),
+                        previous_revision,
                         new_revision: result.source_revision,
                         updated_targets: result.updated_targets,
                     });
@@ -2059,12 +2100,13 @@ fn cmd_update(
                 anyhow::bail!("cancelled by user");
             }
         }
+        let previous_revision = record.source_revision.clone();
         let result = installer::update_managed_skill_from_source_cli(store, &skill_id)?;
         let out = CliUpdateResult {
             success: true,
             skill_id: result.skill_id,
             name: result.name,
-            previous_revision: None,
+            previous_revision,
             new_revision: result.source_revision,
             updated_targets: result.updated_targets,
         };
@@ -2176,6 +2218,63 @@ fn cmd_push(
         if !out.message.is_empty() {
             println!("  {}", out.message);
         }
+    }
+    Ok(())
+}
+
+/// Repo-ify a local skill: create a GitHub repo, push, and record the origin.
+/// External push is gated behind `--yes` (or an interactive confirmation) because
+/// it creates a remote repository and publishes content.
+#[allow(clippy::too_many_arguments)]
+fn cmd_publish_repoify(
+    store: &SkillStore,
+    skill_name: &str,
+    repo_name: Option<&str>,
+    owner: Option<&str>,
+    private: bool,
+    message: Option<&str>,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    let skill_id = resolve_skill_id(store, skill_name)?;
+    let record = store
+        .get_skill_by_id(&skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+
+    let effective_owner = match owner {
+        Some(o) if !o.is_empty() => o.to_string(),
+        _ => "<your account>".to_string(),
+    };
+    let name = crate::core::github_publish::SlugifyStrategy.repo_name(&record.name, repo_name);
+    let visibility = if private { "private" } else { "public" };
+
+    if !yes {
+        eprintln!(
+            "About to repo-ify skill '{}' ({})\n  -> create GitHub repo {}/{} [{}] and push",
+            record.name, record.central_path, effective_owner, name, visibility
+        );
+        eprint!("Continue? [y/N] ");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            anyhow::bail!("cancelled by user");
+        }
+    }
+
+    let result = crate::core::github_publish::repoify_skill(
+        store, &skill_id, repo_name, owner, private, message,
+    )?;
+
+    if json {
+        print_json(&result)?;
+    } else {
+        println!(
+            "Repo-ified '{}' -> {} (commit {}, pushed: {})",
+            result.name,
+            result.repo_url,
+            result.commit.unwrap_or_default(),
+            result.pushed
+        );
     }
     Ok(())
 }
