@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-01
+
+### Added
+- **Complete cross-device synchronization**: Add union-based pull and publish pipelines for Git/package Skills, global targets, tags, revisions, and portable settings across multiple devices.
+- **Portable Profile v3**: Track project-owned Skills by parent repository URL, branch/revision, and repository-relative path without leaking device-specific absolute paths.
+- **Lossless WebDAV backup**: Preserve the complete SQLite state, settings, origins, targets, tags, discovery data, and configured credentials in a checksummed backup payload.
+- **Standalone CLI distribution**: Publish verified macOS and Windows CLI archives with SHA-256 checksums, plus shell and PowerShell installers that do not require cloning the repository.
+- **Device pipelines**: Add CLI, shell, batch, and desktop actions for inspecting, pulling, and publishing complete device state.
+- **Source repair and ownership detection**: Recover Git provenance for incorrectly local Skills, distinguish owned and third-party sources, and detect the current author from an authenticated GitHub CLI session.
+
+### Changed
+- **Project Skill ownership**: Project-local Skills now follow their parent project repository; untracked project Skills remain visible locally but are excluded from portable Profiles until committed.
+- **Unified configuration**: Expand structured CLI and desktop settings for Explore sources, author identity, cache policy, WebDAV, GitHub authentication status, and backup/restore operations.
+- **SkillDo branding**: Replace legacy app/frontend artwork with a consistent terminal-inspired SkillDo mark across desktop and light/dark UI surfaces.
+
+### Fixed
+- **Repository source recognition**: Improve Git worktree, subpath, lock metadata, plugin manifest, and content-based source detection so repository-backed Skills are not incorrectly treated as local-only.
+- **Concurrent device changes**: Merge independent Skill lists, tags, and targets while surfacing source/revision and delete-versus-edit conflicts instead of silently overwriting another device.
+
 ## [0.6.1] - 2026-05-16
 
 ### Fixed
