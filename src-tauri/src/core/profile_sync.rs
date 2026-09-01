@@ -15,10 +15,11 @@ use super::installer::{
     delete_skill_cli, install_git_skill_cli, install_package_skill_cli, sync_skill_target_cli,
     unsync_skill_cli, update_managed_skill_from_source_cli,
 };
+use super::project_skills::{known_project_inventories, normalize_repository_url};
 use super::skill_store::{SkillOriginRecord, SkillRecord, SkillStore};
 use super::webdav::{prepare_remote_dir, profile_remote_path, WebDavClient};
 
-pub const PROFILE_VERSION: u32 = 2;
+pub const PROFILE_VERSION: u32 = 3;
 const PROFILE_ID_KEY: &str = "profile_sync_profile_id_v1";
 const PROFILE_DEVICE_ID_KEY: &str = "profile_sync_device_id_v1";
 const PROFILE_BASE_KEY: &str = "profile_sync_base_v1";
@@ -73,6 +74,28 @@ pub struct ProfileSkill {
     pub updated_by: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileProjectSkill {
+    pub name: String,
+    pub subpath: String,
+    #[serde(default)]
+    pub tools: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileProject {
+    pub key: String,
+    pub repository_url: String,
+    pub branch: Option<String>,
+    pub revision: Option<String>,
+    #[serde(default)]
+    pub skills: Vec<ProfileProjectSkill>,
+    pub updated_at: i64,
+    pub updated_by: String,
+}
+
 fn default_update_policy() -> String {
     "latest".to_string()
 }
@@ -89,6 +112,8 @@ pub struct ProfileDocument {
     pub config_updated_at: i64,
     pub config_updated_by: String,
     pub skills: Vec<ProfileSkill>,
+    #[serde(default)]
+    pub projects: Vec<ProfileProject>,
 }
 
 impl ProfileDocument {
@@ -122,7 +147,43 @@ impl ProfileDocument {
                 );
             }
         }
+        let mut project_keys = BTreeSet::new();
+        for project in &self.projects {
+            if project.key.trim().is_empty() || project.repository_url.trim().is_empty() {
+                anyhow::bail!("Profile 项目缺少 key 或 repositoryUrl");
+            }
+            if !project_keys.insert(project.key.clone()) {
+                anyhow::bail!("Profile 包含重复项目 key: {}", project.key);
+            }
+            let mut subpaths = BTreeSet::new();
+            for skill in &project.skills {
+                if skill.name.trim().is_empty()
+                    || skill.subpath.trim().is_empty()
+                    || PathSafety::is_unsafe(&skill.subpath)
+                {
+                    anyhow::bail!("Profile 项目 Skill 包含无效名称或子路径");
+                }
+                if !subpaths.insert(skill.subpath.clone()) {
+                    anyhow::bail!("Profile 项目包含重复 Skill 子路径: {}", skill.subpath);
+                }
+            }
+        }
         Ok(())
+    }
+}
+
+struct PathSafety;
+
+impl PathSafety {
+    fn is_unsafe(value: &str) -> bool {
+        let path = std::path::Path::new(value);
+        path.is_absolute()
+            || path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::RootDir
+                )
+            })
     }
 }
 
@@ -151,6 +212,8 @@ pub struct ProfileSyncReport {
     pub synced_targets: Vec<String>,
     pub removed_targets: Vec<String>,
     pub skipped_local: Vec<String>,
+    pub project_repositories: Vec<String>,
+    pub missing_projects: Vec<String>,
     pub failures: Vec<(String, String)>,
 }
 
@@ -296,6 +359,70 @@ fn semantic_skill_equal(left: &ProfileSkill, right: &ProfileSkill) -> bool {
         && left.deleted_at == right.deleted_at
 }
 
+fn project_key(repository_url: &str) -> String {
+    let digest = Sha256::digest(normalize_repository_url(repository_url).as_bytes());
+    format!("v1:project:{}", hex::encode(digest))
+}
+
+fn build_local_projects(
+    store: &SkillStore,
+    base: Option<&ProfileDocument>,
+    device_id: &str,
+    timestamp: i64,
+) -> Result<Vec<ProfileProject>> {
+    let mut projects: BTreeMap<String, ProfileProject> = base
+        .into_iter()
+        .flat_map(|document| document.projects.iter().cloned())
+        .map(|project| (project.key.clone(), project))
+        .collect();
+    for inventory in known_project_inventories(store)? {
+        let Some(repository) = inventory.repository else {
+            continue;
+        };
+        let Some(repository_url) = repository.remote_url else {
+            continue;
+        };
+        let mut skills: Vec<ProfileProjectSkill> = inventory
+            .skills
+            .into_iter()
+            .filter(|skill| skill.tracked)
+            .filter_map(|skill| {
+                skill.repository_subpath.map(|subpath| ProfileProjectSkill {
+                    name: skill.name,
+                    subpath,
+                    tools: skill.tools,
+                })
+            })
+            .collect();
+        skills.sort_by(|left, right| left.subpath.cmp(&right.subpath));
+        if skills.is_empty() {
+            continue;
+        }
+        let key = project_key(&repository_url);
+        let mut project = ProfileProject {
+            key: key.clone(),
+            repository_url,
+            branch: repository.branch,
+            revision: repository.revision,
+            skills,
+            updated_at: timestamp,
+            updated_by: device_id.to_string(),
+        };
+        if let Some(previous) = projects.get(&key) {
+            let unchanged = previous.repository_url == project.repository_url
+                && previous.branch == project.branch
+                && previous.revision == project.revision
+                && previous.skills == project.skills;
+            if unchanged {
+                project.updated_at = previous.updated_at;
+                project.updated_by = previous.updated_by.clone();
+            }
+        }
+        projects.insert(key, project);
+    }
+    Ok(projects.into_values().collect())
+}
+
 fn build_local_document(
     store: &SkillStore,
     base: Option<&ProfileDocument>,
@@ -304,6 +431,7 @@ fn build_local_document(
 ) -> Result<(ProfileDocument, Vec<String>)> {
     let timestamp = now_ms();
     let config = portable_config(&load_app_config(store)?);
+    let projects = build_local_projects(store, base, device_id, timestamp)?;
     let base_skills: BTreeMap<&str, &ProfileSkill> = base
         .into_iter()
         .flat_map(|document| document.skills.iter())
@@ -401,6 +529,7 @@ fn build_local_document(
             config_updated_at,
             config_updated_by,
             skills,
+            projects,
         },
         skipped_local,
     ))
@@ -410,6 +539,7 @@ fn document_semantic_equal(left: &ProfileDocument, right: &ProfileDocument) -> b
     left.profile_id == right.profile_id
         && left.config == right.config
         && left.skills == right.skills
+        && left.projects == right.projects
 }
 
 fn skill_map(document: Option<&ProfileDocument>) -> BTreeMap<String, ProfileSkill> {
@@ -417,6 +547,14 @@ fn skill_map(document: Option<&ProfileDocument>) -> BTreeMap<String, ProfileSkil
         .into_iter()
         .flat_map(|item| item.skills.iter().cloned())
         .map(|skill| (skill.key.clone(), skill))
+        .collect()
+}
+
+fn project_map(document: Option<&ProfileDocument>) -> BTreeMap<String, ProfileProject> {
+    document
+        .into_iter()
+        .flat_map(|item| item.projects.iter().cloned())
+        .map(|project| (project.key.clone(), project))
         .collect()
 }
 
@@ -508,6 +646,25 @@ fn merge_documents(
                 }
             }
             merged.skills = skills.into_values().collect();
+            let mut projects = project_map(Some(remote));
+            for (key, local_project) in project_map(Some(local)) {
+                if let Some(remote_project) = projects.get(&key) {
+                    if remote_project != &local_project {
+                        conflicts.push(ProfileConflict {
+                            path: format!("projects.{key}"),
+                            reason:
+                                "首次连接时本机和远端的同一项目仓库 revision 或 Skill 清单不一致"
+                                    .to_string(),
+                        });
+                        if strategy == ConflictStrategy::Local {
+                            projects.insert(key, local_project);
+                        }
+                    }
+                } else {
+                    projects.insert(key, local_project);
+                }
+            }
+            merged.projects = projects.into_values().collect();
             merged.updated_at = now_ms();
             merged.updated_by = device_id.to_string();
             return (merged, conflicts);
@@ -583,6 +740,40 @@ fn merge_documents(
         }
     }
     skills.sort_by(|left, right| left.key.cmp(&right.key));
+    let base_projects = project_map(Some(base));
+    let local_projects = project_map(Some(local));
+    let remote_projects = project_map(Some(remote));
+    let project_keys: BTreeSet<String> = base_projects
+        .keys()
+        .chain(local_projects.keys())
+        .chain(remote_projects.keys())
+        .cloned()
+        .collect();
+    let mut projects = Vec::new();
+    for key in project_keys {
+        let base_project = base_projects.get(&key);
+        let local_project = local_projects.get(&key);
+        let remote_project = remote_projects.get(&key);
+        let selected = if local_project == base_project {
+            remote_project.cloned()
+        } else if remote_project == base_project || local_project == remote_project {
+            local_project.cloned()
+        } else {
+            conflicts.push(ProfileConflict {
+                path: format!("projects.{key}"),
+                reason: "本机和远端同时修改了同一项目仓库 revision 或 Skill 清单".to_string(),
+            });
+            if strategy == ConflictStrategy::Local {
+                local_project.cloned().or_else(|| remote_project.cloned())
+            } else {
+                remote_project.cloned().or_else(|| local_project.cloned())
+            }
+        };
+        if let Some(project) = selected {
+            projects.push(project);
+        }
+    }
+    projects.sort_by(|left, right| left.key.cmp(&right.key));
     let timestamp = now_ms();
     (
         ProfileDocument {
@@ -603,6 +794,7 @@ fn merge_documents(
             },
             config,
             skills,
+            projects,
         },
         conflicts,
     )
@@ -810,6 +1002,23 @@ fn apply_document(
             }
         }
     }
+    let local_projects: BTreeSet<String> = known_project_inventories(store)?
+        .into_iter()
+        .filter_map(|inventory| inventory.repository?.remote_url)
+        .map(|url| normalize_repository_url(&url))
+        .collect();
+    for project in &document.projects {
+        report
+            .project_repositories
+            .push(project.repository_url.clone());
+        if !local_projects.contains(&normalize_repository_url(&project.repository_url)) {
+            report.missing_projects.push(project.repository_url.clone());
+        }
+    }
+    report.project_repositories.sort();
+    report.project_repositories.dedup();
+    report.missing_projects.sort();
+    report.missing_projects.dedup();
     Ok(())
 }
 
@@ -997,7 +1206,44 @@ mod tests {
             config_updated_at: 1,
             config_updated_by: "a".to_string(),
             skills,
+            projects: Vec::new(),
         }
+    }
+
+    fn project(key: &str, repository: &str, by: &str) -> ProfileProject {
+        ProfileProject {
+            key: key.to_string(),
+            repository_url: repository.to_string(),
+            branch: Some("main".to_string()),
+            revision: Some("abc".to_string()),
+            skills: vec![ProfileProjectSkill {
+                name: "project-ops".to_string(),
+                subpath: ".agents/skills/project-ops".to_string(),
+                tools: vec!["codex".to_string()],
+            }],
+            updated_at: 1,
+            updated_by: by.to_string(),
+        }
+    }
+
+    #[test]
+    fn merges_independent_project_repositories() {
+        let base = document(Vec::new());
+        let mut local = document(Vec::new());
+        local.projects = vec![project("project-a", "https://github.com/example/a", "a")];
+        let mut remote = document(Vec::new());
+        remote.projects = vec![project("project-b", "https://github.com/example/b", "b")];
+
+        let (merged, conflicts) = merge_documents(
+            Some(&base),
+            &local,
+            Some(&remote),
+            "device",
+            ConflictStrategy::Abort,
+        );
+
+        assert!(conflicts.is_empty());
+        assert_eq!(merged.projects.len(), 2);
     }
 
     #[test]

@@ -283,6 +283,8 @@ export const resources = {
       profileSyncSummary:
         'Installed {{installed}}, updated {{updated}}, conflicts {{conflicts}}, failures {{failures}}.',
       profileLocalSkipped: '{{count}} local-only skill(s) were kept on this device and excluded.',
+      profileProjectRepositories: '{{count}} project repository/repositories are tracked by this Profile.',
+      profileProjectMissing: 'Project repository is not connected on this device:',
       backupToWebdav: 'Backup to WebDAV',
       restoreFromWebdav: 'Restore from WebDAV',
       backupToFile: 'Backup to file',
@@ -860,6 +862,8 @@ export const resources = {
       profileSyncSummary:
         '已安装 {{installed}}，已更新 {{updated}}，冲突 {{conflicts}}，失败 {{failures}}。',
       profileLocalSkipped: '{{count}} 个仅本地 Skill 保留在当前设备且未参与同步。',
+      profileProjectRepositories: '此 Profile 已记录 {{count}} 个项目仓库。',
+      profileProjectMissing: '当前设备尚未关联项目仓库：',
       backupToWebdav: '备份到 WebDAV',
       restoreFromWebdav: '从 WebDAV 恢复',
       backupToFile: '备份到文件',

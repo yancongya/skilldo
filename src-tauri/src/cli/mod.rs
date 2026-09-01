@@ -11,7 +11,6 @@
 //! - `--json` emits structured JSON suitable for programmatic consumption.
 //! - Errors print to stderr and exit with a non-zero code.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::Command;
@@ -33,6 +32,7 @@ use crate::core::profile_sync::{
     export_profile_json, import_profile_json, synchronize_profile, ConflictStrategy,
     ProfileSyncReport,
 };
+use crate::core::project_skills::{inspect_project, remember_project_path};
 use crate::core::skill_store::{default_db_path_cli, SkillStore};
 use crate::core::source_repair::{repair_skill_source, repair_skill_sources};
 use crate::core::tool_adapters;
@@ -546,7 +546,7 @@ fn execute(cli: Cli) -> Result<()> {
             } => cmd_author_set(&store, name, email, github_login, cli.json),
         },
         Commands::Project { action } => match action {
-            ProjectAction::Skills { path } => cmd_project_skills(path.as_deref(), cli.json),
+            ProjectAction::Skills { path } => cmd_project_skills(&store, path.as_deref(), cli.json),
         },
         Commands::Backup { target } => match target {
             BackupTarget::File { path } => cmd_backup_file(&store, path.as_deref(), cli.json),
@@ -1369,62 +1369,41 @@ fn cmd_author_set(
     Ok(())
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ProjectSkillEntry {
-    name: String,
-    path: String,
-    relative_dir: String,
-    tools: Vec<String>,
-}
-
-fn cmd_project_skills(project_path: Option<&str>, json: bool) -> Result<()> {
+fn cmd_project_skills(store: &SkillStore, project_path: Option<&str>, json: bool) -> Result<()> {
     let root = match project_path {
         Some(value) => PathBuf::from(value),
         None => std::env::current_dir()?,
-    }
-    .canonicalize()
-    .context("项目路径不存在")?;
-    let mut dirs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for adapter in tool_adapters::default_tool_adapters() {
-        if tool_adapters::supports_project_scope(&adapter) {
-            let relative = tool_adapters::project_relative_skills_dir(&adapter).to_string();
-            dirs.entry(relative)
-                .or_default()
-                .insert(adapter.id.as_key().to_string());
-        }
-    }
-    let mut entries = Vec::new();
-    for (relative, tools) in dirs {
-        let skills_dir = root.join(&relative);
-        let Ok(children) = std::fs::read_dir(&skills_dir) else {
-            continue;
-        };
-        for child in children.flatten() {
-            let skill_path = child.path();
-            if skill_path.is_dir() && skill_path.join("SKILL.md").is_file() {
-                entries.push(ProjectSkillEntry {
-                    name: child.file_name().to_string_lossy().to_string(),
-                    path: skill_path.to_string_lossy().to_string(),
-                    relative_dir: relative.clone(),
-                    tools: tools.iter().cloned().collect(),
-                });
-            }
-        }
-    }
-    entries.sort_by(|a, b| a.name.cmp(&b.name).then(a.path.cmp(&b.path)));
+    };
+    let inventory = inspect_project(&root)?;
+    remember_project_path(store, PathBuf::from(&inventory.project_path).as_path())?;
     if json {
-        print_json(&serde_json::json!({"projectPath": root, "skills": entries}))?;
+        print_json(&inventory)?;
     } else {
-        for entry in &entries {
+        if let Some(repository) = &inventory.repository {
             println!(
-                "{}  {}  [{}]",
+                "Repository: {}  branch={}  revision={}{}",
+                repository.remote_url.as_deref().unwrap_or("(no origin)"),
+                repository.branch.as_deref().unwrap_or("(detached)"),
+                repository.revision.as_deref().unwrap_or("(unborn)"),
+                if repository.dirty { "  dirty" } else { "" }
+            );
+        } else {
+            println!("Repository: (not a Git worktree)");
+        }
+        for entry in &inventory.skills {
+            println!(
+                "{}  {}  repo={}{}  [{}]",
                 entry.name,
                 entry.path,
+                entry
+                    .repository_subpath
+                    .as_deref()
+                    .unwrap_or("(unversioned)"),
+                if entry.tracked { "" } else { "  untracked" },
                 entry.tools.join(",")
             );
         }
-        println!("\n{} project Skill(s).", entries.len());
+        println!("\n{} project Skill(s).", inventory.skills.len());
     }
     Ok(())
 }

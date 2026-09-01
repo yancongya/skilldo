@@ -170,7 +170,7 @@ cargo test
 
 - Skill 存在哪里？中心仓库（Central Repo）默认是 `~/.skillshub`，可在设置里修改。
 - 标签用于什么？标签只用于查找和整理 Skill，不会改变 Skill 的同步目录，也不会改变哪些工具可以使用它。
-- 什么是项目级同步？Skill 仍然只在中心仓库保存一份，但同步目标变为指定项目目录，例如 `<project>/.agents/skills`、`<project>/.claude/skills` 或其它工具对应的项目级 skills 路径。
+- 什么是项目级同步？外部通用 Skill 仍然只在中心仓库保存一份，项目目录只是它的同步目标。项目自己维护的 Skill 则应直接提交到父项目 Git 仓库。跨设备 Profile 只记录父仓库 URL、分支/revision 和仓库内相对路径，不保存电脑 A 的绝对项目路径；电脑 B clone/pull 父项目后即可重新识别。
 - Cursor 为什么强制 Copy？Cursor 当前不支持软链（symlink/junction）形式的技能目录，因此同步到 Cursor 时会固定使用目录复制（copy）。
 - 为什么有时会变成 Copy？默认优先 symlink/junction，但在某些系统（尤其 Windows）可能因为权限/策略导致无法创建链接，会自动回退到目录复制。
 - `TARGET_EXISTS|...` 是什么意思？目标目录已存在且默认不覆盖（为了安全）。你需要先清理目标目录，或在“接管/覆盖”的明确流程里重试。

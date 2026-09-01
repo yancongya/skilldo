@@ -69,7 +69,7 @@ npm run dev                # Web preview only (no backend)
 
 The desktop buttons and `scripts/skilldo-pull|publish` (`.sh`/`.bat`) call the same shared pipeline. Publish refreshes sources, pushes eligible owned repositories, records exact revisions, and then uploads both the portable Profile and lossless database backup. Local-only Skills are reported but cannot be reconstructed on another computer.
 
-When devices have different repository-backed or package-backed Skill lists, synchronization keeps their union. Concurrent tags and global tool targets for the same Skill are also combined. Source/revision disagreements and delete-versus-edit cases remain explicit conflicts so one device cannot silently replace or remove another device's state.
+When devices have different repository-backed or package-backed Skill lists, synchronization keeps their union. Concurrent tags and global tool targets for the same Skill are also combined. Project-owned Skills remain files in their parent project repository; the Profile stores only the repository URL, branch/revision, and repository-relative Skill paths. It never treats another computer's absolute project path as portable data. Source/revision disagreements and delete-versus-edit cases remain explicit conflicts so one device cannot silently replace or remove another device's state.
 
 | Command | Description |
 |---------|-------------|
@@ -77,7 +77,7 @@ When devices have different repository-backed or package-backed Skill lists, syn
 | `skilldo status [--json]` | Show which of 47+ AI tools are installed |
 | `skilldo device status\|pull\|publish [--yes] [--json]` | Inspect, retrieve, or publish complete cross-device state |
 | `skilldo author status\|detect\|set [--json]` | Detect or configure the current environment author without exposing the `gh` token |
-| `skilldo project skills [--path <project>] [--json]` | Discover project-local Skills across supported tool directories |
+| `skilldo project skills [--path <project>] [--json]` | Discover project-local Skills with parent Git repository, revision, and repository-relative paths |
 | `skilldo explore [--query Q] [--json]` | Browse the skill market |
 | `skilldo install --url <repo> [--name] [--yes]` | Install from git URL or local path |
 | `skilldo sync --skill <name> --tool <key> [--scope project --project-path <path>]` | Sync globally or into one project |

@@ -15,6 +15,7 @@ pub mod github_search;
 pub mod installer;
 pub mod onboarding;
 pub mod profile_sync;
+pub mod project_skills;
 pub mod skill_files;
 pub mod skill_store;
 pub mod skills_search;

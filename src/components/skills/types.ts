@@ -283,6 +283,8 @@ export type ProfileSyncReportDto = {
   syncedTargets: string[]
   removedTargets: string[]
   skippedLocal: string[]
+  projectRepositories: string[]
+  missingProjects: string[]
   failures: [string, string][]
 }
 

@@ -25,12 +25,13 @@ Use the shared default database unless the user explicitly requests an isolated 
 - Detect and apply the current environment author from the authenticated GitHub CLI with `skilldo author detect --apply --json`; use `author set` only for explicit overrides. Repository/package authors in `list --json` are read-only source metadata and are not the current-author setting.
 - Read or write arrays and objects with dotted config keys and JSON values. Use `skilldo config set <secret-key> --stdin --json` for credentials so they do not enter command history.
 - Inspect, install, update, sync, unsync, delete, or push Skills: use the matching top-level command with `--json`.
-- Inspect project-local Skills with `skilldo project skills --path <project> --json`. Use `sync|unsync --scope project --project-path <project>` for project targets.
+- Inspect project-local Skills with `skilldo project skills --path <project> --json`. The result includes the parent Git repository, branch/revision, dirty state, and each Skill's repository-relative subpath. Project-owned Skills must follow the parent project repository; do not create nested or per-Skill repositories for them. Use `sync|unsync --scope project --project-path <project>` only when placing an external managed Skill into a project target.
 - Create a lossless local snapshot: `skilldo backup file <path> --json`.
 - Upload or restore the lossless WebDAV snapshot: `skilldo backup webdav --json` or `skilldo restore webdav --json`.
 - Preview complete cross-device state first: `skilldo device status --json`.
 - Get another device's configuration, Skill list, Git/npm revisions, targets and tags with `skilldo device pull --json`. Deletions remain pending unless explicitly authorized with `--yes`.
 - Device synchronization is union-based: independent Skills, tags, and global targets from every device are retained. Treat source/revision disagreement and delete-versus-edit as conflicts; never resolve them implicitly.
+- Portable Profiles keep project repositories and project-owned Skill subpaths, never another device's absolute project path. Report `missingProjects` so the destination device can clone or attach the parent repository at a user-selected location.
 - Publish with `skilldo device publish --yes --json` only after repository commits/pushes are authorized. It merges remote state, checks and pushes owned repositories, records revisions, then uploads the Profile and lossless backup.
 - Treat `skilldo profile ...` as the advanced interface for offline import/export and conflict resolution.
 - Export or import an offline Profile: `skilldo profile export <path> --json` or `skilldo profile import <path> --strategy abort --json`.

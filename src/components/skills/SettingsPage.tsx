@@ -1135,6 +1135,19 @@ const SettingsPage = ({
                 {t('profileLocalSkipped', { count: profileReport.skippedLocal.length })}
               </div>
             ) : null}
+            {profileReport.projectRepositories.length > 0 ? (
+              <div className="settings-helper">
+                {t('profileProjectRepositories', {
+                  count: profileReport.projectRepositories.length,
+                })}
+              </div>
+            ) : null}
+            {profileReport.missingProjects.map((repository) => (
+              <div className="settings-update-error" key={repository}>
+                <span>{t('profileProjectMissing')}</span>
+                <span className="mono">{repository}</span>
+              </div>
+            ))}
             {profileReport.conflicts.map((conflict) => (
               <div className="settings-update-error" key={conflict.path}>
                 <span className="mono">{conflict.path}</span>
