@@ -17,40 +17,22 @@
   --max-w: 1120px;
 }
 [data-theme="dark"] {
-  --bg: #0B0D12;
-  --bg-2: #10141C;
-  --bg-3: #161A22;
-  --bg-4: #1C2230;
-  --text: #F4F7F6;
-  --text-2: #9BA3AE;
-  --text-3: #5E6672;
-  --border: rgba(244, 247, 246, 0.09);
-  --border-2: rgba(244, 247, 246, 0.16);
+  --bg: #0B0D12; --bg-2: #10141C; --bg-3: #161A22; --bg-4: #1C2230;
+  --text: #F4F7F6; --text-2: #9BA3AE; --text-3: #5E6672;
+  --border: rgba(244, 247, 246, 0.09); --border-2: rgba(244, 247, 246, 0.16);
   --card: #12161F;
 }
 [data-theme="light"] {
-  --bg: #F4F7F6;
-  --bg-2: #EDF1EF;
-  --bg-3: #E4EAE7;
-  --bg-4: #D9E1DD;
-  --text: #0B0D12;
-  --text-2: #4A5260;
-  --text-3: #8A93A0;
-  --border: rgba(11, 13, 18, 0.10);
-  --border-2: rgba(11, 13, 18, 0.18);
+  --bg: #F4F7F6; --bg-2: #EDF1EF; --bg-3: #E4EAE7; --bg-4: #D9E1DD;
+  --text: #0B0D12; --text-2: #4A5260; --text-3: #8A93A0;
+  --border: rgba(11, 13, 18, 0.10); --border-2: rgba(11, 13, 18, 0.18);
   --card: #FFFFFF;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: auto; }
 body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  font-size: 16px;
-  line-height: 1.65;
-  -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-  transition: background 0.35s ease, color 0.35s ease;
+  background: var(--bg); color: var(--text); font-family: var(--font-sans);
+  font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased;
+  overflow-x: hidden; transition: background 0.35s ease, color 0.35s ease;
 }
 ::selection { background: var(--accent); color: #0B0D12; }
 a { color: inherit; text-decoration: none; }
@@ -61,14 +43,10 @@ button { font-family: inherit; cursor: pointer; }
 .nav {
   position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
 }
-.nav-inner {
-  max-width: var(--max-w); margin: 0 auto; padding: 0 28px;
-  height: 62px; display: flex; align-items: center; gap: 28px;
-}
+.nav-inner { max-width: var(--max-w); margin: 0 auto; padding: 0 28px; height: 62px; display: flex; align-items: center; gap: 28px; }
 .nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
 .nav-logo svg { width: 26px; height: 26px; }
 .nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--text-2); margin-left: 12px; }
@@ -87,14 +65,14 @@ button { font-family: inherit; cursor: pointer; }
 }
 .nav-gh:hover { transform: translateY(-1px); }
 .nav-gh svg { width: 15px; height: 15px; }
-@media (max-width: 760px) { .nav-links { display: none; } }
+@media (max-width: 860px) { .nav-links { display: none; } }
 
 /* ---------- Hero ---------- */
 .hero { position: relative; padding: 150px 28px 90px; overflow: hidden; }
 .hero-orbit {
-  position: absolute; inset: 0; margin: auto; pointer-events: none;
-  width: min(1200px, 140vw); height: min(1200px, 140vw); max-height: 1300px;
-  top: -22%;
+  position: absolute; left: 50%; top: 10%; transform: translateX(-50%);
+  pointer-events: none; width: min(1200px, 150vw); height: min(1200px, 150vw);
+  will-change: transform;
 }
 .hero-inner { position: relative; max-width: var(--max-w); margin: 0 auto; text-align: center; }
 .hero-eyebrow {
@@ -103,16 +81,11 @@ button { font-family: inherit; cursor: pointer; }
   border: 1px solid var(--accent-line); background: var(--accent-dim);
   border-radius: 999px; padding: 6px 14px; margin-bottom: 26px; letter-spacing: 0.02em;
 }
-.hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-.hero h1 {
-  font-size: clamp(38px, 6vw, 68px); line-height: 1.08; font-weight: 700;
-  letter-spacing: -0.03em; max-width: 900px; margin: 0 auto 22px;
-}
+.hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.hero h1 { font-size: clamp(38px, 6vw, 68px); line-height: 1.08; font-weight: 700; letter-spacing: -0.03em; max-width: 900px; margin: 0 auto 22px; }
 .hero h1 em { font-style: normal; color: var(--accent); }
-.hero-sub {
-  font-size: clamp(16px, 2vw, 19px); color: var(--text-2); max-width: 640px;
-  margin: 0 auto 40px;
-}
+.hero-sub { font-size: clamp(16px, 2vw, 19px); color: var(--text-2); max-width: 640px; margin: 0 auto 40px; }
 .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
 .btn-primary {
   display: inline-flex; align-items: center; gap: 9px;
@@ -127,58 +100,40 @@ button { font-family: inherit; cursor: pointer; }
   padding: 14px 26px; border-radius: 11px; transition: border-color 0.2s, transform 0.15s;
 }
 .btn-ghost:hover { border-color: var(--accent-line); transform: translateY(-2px); }
-.hero-meta {
-  margin-top: 46px; display: flex; gap: 34px; justify-content: center; flex-wrap: wrap;
-  font-family: var(--font-mono); font-size: 13px; color: var(--text-3);
-}
-.hero-meta b { color: var(--text-2); font-weight: 500; }
+.hero-meta { margin-top: 46px; display: flex; gap: 34px; justify-content: center; flex-wrap: wrap; font-family: var(--font-mono); font-size: 13px; color: var(--text-3); }
+.hero-meta b { color: var(--text-2); font-weight: 500; font-size: 15px; }
+.hero-meta span.unit { margin-left: 5px; }
+.hero-hint { margin-top: 26px; font-size: 13px; color: var(--text-3); font-family: var(--font-mono); opacity: 0.8; }
 
 /* ---------- Sections ---------- */
 .section { max-width: var(--max-w); margin: 0 auto; padding: 96px 28px; }
-.sec-tag {
-  font-family: var(--font-mono); font-size: 12.5px; color: var(--accent);
-  letter-spacing: 0.08em; margin-bottom: 14px;
-}
+.sec-tag { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); letter-spacing: 0.08em; margin-bottom: 14px; }
 .sec-title { font-size: clamp(28px, 4vw, 42px); font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; margin-bottom: 16px; }
-.sec-sub { font-size: 17px; color: var(--text-2); max-width: 620px; }
+.sec-sub { font-size: 17px; color: var(--text-2); max-width: 640px; }
 .reveal { opacity: 0; transform: translateY(42px); }
 
-/* ---------- Pain: before/after ---------- */
+/* ---------- Pain ---------- */
 .pain-grid { display: grid; grid-template-columns: 1fr 64px 1fr; gap: 0; align-items: center; margin-top: 56px; }
-.pain-card {
-  border: 1px solid var(--border); background: var(--card); border-radius: var(--radius);
-  padding: 28px; min-height: 300px; display: flex; flex-direction: column; gap: 14px;
-}
+.pain-card { border: 1px solid var(--border); background: var(--card); border-radius: var(--radius); padding: 28px; min-height: 300px; display: flex; flex-direction: column; gap: 14px; }
 .pain-card.after { border-color: var(--accent-line); }
 .pain-head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15.5px; }
-.pain-head .pill {
-  font-family: var(--font-mono); font-size: 11px; font-weight: 500; border-radius: 6px; padding: 3px 8px;
-}
+.pain-head .pill { font-family: var(--font-mono); font-size: 11px; font-weight: 500; border-radius: 6px; padding: 3px 8px; }
 .pain-before .pill { background: rgba(226, 75, 74, 0.12); color: #E24B4A; }
 .pain-after .pill { background: var(--accent-dim); color: var(--accent); }
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip {
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-2);
-  border: 1px dashed var(--border-2); border-radius: 7px; padding: 6px 10px;
-}
+.chip { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); border: 1px dashed var(--border-2); border-radius: 7px; padding: 6px 10px; transition: transform 0.2s; }
 .chip.dup { border-color: rgba(226, 75, 74, 0.4); color: #E24B4A; }
 .chip.single { border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-dim); }
 .pain-note { font-size: 13.5px; color: var(--text-3); margin-top: auto; }
 .pain-arrow { display: flex; justify-content: center; }
 .pain-arrow svg { width: 34px; height: 34px; color: var(--accent); }
-@media (max-width: 860px) {
-  .pain-grid { grid-template-columns: 1fr; gap: 20px; }
-  .pain-arrow { transform: rotate(90deg); }
-}
+@media (max-width: 860px) { .pain-grid { grid-template-columns: 1fr; gap: 20px; } .pain-arrow { transform: rotate(90deg); } }
 
-/* ---------- Forms: three modes ---------- */
+/* ---------- Modes ---------- */
 .modes { display: flex; flex-direction: column; gap: 84px; margin-top: 64px; }
 .mode { display: grid; grid-template-columns: 5fr 6fr; gap: 60px; align-items: center; }
 .mode.flip .mode-visual { order: -1; }
-.mode-num {
-  font-family: var(--font-mono); font-size: 13px; color: var(--accent); margin-bottom: 12px;
-  display: flex; align-items: center; gap: 10px;
-}
+.mode-num { font-family: var(--font-mono); font-size: 13px; color: var(--accent); margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
 .mode-num::after { content: ""; height: 1px; width: 44px; background: var(--accent-line); }
 .mode h3 { font-size: clamp(22px, 3vw, 30px); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
 .mode p { color: var(--text-2); font-size: 15.5px; margin-bottom: 18px; }
@@ -186,56 +141,52 @@ button { font-family: inherit; cursor: pointer; }
 .mode-list li { display: flex; gap: 11px; align-items: baseline; font-size: 14.5px; color: var(--text-2); }
 .mode-list li::before { content: "—"; color: var(--accent); font-weight: 600; flex-shrink: 0; }
 .mode-list li b { color: var(--text); font-weight: 500; }
-@media (max-width: 900px) {
-  .mode { grid-template-columns: 1fr; gap: 30px; }
-  .mode.flip .mode-visual { order: 0; }
-}
+@media (max-width: 900px) { .mode { grid-template-columns: 1fr; gap: 30px; } .mode.flip .mode-visual { order: 0; } }
 
 /* Mock panels shared */
-.mock {
-  border: 1px solid var(--border-2); border-radius: var(--radius); overflow: hidden;
-  background: var(--card); box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.55);
-}
-.mock-bar {
-  display: flex; align-items: center; gap: 8px; padding: 11px 16px;
-  background: var(--bg-3); border-bottom: 1px solid var(--border);
-}
+.mock { border: 1px solid var(--border-2); border-radius: var(--radius); overflow: hidden; background: var(--card); box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.55); }
+.mock-bar { display: flex; align-items: center; gap: 8px; padding: 11px 16px; background: var(--bg-3); border-bottom: 1px solid var(--border); }
 .mock-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--bg-4); }
 .mock-bar i:nth-child(1) { background: #ED6A5E; } .mock-bar i:nth-child(2) { background: #F5BE4F; } .mock-bar i:nth-child(3) { background: #61C554; }
 .mock-title { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); margin-left: 8px; }
 .mock-label {
-  position: absolute; top: 14px; right: 14px; z-index: 5;
   font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em;
   color: var(--text-3); border: 1px solid var(--border-2); border-radius: 6px;
   padding: 3px 8px; background: color-mix(in srgb, var(--card) 88%, transparent);
 }
 
-/* CLI mock */
-.cli-body { padding: 20px 22px 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.75; }
+/* Interactive CLI */
+.cli-wrap { position: relative; }
+.cli-wrap .mock-label { position: absolute; top: -12px; right: 14px; z-index: 5; }
+.cli-body { padding: 20px 22px 18px; font-family: var(--font-mono); font-size: 13px; line-height: 1.75; min-height: 300px; }
 .cli-line { display: flex; gap: 10px; }
 .cli-prompt { color: var(--accent); flex-shrink: 0; }
 .cli-cmd { color: var(--text); }
-.cli-out { color: var(--text-2); white-space: pre; overflow-x: auto; }
-.cli-out .k { color: #7FB4E8; } .cli-out .s { color: var(--accent); } .cli-out .n { color: #E8B478; }
 .cli-cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: text-bottom; animation: blink 1.1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
+.cli-out { color: var(--text-2); white-space: pre; overflow-x: auto; margin-top: 4px; }
+.cli-out .k { color: #7FB4E8; } .cli-out .s { color: var(--accent); } .cli-out .n { color: #E8B478; } .cli-out .ok { color: var(--accent); }
+.cli-out .row { opacity: 0; transform: translateY(4px); }
+.cli-tabs { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-2); flex-wrap: wrap; }
+.cli-tab {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-2);
+  border: 1px solid var(--border-2); background: transparent; border-radius: 8px;
+  padding: 7px 13px; transition: all 0.2s;
+}
+.cli-tab:hover { border-color: var(--accent-line); color: var(--text); }
+.cli-tab.on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.cli-tab-hint { font-size: 11.5px; color: var(--text-3); margin-left: auto; align-self: center; font-family: var(--font-mono); }
 
 /* Desktop app mock */
 .app { position: relative; display: grid; grid-template-columns: 172px 1fr; min-height: 348px; }
 .app-side { border-right: 1px solid var(--border); padding: 18px 14px; background: var(--bg-2); display: flex; flex-direction: column; gap: 4px; }
 .app-side-label { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); letter-spacing: 0.07em; margin: 0 8px 10px; }
-.app-nav-item {
-  display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-2);
-  padding: 8px 10px; border-radius: 8px;
-}
+.app-nav-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-2); padding: 8px 10px; border-radius: 8px; }
 .app-nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
 .app-nav-item.on { background: var(--accent-dim); color: var(--accent); }
 .app-main { padding: 18px 20px; }
 .app-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
-.app-search {
-  flex: 1; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border);
-  border-radius: 9px; padding: 8px 13px; font-size: 13px; color: var(--text-3); background: var(--bg-2);
-}
+.app-search { flex: 1; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border); border-radius: 9px; padding: 8px 13px; font-size: 13px; color: var(--text-3); background: var(--bg-2); }
 .app-search svg { width: 14px; height: 14px; }
 .app-btn { border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-dim); border-radius: 9px; padding: 8px 14px; font-size: 13px; font-weight: 500; }
 .app-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
@@ -261,13 +212,10 @@ button { font-family: inherit; cursor: pointer; }
 .device-row b { color: var(--text-2); font-weight: 400; }
 .device-row .ok { color: var(--accent); }
 .sync-hub { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 120px; }
-.sync-cloud {
-  width: 58px; height: 58px; border-radius: 16px; background: var(--accent-dim);
-  border: 1px solid var(--accent-line); display: flex; align-items: center; justify-content: center;
-}
+.sync-cloud { width: 58px; height: 58px; border-radius: 16px; background: var(--accent-dim); border: 1px solid var(--accent-line); display: flex; align-items: center; justify-content: center; }
 .sync-cloud svg { width: 26px; height: 26px; color: var(--accent); }
 .sync-hub span { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
-.sync-flow { position: relative; height: 34px; }
+.sync-flow { height: 34px; }
 .sync-flow svg { width: 100%; height: 100%; }
 .sync-flow .ln { stroke: var(--accent-line); stroke-width: 1.5; stroke-dasharray: 5 6; fill: none; animation: flow 1.6s linear infinite; }
 @keyframes flow { to { stroke-dashoffset: -22; } }
@@ -289,22 +237,26 @@ button { font-family: inherit; cursor: pointer; }
   position: absolute; width: 106px; padding: 9px 0; text-align: center;
   border: 1px solid var(--border-2); border-radius: 10px; background: var(--card);
   font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
-  transition: border-color 0.3s, color 0.3s, background 0.3s;
+  cursor: pointer; transition: border-color 0.25s, color 0.25s, background 0.25s, transform 0.25s;
 }
-.sat.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.sat:hover, .sat.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); transform: scale(1.06); }
+.sat-tip {
+  position: absolute; z-index: 6; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  white-space: nowrap; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-2);
+  background: var(--bg-3); border: 1px solid var(--border-2); border-radius: 7px; padding: 5px 10px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.sat:hover .sat-tip, .sat.lit .sat-tip { opacity: 1; }
 .source-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
-.source-lines line { stroke: var(--border-2); stroke-width: 1; }
+.source-lines line { stroke: var(--border-2); stroke-width: 1; transition: stroke 0.3s; }
 .source-lines line.lit { stroke: var(--accent-line); }
 .fallback { margin-top: 26px; display: flex; flex-direction: column; gap: 9px; }
-.fallback-row {
-  display: flex; align-items: center; gap: 13px; border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 16px; background: var(--card); font-size: 14px; color: var(--text-2);
-}
+.fallback-row { display: flex; align-items: center; gap: 13px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; background: var(--card); font-size: 14px; color: var(--text-2); }
 .fallback-row svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
 .fallback-row b { color: var(--text); font-weight: 500; font-family: var(--font-mono); font-size: 13px; }
 @media (max-width: 900px) { .source-wrap { grid-template-columns: 1fr; } }
 
-/* ---------- Agent native / publish ---------- */
+/* ---------- Agent native ---------- */
 .agent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 56px; }
 .agent-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 26px; display: flex; flex-direction: column; gap: 14px; }
 .agent-card h4 { display: flex; align-items: center; gap: 11px; font-size: 17.5px; font-weight: 600; }
@@ -317,47 +269,62 @@ button { font-family: inherit; cursor: pointer; }
 }
 .code-block .c { color: var(--accent); } .code-block .p { color: #7FB4E8; }
 .pub-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
-.pub-step {
-  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2);
-  border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 11px; background: var(--bg-2);
-}
+.pub-step { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 11px; background: var(--bg-2); }
 .pub-step.hl { border-color: var(--accent-line); color: var(--accent); background: var(--accent-dim); }
 .pub-arrow { color: var(--text-3); font-size: 13px; }
 @media (max-width: 860px) { .agent-grid { grid-template-columns: 1fr; } }
 
-/* ---------- Tools matrix ---------- */
-.tools-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 9px; margin-top: 52px;
-}
+/* ---------- Tools ---------- */
+.tools-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.tools-counter { font-family: var(--font-mono); font-size: 13px; color: var(--text-3); }
+.tools-counter b { color: var(--accent); font-weight: 500; }
+.tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 9px; margin-top: 40px; }
 .tool-cell {
   font-family: var(--font-mono); font-size: 12px; text-align: center;
   border: 1px solid var(--border); border-radius: 9px; padding: 11px 6px;
-  color: var(--text-2); background: var(--card);
-  transition: border-color 0.25s, color 0.25s, transform 0.25s; opacity: 0;
+  color: var(--text-2); background: var(--card); cursor: pointer; user-select: none;
+  transition: border-color 0.25s, color 0.25s, transform 0.2s, background 0.25s; opacity: 0;
 }
-.tool-cell:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-3px); }
+.tool-cell:hover { border-color: var(--accent); color: var(--text); transform: translateY(-3px); }
+.tool-cell.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 .tools-more { text-align: center; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-3); margin-top: 20px; }
 
-/* ---------- Quick start / footer ---------- */
-.final { text-align: center; padding: 110px 28px 60px; }
-.final h2 { font-size: clamp(26px, 3.6vw, 38px); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 14px; }
-.final p { color: var(--text-2); font-size: 16px; max-width: 520px; margin: 0 auto 34px; }
-.install-cmd {
-  display: inline-flex; align-items: center; gap: 14px;
-  font-family: var(--font-mono); font-size: 13.5px;
-  border: 1px solid var(--border-2); border-radius: 11px; padding: 15px 20px;
-  background: var(--bg-2); color: var(--text-2); max-width: 100%;
+/* ---------- Install: three channels ---------- */
+.install-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 56px; }
+.install-card {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--card);
+  padding: 26px 24px; display: flex; flex-direction: column; gap: 14px; position: relative;
+  transition: border-color 0.25s, transform 0.2s;
 }
-.install-cmd .c { color: var(--accent); }
-.copy-btn {
-  border: none; background: transparent; color: var(--text-3); display: flex;
-  padding: 4px; border-radius: 6px; transition: color 0.2s;
+.install-card:hover { border-color: var(--accent-line); transform: translateY(-3px); }
+.install-card.agent { border-color: var(--accent-line); background: linear-gradient(0deg, var(--accent-dim), var(--card) 55%); }
+.ic-head { display: flex; align-items: center; gap: 11px; }
+.ic-ico { width: 38px; height: 38px; border-radius: 10px; background: var(--accent-dim); border: 1px solid var(--accent-line); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ic-ico svg { width: 18px; height: 18px; color: var(--accent); }
+.ic-title { font-size: 16.5px; font-weight: 600; }
+.ic-sub { font-size: 12.5px; color: var(--text-3); font-family: var(--font-mono); }
+.install-card p { font-size: 13.5px; color: var(--text-2); flex-grow: 1; }
+.install-card .badge {
+  position: absolute; top: -10px; right: 16px; font-family: var(--font-mono); font-size: 10.5px;
+  background: var(--accent); color: #0B0D12; font-weight: 600; border-radius: 6px; padding: 3px 9px;
 }
-.copy-btn:hover { color: var(--accent); }
-.copy-btn svg { width: 15px; height: 15px; }
-.final-meta { margin-top: 30px; font-size: 13.5px; color: var(--text-3); }
-.final-meta a { color: var(--text-2); border-bottom: 1px solid var(--border-2); }
+.ic-action { display: flex; gap: 8px; }
+.ic-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 13.5px; font-weight: 500; border-radius: 9px; padding: 11px 16px;
+  border: 1px solid var(--border-2); color: var(--text); background: transparent;
+  transition: all 0.2s; text-align: center;
+}
+.ic-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ic-btn.solid { background: var(--accent); color: #0B0D12; border: none; font-weight: 600; }
+.ic-btn.solid:hover { transform: translateY(-1px); box-shadow: 0 6px 20px -6px var(--accent-line); }
+.ic-btn svg { width: 14px; height: 14px; }
+.ic-btn.wide { flex: 1; }
+.ic-note { font-size: 12px; color: var(--text-3); }
+.ic-note code { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+@media (max-width: 960px) { .install-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Footer ---------- */
 .footer {
   border-top: 1px solid var(--border); padding: 30px 28px 38px;
   display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;
@@ -376,7 +343,7 @@ button { font-family: inherit; cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .reveal, .tool-cell { opacity: 1 !important; transform: none !important; }
+  .reveal, .tool-cell, .cli-out .row { opacity: 1 !important; transform: none !important; }
 }
 </style>
 </head>
@@ -409,7 +376,7 @@ button { font-family: inherit; cursor: pointer; }
 <main>
 <!-- ================= HERO ================= -->
 <header class="hero" id="top">
-  <svg class="hero-orbit" viewBox="0 0 1200 1200" fill="none" aria-hidden="true">
+  <svg class="hero-orbit" id="heroOrbit" viewBox="0 0 1200 1200" fill="none" aria-hidden="true">
     <g stroke="var(--border)" stroke-width="1">
       <circle cx="600" cy="600" r="200" opacity="0.45"/>
       <circle cx="600" cy="600" r="340" opacity="0.30"/>
@@ -437,19 +404,20 @@ button { font-family: inherit; cursor: pointer; }
     <div class="hero-cta">
       <a class="btn-primary" href="#start">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        <span data-i18n="ctaCli">Install the CLI</span>
+        <span data-i18n="ctaStart">Get started</span>
       </a>
-      <a class="btn-ghost" href="https://github.com/yancongya/skilldo/releases" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-        <span data-i18n="ctaApp">Get the desktop app</span>
+      <a class="btn-ghost" href="https://github.com/yancongya/skilldo" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        <span data-i18n="ctaStar">Star on GitHub</span>
       </a>
     </div>
     <div class="hero-meta">
-      <span><b>45</b> <span data-i18n="metaTools">AI tools</span></span>
-      <span><b>3</b> <span data-i18n="metaForms">ways to use it</span></span>
-      <span><b>1</b> <span data-i18n="metaSource">source of truth</span></span>
-      <span><b>0</b> <span data-i18n="metaLock">lock-in, ever</span></span>
+      <span><b data-count="45">45</b><span class="unit" data-i18n="metaTools">AI tools</span></span>
+      <span><b data-count="3">3</b><span class="unit" data-i18n="metaForms">ways to use it</span></span>
+      <span><b data-count="1">1</b><span class="unit" data-i18n="metaSource">source of truth</span></span>
+      <span><b data-count="0">0</b><span class="unit" data-i18n="metaLock">lock-in, ever</span></span>
     </div>
+    <p class="hero-hint" data-i18n="heroHint">↑ move your cursor — the orbit follows</p>
   </div>
 </header>
 
@@ -498,27 +466,27 @@ button { font-family: inherit; cursor: pointer; }
       <div class="mode-copy">
         <div class="mode-num">01 / CLI</div>
         <h3 data-i18n="modeCliTitle">The terminal is the dashboard</h3>
-        <p data-i18n="modeCliSub">Install, sync, update, and publish skills with one command. Every command speaks <b style="font-family:var(--font-mono);font-size:0.9em">--json</b> — readable by you, and by the agent driving you.</p>
+        <p data-i18n="modeCliSub">Install, sync, update, and publish skills with one command. Every command speaks --json — readable by you, and by the agent driving you.</p>
         <ul class="mode-list">
           <li data-i18n-html="modeCliL1"><b>Agent-native output</b> — structured JSON on every subcommand</li>
           <li data-i18n-html="modeCliL2"><b>Standalone binary</b> — curl one line, no Node, no runtime</li>
           <li data-i18n-html="modeCliL3"><b>Safe by default</b> — destructive actions require --yes</li>
         </ul>
       </div>
-      <div class="mode-visual mock">
-        <span class="mock-label" data-i18n="mockLabel">UI MOCK</span>
-        <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">skilldo — zsh</span></div>
-        <div class="cli-body">
-          <div class="cli-line"><span class="cli-prompt">❯</span><span class="cli-cmd">skilldo list --json</span></div>
-          <div class="cli-out">{
-  <span class="k">"total"</span>: <span class="n">46</span>,
-  <span class="k">"skills"</span>: [
-    { <span class="k">"name"</span>: <span class="s">"readme-please"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">13</span> },
-    { <span class="k">"name"</span>: <span class="s">"mac-dev-cleanup"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">9</span> },
-    ...
-  ]
-}</div>
-          <div class="cli-line" style="margin-top:10px"><span class="cli-prompt">❯</span><span class="cli-cmd">skilldo update --all --yes<span class="cli-cursor"></span></span></div>
+      <div class="mode-visual cli-wrap">
+        <span class="mock-label" data-i18n="mockLabel">INTERACTIVE · UI MOCK</span>
+        <div class="mock">
+          <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">skilldo — zsh</span></div>
+          <div class="cli-body">
+            <div class="cli-line"><span class="cli-prompt">❯</span><span class="cli-cmd" id="cliCmd">skilldo list --json</span></div>
+            <div class="cli-out" id="cliOut" aria-live="polite"></div>
+          </div>
+          <div class="cli-tabs" role="tablist">
+            <button class="cli-tab on" data-cmd="list" role="tab">skilldo list</button>
+            <button class="cli-tab" data-cmd="status" role="tab">skilldo status</button>
+            <button class="cli-tab" data-cmd="explore" role="tab">skilldo explore</button>
+            <span class="cli-tab-hint" data-i18n="cliHint">click to run ↑</span>
+          </div>
         </div>
       </div>
     </div>
@@ -535,7 +503,7 @@ button { font-family: inherit; cursor: pointer; }
         </ul>
       </div>
       <div class="mode-visual mock">
-        <span class="mock-label" data-i18n="mockLabel">UI MOCK</span>
+        <span class="mock-label" style="position:absolute;top:14px;right:14px;z-index:5" data-i18n="mockLabel">UI MOCK</span>
         <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">SkillDo</span></div>
         <div class="app">
           <div class="app-side">
@@ -596,7 +564,7 @@ button { font-family: inherit; cursor: pointer; }
         </ul>
       </div>
       <div class="mode-visual mock">
-        <span class="mock-label" data-i18n="mockLabel">UI MOCK</span>
+        <span class="mock-label" style="position:absolute;top:14px;right:14px;z-index:5" data-i18n="mockLabel">UI MOCK</span>
         <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">device sync</span></div>
         <div class="sync">
           <div class="device">
@@ -673,14 +641,14 @@ button { font-family: inherit; cursor: pointer; }
         <b data-i18n="srcCenterTitle">Central Repo</b>
         <span>~/.skillshub</span>
       </div>
-      <span class="sat" style="left:4%; top:8%">Claude Code</span>
-      <span class="sat" style="left:41%; top:4%">Codex</span>
-      <span class="sat" style="left:78%; top:8%">Cursor</span>
-      <span class="sat" style="left:0%; top:47%">WorkBuddy</span>
-      <span class="sat" style="left:82%; top:47%">Windsurf</span>
-      <span class="sat" style="left:6%; top:83%">Gemini CLI</span>
-      <span class="sat" style="left:41%; top:87%">OpenCode</span>
-      <span class="sat" style="left:76%; top:83%">+38 more</span>
+      <span class="sat" style="left:4%; top:8%">Claude Code<span class="sat-tip">~/.claude/skills</span></span>
+      <span class="sat" style="left:41%; top:4%">Codex<span class="sat-tip">~/.codex/skills</span></span>
+      <span class="sat" style="left:78%; top:8%">Cursor<span class="sat-tip">~/.cursor/skills</span></span>
+      <span class="sat" style="left:0%; top:47%">WorkBuddy<span class="sat-tip">~/.workbuddy/skills</span></span>
+      <span class="sat" style="left:82%; top:47%">Windsurf<span class="sat-tip">~/.codeium/windsurf</span></span>
+      <span class="sat" style="left:6%; top:83%">Gemini CLI<span class="sat-tip">~/.gemini/skills</span></span>
+      <span class="sat" style="left:41%; top:87%">OpenCode<span class="sat-tip">~/.config/opencode</span></span>
+      <span class="sat" style="left:76%; top:83%">+38 more<span class="sat-tip">tool_adapters/mod.rs</span></span>
     </div>
   </div>
 </section>
@@ -723,29 +691,74 @@ button { font-family: inherit; cursor: pointer; }
 <!-- ================= TOOLS ================= -->
 <section class="section" id="tools">
   <div class="reveal">
-    <div class="sec-tag" data-i18n="toolsTag">05 · COVERAGE</div>
-    <h2 class="sec-title" data-i18n="toolsTitle">45 tools. One workflow.</h2>
-    <p class="sec-sub" data-i18n="toolsSub">Global and project-level sync targets for every major AI coding tool — with per-tool detection rules and path conventions maintained in source.</p>
+    <div class="tools-head">
+      <div>
+        <div class="sec-tag" data-i18n="toolsTag">05 · COVERAGE</div>
+        <h2 class="sec-title" data-i18n="toolsTitle">45 tools. One workflow.</h2>
+        <p class="sec-sub" data-i18n="toolsSub">Global and project-level sync targets for every major AI coding tool — with per-tool detection rules and path conventions maintained in source.</p>
+      </div>
+      <div class="tools-counter"><b id="litCount">0</b> <span data-i18n="toolsLit">/ 45 lit — click the ones you use</span></div>
+    </div>
   </div>
   <div class="tools-grid" id="toolsGrid"></div>
   <p class="tools-more" data-i18n="toolsMore">Tool list generated from source — new adapters ship regularly.</p>
 </section>
 
-<!-- ================= FINAL ================= -->
-<section class="final" id="start">
+<!-- ================= INSTALL ================= -->
+<section class="section" id="start">
   <div class="reveal">
-    <h2 data-i18n="finalTitle">Start in one line.</h2>
-    <p data-i18n="finalSub">A standalone binary. No Node, no runtime, no account.</p>
-    <div class="install-cmd">
-      <span><span class="c">❯</span> curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash</span>
-      <button class="copy-btn" id="copyBtn" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash" aria-label="Copy install command">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-      </button>
+    <div class="sec-tag" data-i18n="installTag">06 · GET STARTED</div>
+    <h2 class="sec-title" data-i18n="installTitle">Three ways in. Pick yours.</h2>
+    <p class="sec-sub" data-i18n="installSub">A standalone CLI, a desktop installer, or — the agent-native way — just hand a prompt to the agent you already trust.</p>
+  </div>
+  <div class="install-grid">
+
+    <div class="install-card reveal">
+      <div class="ic-head">
+        <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
+        <div><div class="ic-title" data-i18n="ic1Title">The CLI</div><div class="ic-sub">macOS · Linux · Windows</div></div>
+      </div>
+      <p data-i18n="ic1Desc">A standalone binary — no Node, no runtime, no account. One line installs and verifies it via SHA-256.</p>
+      <div class="ic-action">
+        <button class="ic-btn solid wide" id="copyCurl" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span data-i18n="ic1Btn">Copy install command</span>
+        </button>
+      </div>
+      <p class="ic-note"><span data-i18n="ic1Note">Windows:</span> <code>irm …/install-cli.ps1 | iex</code></p>
     </div>
-    <p class="final-meta">
-      <span data-i18n="finalMeta1">Windows:</span>
-      <code style="font-family:var(--font-mono);font-size:12.5px">irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex</code>
-    </p>
+
+    <div class="install-card reveal">
+      <div class="ic-head">
+        <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <div><div class="ic-title" data-i18n="ic2Title">The desktop app</div><div class="ic-sub">.dmg · .exe</div></div>
+      </div>
+      <p data-i18n="ic2Desc">Download from GitHub Releases — macOS .dmg (Apple Silicon / Intel) and Windows .exe with NSIS auto-update. Linux builds from source.</p>
+      <div class="ic-action">
+        <a class="ic-btn wide" href="https://github.com/yancongya/skilldo/releases" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          <span data-i18n="ic2Btn">Go to Releases</span>
+        </a>
+      </div>
+      <p class="ic-note" data-i18n="ic2Note">Updates are signed; the app checks for new versions on launch.</p>
+    </div>
+
+    <div class="install-card agent reveal">
+      <span class="badge" data-i18n="ic3Badge">AGENT-NATIVE</span>
+      <div class="ic-head">
+        <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M20 8V4h-4M4 16H3"/><path d="M9 12h.01M15 12h.01M9.5 16c.8.7 1.7 1 2.5 1s1.7-.3 2.5-1"/></svg></div>
+        <div><div class="ic-title" data-i18n="ic3Title">Let your agent do it</div><div class="ic-sub">claude · codex · cursor · …</div></div>
+      </div>
+      <p data-i18n="ic3Desc">Copy this prompt and paste it to any coding agent. It will star the repo, install the CLI, and report which of the 45 tools live on your machine.</p>
+      <div class="ic-action">
+        <button class="ic-btn solid wide" id="copyPrompt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span data-i18n="ic3Btn">Copy prompt for your agent</span>
+        </button>
+      </div>
+      <p class="ic-note" data-i18n="ic3Note">Works in Claude Code, Codex CLI, Cursor, and friends.</p>
+    </div>
+
   </div>
 </section>
 </main>
@@ -768,6 +781,30 @@ button { font-family: inherit; cursor: pointer; }
 (function () {
   "use strict";
 
+  /* ---------- Agent prompt ---------- */
+  var PROMPTS = {
+    en: [
+      "I want to set up SkillDo — an open-source skill manager for AI coding agents (https://github.com/yancongya/skilldo).",
+      "",
+      "Please do the following:",
+      "1. Star the repository (yancongya/skilldo) so I can find it later.",
+      "2. Install the standalone CLI:",
+      "   curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash",
+      "3. Run `skilldo status --json` and tell me which of the 45 supported AI tools are installed on this machine.",
+      "4. Run `skilldo explore --json` and recommend 3 featured skills worth installing for my stack."
+    ].join("\n"),
+    zh: [
+      "帮我装一下 SkillDo——一个开源的 AI 编码工具技能管理器（https://github.com/yancongya/skilldo）。",
+      "",
+      "请依次完成：",
+      "1. Star 这个仓库（yancongya/skilldo），方便我以后找到它。",
+      "2. 安装独立 CLI：",
+      "   curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash",
+      "3. 运行 `skilldo status --json`，告诉我这台机器上装了 45 个受支持 AI 工具中的哪几个。",
+      "4. 运行 `skilldo explore --json`，根据我的技术栈推荐 3 个值得安装的精选技能。"
+    ].join("\n")
+  };
+
   /* ---------- i18n ---------- */
   var I18N = {
     en: {
@@ -775,8 +812,9 @@ button { font-family: inherit; cursor: pointer; }
       heroEyebrow: "v0.7 · macOS / Windows / CLI",
       heroTitle: "One skill library.<br>Every agent. <em>Every machine.</em>",
       heroSub: "Install once, sync everywhere. SkillDo manages AI agent skills across 45 coding tools — from the terminal, a desktop app, or any machine you own.",
-      ctaCli: "Install the CLI", ctaApp: "Get the desktop app",
+      ctaStart: "Get started", ctaStar: "Star on GitHub",
       metaTools: "AI tools", metaForms: "ways to use it", metaSource: "source of truth", metaLock: "lock-in, ever",
+      heroHint: "↑ move your cursor — the orbit follows",
       painTag: "01 · THE MESS",
       painTitle: "You wrote one skill. Then copied it five times.",
       painSub: "Every agent has its own skills folder, its own path, its own format. A skill you polished for one tool gets re-copied, re-tweaked, and forgotten everywhere else.",
@@ -802,7 +840,8 @@ button { font-family: inherit; cursor: pointer; }
       modeSyncL1: "<b>Full-state backup</b> — database snapshot with config and tokens",
       modeSyncL2: "<b>Profile merge</b> — pull and merge across devices without wiping",
       modeSyncL3: "<b>Your storage</b> — WebDAV you control; nothing leaves your infra",
-      mockLabel: "UI MOCK", appLibrary: "LIBRARY", appMySkills: "My skills", appExplore: "Explore", appSettings: "Settings",
+      mockLabel: "INTERACTIVE · UI MOCK", cliHint: "click to run ↑",
+      appLibrary: "LIBRARY", appMySkills: "My skills", appExplore: "Explore", appSettings: "Settings",
       appSearchPh: "Search 46 skills…", appPublish: "Publish",
       syncOk: "in sync", syncRestored: "restored", syncNewDevice: "New device", syncYours: "yours",
       sourceTag: "03 · SINGLE SOURCE OF TRUTH",
@@ -822,21 +861,32 @@ button { font-family: inherit; cursor: pointer; }
       toolsTag: "05 · COVERAGE",
       toolsTitle: "45 tools. One workflow.",
       toolsSub: "Global and project-level sync targets for every major AI coding tool — with per-tool detection rules and path conventions maintained in source.",
+      toolsLit: "/ 45 lit — click the ones you use",
       toolsMore: "Tool list generated from source — new adapters ship regularly.",
-      finalTitle: "Start in one line.",
-      finalSub: "A standalone binary. No Node, no runtime, no account.",
-      finalMeta1: "Windows:",
+      installTag: "06 · GET STARTED",
+      installTitle: "Three ways in. Pick yours.",
+      installSub: "A standalone CLI, a desktop installer, or — the agent-native way — just hand a prompt to the agent you already trust.",
+      ic1Title: "The CLI", ic1Desc: "A standalone binary — no Node, no runtime, no account. One line installs and verifies it via SHA-256.",
+      ic1Btn: "Copy install command", ic1Note: "Windows:",
+      ic2Title: "The desktop app", ic2Desc: "Download from GitHub Releases — macOS .dmg (Apple Silicon / Intel) and Windows .exe with NSIS auto-update. Linux builds from source.",
+      ic2Btn: "Go to Releases", ic2Note: "Updates are signed; the app checks for new versions on launch.",
+      ic3Title: "Let your agent do it", ic3Badge: "AGENT-NATIVE",
+      ic3Desc: "Copy this prompt and paste it to any coding agent. It will star the repo, install the CLI, and report which of the 45 tools live on your machine.",
+      ic3Btn: "Copy prompt for your agent", ic3Note: "Works in Claude Code, Codex CLI, Cursor, and friends.",
       footerTag: "Install once, sync everywhere.",
       footerRepo: "Repository", footerReleases: "Releases", footerIssues: "Issues",
-      toastCopied: "Copied to clipboard"
+      toastCopied: "Copied to clipboard",
+      toastPrompt: "Prompt copied — paste it to your agent",
+      toastLit: "tool lit"
     },
     zh: {
       navModes: "三种形态", navSource: "单一真源", navAgents: "Agent 原生", navTools: "45 工具", navGithub: "GitHub",
       heroEyebrow: "v0.7 · macOS / Windows / CLI",
       heroTitle: "一套技能库。<br>所有 Agent。<em>所有设备。</em>",
       heroSub: "装一次，处处同步。SkillDo 统一管理 45 个 AI 编码工具的技能——终端、桌面客户端、任意设备，同一份技能库。",
-      ctaCli: "安装 CLI", ctaApp: "下载桌面客户端",
+      ctaStart: "开始使用", ctaStar: "去 GitHub Star",
       metaTools: "AI 工具", metaForms: "种使用方式", metaSource: "个真源", metaLock: "锁定，永不",
+      heroHint: "↑ 移动鼠标——星轨会跟随",
       painTag: "01 · 乱象",
       painTitle: "你写好一个技能，然后复制了五遍。",
       painSub: "每个 Agent 都有自己的技能目录、自己的路径、自己的格式。为一个工具打磨的技能，被复制、改动、然后遗忘在别处。",
@@ -862,7 +912,8 @@ button { font-family: inherit; cursor: pointer; }
       modeSyncL1: "<b>全量备份</b>——含配置与令牌的数据库快照",
       modeSyncL2: "<b>Profile 合并</b>——跨设备拉取合并，不清空原数据",
       modeSyncL3: "<b>你自己的存储</b>——WebDAV 由你掌控，数据不出你的基础设施",
-      mockLabel: "界面示意", appLibrary: "技能库", appMySkills: "我的技能", appExplore: "探索", appSettings: "设置",
+      mockLabel: "可交互 · 界面示意", cliHint: "点击运行 ↑",
+      appLibrary: "技能库", appMySkills: "我的技能", appExplore: "探索", appSettings: "设置",
       appSearchPh: "搜索 46 个技能…", appPublish: "发布",
       syncOk: "已同步", syncRestored: "已恢复", syncNewDevice: "新设备", syncYours: "你的",
       sourceTag: "03 · 单一真源",
@@ -882,13 +933,23 @@ button { font-family: inherit; cursor: pointer; }
       toolsTag: "05 · 覆盖面",
       toolsTitle: "45 个工具，一套工作流。",
       toolsSub: "为每个主流 AI 编码工具提供全局与项目级同步目标——检测规则与路径约定在源码中维护。",
+      toolsLit: "/ 45 已点亮——点你用的工具",
       toolsMore: "工具清单由源码自动生成——新适配器持续增加。",
-      finalTitle: "一行开始。",
-      finalSub: "独立二进制。无需 Node、无需运行时、无需注册。",
-      finalMeta1: "Windows：",
+      installTag: "06 · 开始使用",
+      installTitle: "三条路，任你选。",
+      installSub: "独立 CLI、桌面安装包，或者——最 agent-native 的方式——把一段 prompt 交给你已经信任的 agent。",
+      ic1Title: "CLI", ic1Desc: "独立二进制——无需 Node、无需运行时、无需注册。一行命令安装，SHA-256 校验。",
+      ic1Btn: "复制安装命令", ic1Note: "Windows：",
+      ic2Title: "桌面客户端", ic2Desc: "从 GitHub Releases 下载——macOS .dmg（Apple Silicon / Intel）与 Windows .exe（NSIS 自动更新）。Linux 从源码构建。",
+      ic2Btn: "前往 Releases", ic2Note: "更新已签名；客户端启动时自动检查新版本。",
+      ic3Title: "让 agent 替你装", ic3Badge: "AGENT 原生",
+      ic3Desc: "复制这段 prompt，贴给任意编码 agent。它会 star 仓库、装好 CLI，并报告你这台机器上装了 45 个工具中的哪几个。",
+      ic3Btn: "复制给 agent 的 prompt", ic3Note: "Claude Code、Codex CLI、Cursor 等都适用。",
       footerTag: "装一次，处处同步。",
       footerRepo: "仓库", footerReleases: "发布", footerIssues: "议题",
-      toastCopied: "已复制到剪贴板"
+      toastCopied: "已复制到剪贴板",
+      toastPrompt: "Prompt 已复制——贴给你的 agent 吧",
+      toastLit: "已点亮"
     }
   };
   var lang = localStorage.getItem("skilldo-lang") || "en";
@@ -923,28 +984,120 @@ button { font-family: inherit; cursor: pointer; }
     applyTheme(theme);
   });
 
-  /* ---------- Tools grid ---------- */
+  /* ---------- Interactive CLI ---------- */
+  var CLI_OUT = {
+    list: {
+      cmd: "skilldo list --json",
+      rows: [
+        '{ <span class="k">"total"</span>: <span class="n">46</span>, <span class="k">"skills"</span>: [',
+        '  { <span class="k">"name"</span>: <span class="s">"readme-please"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">13</span> },',
+        '  { <span class="k">"name"</span>: <span class="s">"mac-dev-cleanup"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">9</span> },',
+        '  { <span class="k">"name"</span>: <span class="s">"tailwindcss"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">11</span> },',
+        '  … 43 more ] }'
+      ]
+    },
+    status: {
+      cmd: "skilldo status --json",
+      rows: [
+        '{ <span class="k">"tools"</span>: <span class="n">45</span>, <span class="k">"installed"</span>: <span class="n">13</span>,',
+        '  <span class="k">"detected"</span>: [',
+        '    <span class="s">"claude_code"</span>, <span class="s">"codex"</span>, <span class="s">"cursor"</span>,',
+        '    <span class="s">"workbuddy"</span>, <span class="s">"gemini_cli"</span>, <span class="s">"opencode"</span>, … ] }'
+      ]
+    },
+    explore: {
+      cmd: "skilldo explore --json",
+      rows: [
+        '{ <span class="k">"results"</span>: <span class="n">8</span>, <span class="k">"featured"</span>: [',
+        '  { <span class="k">"name"</span>: <span class="s">"web-design-guidelines"</span>, <span class="k">"installs"</span>: <span class="s">"420K"</span> },',
+        '  { <span class="k">"name"</span>: <span class="s">"find-skills"</span>, <span class="k">"installs"</span>: <span class="s">"1.5M"</span> },',
+        '  { <span class="k">"name"</span>: <span class="s">"react-best-practices"</span>, <span class="k">"installs"</span>: <span class="s">"390K"</span> } ] }'
+      ]
+    }
+  };
+  var cliOut = document.getElementById("cliOut");
+  var cliCmd = document.getElementById("cliCmd");
+  var cliTimers = [];
+  function runCli(key, typeInstant) {
+    cliTimers.forEach(clearTimeout); cliTimers = [];
+    var entry = CLI_OUT[key];
+    if (typeInstant) { cliCmd.textContent = entry.cmd; cliOut.innerHTML = entry.rows.map(function (r) { return '<div class="row" style="opacity:1">' + r + "</div>"; }).join(""); return; }
+    /* typewriter on the command */
+    cliCmd.textContent = "";
+    var ci = 0;
+    (function typeChar() {
+      if (ci <= entry.cmd.length) {
+        cliCmd.textContent = entry.cmd.slice(0, ci);
+        ci++;
+        cliTimers.push(setTimeout(typeChar, 26));
+      }
+    })();
+    /* staggered rows */
+    cliOut.innerHTML = entry.rows.map(function (r) { return '<div class="row">' + r + "</div>"; }).join("");
+    var rows = cliOut.querySelectorAll(".row");
+    rows.forEach(function (r, i) {
+      cliTimers.push(setTimeout(function () {
+        r.style.transition = "opacity 0.3s ease, transform 0.3s ease";
+        r.style.opacity = "1"; r.style.transform = "none";
+      }, 420 + i * 130));
+    });
+  }
+  document.querySelectorAll(".cli-tab").forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      document.querySelectorAll(".cli-tab").forEach(function (t) { t.classList.remove("on"); });
+      tab.classList.add("on");
+      runCli(tab.getAttribute("data-cmd"), false);
+    });
+  });
+
+  /* ---------- Tools grid: click to light ---------- */
   var TOOLS = ["Claude Code","Codex","Cursor","WorkBuddy","Windsurf","GitHub Copilot","Gemini CLI","OpenCode","Cline","Augment","Antigravity","Amp","Continue","Trae","Trae CN","Roo Code","Kilo Code","Goose","OpenClaw","OpenHands","Droid","Qwen Code","iFlow CLI","Kiro CLI","Kode","Qoder","Qoder Work","Pi","Junie","Crush","Kimi CLI","Command Code","CodeBuddy","Copaw","McpJam","Mistral Vibe","Mux","OpenClaude","Zencoder","Neovate","Pochi","AdaL","Clawdbot","Moltbot","Hermes Agent"];
   var grid = document.getElementById("toolsGrid");
+  var litCount = document.getElementById("litCount");
+  var lit = 0;
   TOOLS.forEach(function (t) {
     var cell = document.createElement("div");
     cell.className = "tool-cell";
     cell.textContent = t;
+    cell.setAttribute("role", "button");
+    cell.setAttribute("tabindex", "0");
+    function toggle() {
+      var on = cell.classList.toggle("lit");
+      lit += on ? 1 : -1;
+      litCount.textContent = lit;
+      if (on) showToast(I18N[lang].toastLit + " · " + lit + "/45", 1100);
+    }
+    cell.addEventListener("click", toggle);
+    cell.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
     grid.appendChild(cell);
   });
 
-  /* ---------- Copy ---------- */
-  document.getElementById("copyBtn").addEventListener("click", function () {
-    var text = this.getAttribute("data-text");
-    var done = function () {
-      var toast = document.getElementById("toast");
-      toast.classList.add("show");
-      setTimeout(function () { toast.classList.remove("show"); }, 1800);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text, done); });
-    } else { fallbackCopy(text, done); }
+  /* ---------- Source diagram: hover satellites ---------- */
+  var satEls = Array.prototype.slice.call(document.querySelectorAll("#sourceDiagram .sat"));
+  var lineEls = Array.prototype.slice.call(document.querySelectorAll("#sourceDiagram .source-lines line"));
+  satEls.forEach(function (s, i) {
+    var line = lineEls[i];
+    function on() { s.classList.add("lit"); if (line) line.classList.add("lit"); }
+    function off() { s.classList.remove("lit"); if (line) line.classList.remove("lit"); }
+    s.addEventListener("mouseenter", on);
+    s.addEventListener("mouseleave", off);
+    s.addEventListener("focus", on);
+    s.addEventListener("blur", off);
+    s.setAttribute("tabindex", "0");
   });
+
+  /* ---------- Toast ---------- */
+  var toastEl = document.getElementById("toast");
+  var toastTimer = null;
+  function showToast(msg, ms) {
+    var orig = I18N[lang].toastCopied;
+    toastEl.textContent = msg || orig;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, ms || 1800);
+  }
+
+  /* ---------- Copy helpers ---------- */
   function fallbackCopy(text, done) {
     var ta = document.createElement("textarea");
     ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
@@ -952,9 +1105,60 @@ button { font-family: inherit; cursor: pointer; }
     try { document.execCommand("copy"); } catch (e) {}
     document.body.removeChild(ta); done();
   }
+  function copyText(text, msg) {
+    var done = function () { showToast(msg, 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text, done); });
+    } else { fallbackCopy(text, done); }
+  }
+  document.getElementById("copyCurl").addEventListener("click", function () {
+    copyText(this.getAttribute("data-text"));
+  });
+  document.getElementById("copyPrompt").addEventListener("click", function () {
+    copyText(PROMPTS[lang], I18N[lang].toastPrompt);
+  });
 
-  /* ---------- Motion (GSAP + Lenis, reduced-motion aware) ---------- */
+  /* ---------- Hero: cursor parallax ---------- */
+  var orbit = document.getElementById("heroOrbit");
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!reduced) {
+    var tx = 0, ty = 0, cx = 0, cy = 0;
+    document.addEventListener("mousemove", function (e) {
+      tx = (e.clientX / window.innerWidth - 0.5) * 22;
+      ty = (e.clientY / window.innerHeight - 0.5) * 16;
+    }, { passive: true });
+    (function parallax() {
+      cx += (tx - cx) * 0.06; cy += (ty - cy) * 0.06;
+      orbit.style.transform = "translateX(-50%) translate(" + cx.toFixed(2) + "px," + cy.toFixed(2) + "px)";
+      requestAnimationFrame(parallax);
+    })();
+  }
+
+  /* ---------- Hero: count-up numbers ---------- */
+  function countUp(el) {
+    var target = parseInt(el.getAttribute("data-count"), 10);
+    if (reduced || target === 0) return;
+    var start = null, dur = 1200;
+    function step(ts) {
+      if (!start) start = ts;
+      var p = Math.min((ts - start) / dur, 1);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(eased * target);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var counters = document.querySelectorAll("[data-count]");
+  if ("IntersectionObserver" in window) {
+    var cObs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { countUp(en.target); cObs.unobserve(en.target); }
+      });
+    }, { threshold: 0.4 });
+    counters.forEach(function (c) { cObs.observe(c); });
+  }
+
+  /* ---------- Motion (GSAP + Lenis) ---------- */
   function initMotion() {
     if (reduced || typeof gsap === "undefined") return;
     if (typeof Lenis !== "undefined") {
@@ -965,7 +1169,6 @@ button { font-family: inherit; cursor: pointer; }
     if (typeof ScrollTrigger === "undefined") return;
     gsap.registerPlugin(ScrollTrigger);
 
-    /* Hero: orbit lines draw-in, whole-group entrance */
     var lines = document.querySelectorAll(".orbit-lines line");
     lines.forEach(function (l) {
       var len = Math.hypot(600 - parseFloat(l.getAttribute("x2")), 600 - parseFloat(l.getAttribute("y2")));
@@ -980,7 +1183,6 @@ button { font-family: inherit; cursor: pointer; }
       .fromTo(".hero-meta", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 0.66)
       .to(lines, { strokeDashoffset: 0, duration: 1.4, stagger: 0.07, ease: "power2.inOut" }, 0.3);
 
-    /* Sections: whole-card reveal */
     gsap.utils.toArray(".reveal").forEach(function (el) {
       gsap.to(el, {
         opacity: 1, y: 0, duration: 0.9, ease: "power3.out",
@@ -988,24 +1190,25 @@ button { font-family: inherit; cursor: pointer; }
       });
     });
 
-    /* Source diagram: ripple — center pulse, then satellites light up (whole-card moves) */
+    /* Source diagram: entrance then auto-ripple once */
     var sats = document.querySelectorAll("#sourceDiagram .sat");
-    var srcLines = document.querySelectorAll("#sourceDiagram .source-lines line");
     var srcTl = gsap.timeline({
       scrollTrigger: { trigger: "#sourceDiagram", start: "top 72%" }
     });
     srcTl.fromTo(".source-center", { scale: 0.82, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.55, ease: "back.out(1.6)" })
       .fromTo(sats, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 }, "-=0.15")
       .add(function () {
-        sats.forEach(function (s, i) {
-          setTimeout(function () { s.classList.add("lit"); }, i * 90);
-        });
-        srcLines.forEach(function (l, i) {
-          setTimeout(function () { l.classList.add("lit"); }, i * 90);
+        satEls.forEach(function (s, i) {
+          setTimeout(function () {
+            s.classList.add("lit");
+            if (lineEls[i]) lineEls[i].classList.add("lit");
+            setTimeout(function () {
+              if (!s.matches(":hover")) { s.classList.remove("lit"); if (lineEls[i]) lineEls[i].classList.remove("lit"); }
+            }, 900);
+          }, i * 110);
         });
       });
 
-    /* Tools: cell stagger */
     gsap.to(".tool-cell", {
       opacity: 1, y: 0, duration: 0.5, ease: "power2.out", stagger: 0.018,
       scrollTrigger: { trigger: "#toolsGrid", start: "top 82%" }
@@ -1015,6 +1218,7 @@ button { font-family: inherit; cursor: pointer; }
   document.addEventListener("DOMContentLoaded", function () {
     applyTheme(theme);
     applyLang(lang);
+    runCli("list", true);
     var cds = document.querySelectorAll('script[src*="cdnjs"], script[src*="jsdelivr"]');
     var pending = cds.length, fired = false;
     function ready() { if (!fired && pending <= 0) { fired = true; initMotion(); } }
@@ -1024,9 +1228,8 @@ button { font-family: inherit; cursor: pointer; }
     });
     setTimeout(function () {
       if (!fired) {
-        var r = document.querySelectorAll(".reveal");
         if (typeof gsap === "undefined") {
-          r.forEach(function (el) { el.style.opacity = 1; el.style.transform = "none"; });
+          document.querySelectorAll(".reveal").forEach(function (el) { el.style.opacity = 1; el.style.transform = "none"; });
           document.querySelectorAll(".tool-cell").forEach(function (c) { c.style.opacity = 1; });
           document.querySelectorAll(".orbit-lines line").forEach(function (l) { l.style.strokeDashoffset = 0; });
         }
