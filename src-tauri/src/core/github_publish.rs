@@ -107,6 +107,40 @@ fn git(args: &[&str], dir: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+/// Resolve the GitHub token used for API calls and publishing.
+///
+/// Preference order:
+///   1. An explicit token passed by the caller (highest priority).
+///   2. The token stored in SkillDo's own settings (`github_token`).
+///   3. The `gh` CLI login (`gh auth token`) — SkillDo reuses the user's
+///      existing authentication instead of requiring a separately managed token.
+fn resolve_github_token(store: &SkillStore, explicit: Option<&str>) -> Result<String> {
+    if let Some(t) = explicit {
+        let t = t.trim();
+        if !t.is_empty() {
+            return Ok(t.to_string());
+        }
+    }
+    if let Some(stored) = store.get_setting("github_token")? {
+        let stored = stored.trim();
+        if !stored.is_empty() {
+            return Ok(stored.to_string());
+        }
+    }
+    if let Ok(output) = Command::new("gh").args(["auth", "token"]).output() {
+        if output.status.success() {
+            let gh_token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !gh_token.is_empty() {
+                return Ok(gh_token);
+            }
+        }
+    }
+    bail!(
+        "GitHub token not found. Set one with `skilldo github token-set <token>` \
+         or authenticate the `gh` CLI with `gh auth login`"
+    );
+}
+
 fn is_git_repo(dir: &Path) -> bool {
     dir.join(".git").exists()
 }
@@ -205,10 +239,7 @@ pub fn repoify_skill(
         bail!("central path not found: {:?}", central_path);
     }
 
-    let token = store.get_setting("github_token")?.unwrap_or_default();
-    if token.is_empty() {
-        bail!("GitHub token is not configured — run `skilldo github token-set <token>` first");
-    }
+    let token = resolve_github_token(store, None)?;
 
     let login = authenticated_login(&token)?;
     let effective_owner = if owner.unwrap_or("").is_empty() {
@@ -228,13 +259,16 @@ pub fn repoify_skill(
 
     // 2. create the remote repository
     let clone_url = create_repo(&token, &effective_owner, &name, private)?;
+    // Embed the resolved token so `git push` can authenticate over HTTPS without
+    // relying on a system credential helper (SkillDo supplies auth itself).
+    let auth_url = clone_url.replacen("https://", &format!("https://{}@", token.trim()), 1);
 
     // 3. configure the `origin` remote
     let remotes = git(&["remote"], central_path).unwrap_or_default();
     if remotes.split_whitespace().any(|r| r == "origin") {
-        git(&["remote", "set-url", "origin", &clone_url], central_path)?;
+        git(&["remote", "set-url", "origin", &auth_url], central_path)?;
     } else {
-        git(&["remote", "add", "origin", &clone_url], central_path)?;
+        git(&["remote", "add", "origin", &auth_url], central_path)?;
     }
 
     // 4. stage + commit (if there is anything to commit)
@@ -274,6 +308,10 @@ pub fn repoify_skill(
         central_path,
     )
     .context("push to origin failed")?;
+
+    // Drop the embedded token from the stored remote URL; later pushes reuse the
+    // resolved token via the same path instead of persisting it on disk.
+    git(&["remote", "set-url", "origin", &clone_url], central_path)?;
 
     // 6. record the origin + flip the skill's source type so future
     //    `publish_managed_skill` calls take the git-update path.
