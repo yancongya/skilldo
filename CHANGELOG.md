@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-01
+
 ### Fixed
 - **Windows updater 签名**：Windows NSIS 构建不再使用会禁用 updater 签名生成的 `--no-sign` 参数，确保 Release 包含可验证的 `.exe.sig`。
 
