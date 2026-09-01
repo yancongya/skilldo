@@ -2867,8 +2867,7 @@ pub struct PushResult {
     pub message: String,
 }
 
-/// CLI variant: commit and push changes in a skill's central repo.
-/// Only works for skills whose central_path contains a .git directory.
+/// CLI variant: commit and push changes from a skill's central copy.
 pub fn push_skill_cli(
     store: &SkillStore,
     skill_id: &str,
@@ -2882,16 +2881,61 @@ pub fn push_skill_cli(
     if !central_path.exists() {
         anyhow::bail!("central path not found: {:?}", central_path);
     }
-    if !central_path.join(".git").exists() {
-        anyhow::bail!(
-            "skill '{}' central path is not a git repository: {:?}",
-            record.name,
-            central_path
-        );
-    }
-
     let default_msg = format!("skilldo: update {}", record.name);
     let msg = message.unwrap_or(&default_msg);
+
+    if !central_path.join(".git").exists() {
+        if record.source_type != "git" {
+            anyhow::bail!("skill '{}' is not managed from Git", record.name);
+        }
+        let repo_url = record
+            .source_ref
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("missing source_ref for git skill"))?;
+        let parsed = parse_github_url(repo_url);
+        let resolved_subpath = record
+            .source_subpath
+            .as_deref()
+            .or(parsed.subpath.as_deref());
+        let (repo_dir, _) = if let Some(subpath) = resolved_subpath {
+            clone_to_cache_subpath_cli(
+                store,
+                &parsed.clone_url,
+                parsed.branch.as_deref(),
+                subpath,
+                None,
+            )?
+        } else {
+            clone_to_cache_cli(store, &parsed.clone_url, parsed.branch.as_deref(), None)?
+        };
+        let target_path = resolved_subpath
+            .map(|subpath| repo_dir.join(subpath))
+            .unwrap_or_else(|| repo_dir.clone());
+        replace_dir_contents_preserving_git(&central_path, &target_path)
+            .with_context(|| format!("copy {:?} -> {:?}", central_path, target_path))?;
+        let cache_meta = repo_dir.join(".skilldo-cache.json");
+        if cache_meta.exists() {
+            std::fs::remove_file(&cache_meta)
+                .with_context(|| format!("remove cache metadata {:?}", cache_meta))?;
+        }
+
+        let publish = commit_all_and_push(&repo_dir, parsed.branch.as_deref(), msg)?;
+        if let Some(commit) = publish.commit.as_ref() {
+            let mut patched = record.clone();
+            patched.source_revision = Some(commit.clone());
+            patched.content_hash = compute_content_hash(&central_path);
+            patched.updated_at = now_ms();
+            store.upsert_skill(&patched)?;
+        }
+        return Ok(PushResult {
+            committed: publish.commit.is_some(),
+            pushed: publish.pushed,
+            message: publish
+                .commit
+                .map(|commit| format!("Pushed commit {commit}"))
+                .unwrap_or_else(|| "No changes to commit".to_string()),
+        });
+    }
 
     // Stage all changes.
     let status = Command::new("git")

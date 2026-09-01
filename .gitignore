@@ -32,10 +32,10 @@ plans/
 bun.lock
 
 # Build outputs
-out/
+output/
 
 # Tauri build intermediates
-src-tauri/target/release/bundle/
+src-tauri/target/
 
 # OMO tool remnants
 .omo/

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0d1117"/>
+  <rect x="12" y="12" width="936" height="516" fill="none" stroke="#30363d" stroke-width="2" rx="12"/>
+  <text x="480" y="262" fill="#58a6ff" font-family="-apple-system,sans-serif" font-size="34" font-weight="600" text-anchor="middle">Skill Detail 截图占位</text>
+  <text x="480" y="304" fill="#8b949e" font-family="-apple-system,sans-serif" font-size="18" text-anchor="middle">替换为 docs/assets/skill-detail.svg</text>
+</svg>

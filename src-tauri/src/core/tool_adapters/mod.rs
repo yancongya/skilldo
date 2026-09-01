@@ -48,6 +48,7 @@ pub enum ToolId {
     Windsurf,
     Moltbot,
     HermesAgent,
+    WorkBuddy,
     Custom,
 }
 
@@ -98,6 +99,7 @@ impl ToolId {
             ToolId::Windsurf => "windsurf",
             ToolId::Moltbot => "moltbot",
             ToolId::HermesAgent => "hermes_agent",
+            ToolId::WorkBuddy => "workbuddy",
             ToolId::Custom => "custom",
         }
     }
@@ -430,6 +432,13 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
             relative_skills_dir: ".hermes/skills",
             relative_detect_dir: ".hermes",
         },
+        ToolAdapter {
+            id: ToolId::WorkBuddy,
+            display_name: "WorkBuddy",
+            // WorkBuddy global skills directory: ~/.workbuddy/skills
+            relative_skills_dir: ".workbuddy/skills",
+            relative_detect_dir: ".workbuddy",
+        },
     ]
 }
 
@@ -513,6 +522,7 @@ pub fn project_relative_skills_dir(adapter: &ToolAdapter) -> &'static str {
         | ToolId::Clawdbot
         | ToolId::Moltbot
         | ToolId::HermesAgent => adapter.relative_skills_dir,
+        ToolId::WorkBuddy => ".workbuddy/skills",
         _ => adapter.relative_skills_dir,
     }
 }

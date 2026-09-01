@@ -58,6 +58,32 @@ fn commit_all(repo: &git2::Repository, msg: &str) -> git2::Oid {
 }
 
 #[test]
+fn replacing_skill_subpath_preserves_repository_siblings() {
+    let source = tempfile::tempdir().unwrap();
+    fs::write(source.path().join("SKILL.md"), "updated skill").unwrap();
+
+    let repo = tempfile::tempdir().unwrap();
+    fs::create_dir(repo.path().join(".git")).unwrap();
+    fs::create_dir_all(repo.path().join("skills/example")).unwrap();
+    fs::write(repo.path().join("skills/example/old.txt"), "old").unwrap();
+    fs::write(repo.path().join("README.md"), "keep me").unwrap();
+
+    super::replace_dir_contents_preserving_git(source.path(), &repo.path().join("skills/example"))
+        .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("skills/example/SKILL.md")).unwrap(),
+        "updated skill"
+    );
+    assert!(!repo.path().join("skills/example/old.txt").exists());
+    assert_eq!(
+        fs::read_to_string(repo.path().join("README.md")).unwrap(),
+        "keep me"
+    );
+    assert!(repo.path().join(".git").exists());
+}
+
+#[test]
 fn parses_github_urls() {
     let p = super::parse_github_url("https://github.com/owner/repo");
     assert_eq!(p.clone_url, "https://github.com/owner/repo.git");

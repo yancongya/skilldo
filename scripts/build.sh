@@ -16,6 +16,19 @@ cd "$PROJECT_ROOT"
 
 TARGET="${1:-dmg}"
 TAURI_FLAG=""
+OUT_DIR="$PROJECT_ROOT/output"
+
+cleanup_build_artifacts() {
+  echo ""
+  echo "▶ Cleaning build intermediates..."
+  rm -rf "$PROJECT_ROOT/dist" "$PROJECT_ROOT/src-tauri/target"
+  echo "✓ Build intermediates cleaned"
+}
+
+trap cleanup_build_artifacts EXIT
+
+rm -rf "$OUT_DIR"
+mkdir -p "$OUT_DIR"
 
 echo "========================================="
 echo " SkillDo Build — target: $TARGET"
@@ -53,11 +66,13 @@ case "$TARGET" in
     echo "▶ Building CLI binary only (no desktop app)..."
     cd src-tauri
     cargo build --release --bin skilldo
+    cp target/release/skilldo "$OUT_DIR/skilldo"
+    chmod +x "$OUT_DIR/skilldo"
     echo ""
-    echo "✓ CLI binary: src-tauri/target/release/skilldo"
+    echo "✓ CLI binary: output/skilldo"
     echo ""
     echo "安装到 PATH:"
-    echo "  cp src-tauri/target/release/skilldo ~/.local/bin/skilldo"
+    echo "  cp output/skilldo ~/.local/bin/skilldo"
     exit 0
     ;;
   release)
@@ -66,6 +81,8 @@ case "$TARGET" in
     cargo build --release --bin skilldo
     mkdir -p ~/.local/bin
     cp target/release/skilldo ~/.local/bin/skilldo
+    cp target/release/skilldo "$OUT_DIR/skilldo"
+    chmod +x "$OUT_DIR/skilldo"
     chmod +x ~/.local/bin/skilldo
     echo ""
     echo "✓ skilldo installed to ~/.local/bin/skilldo"
@@ -81,30 +98,27 @@ esac
 
 npx tauri build $TAURI_FLAG
 
-# 收集最终产物到 out/
-OUT_DIR="$PROJECT_ROOT/out"
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+# 收集最终产物到 output/
 
 BUNDLE_DIR="src-tauri/target/release/bundle"
 
 # 复制 DMG
 for f in "$BUNDLE_DIR/dmg/"*.dmg; do
-  [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ out/$(basename "$f")"
+  [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ output/$(basename "$f")"
 done
 
 # 复制 .app
 for d in "$BUNDLE_DIR/macos/"*.app; do
-  [ -d "$d" ] && cp -R "$d" "$OUT_DIR/" && echo "→ out/$(basename "$d")"
+  [ -d "$d" ] && cp -R "$d" "$OUT_DIR/" && echo "→ output/$(basename "$d")"
 done
 
 # 复制 Windows/Linux 产物
 for f in "$BUNDLE_DIR/nsis/"*.exe "$BUNDLE_DIR/msi/"*.msi "$BUNDLE_DIR/deb/"*.deb "$BUNDLE_DIR/appimage/"*.AppImage; do
-  [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ out/$(basename "$f")"
+  [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ output/$(basename "$f")"
 done
 
 # 复制 CLI 二进制
-cp src-tauri/target/release/skilldo "$OUT_DIR/" && echo "→ out/skilldo"
+cp src-tauri/target/release/skilldo "$OUT_DIR/" && echo "→ output/skilldo"
 
 # 输出结果
 echo ""
@@ -112,14 +126,5 @@ echo "========================================="
 echo " ✓ 构建完成"
 echo "========================================="
 echo ""
-echo "所有产物已复制到 out/:"
+echo "所有产物已复制到 output/:"
 ls -lh "$OUT_DIR/"
-
-# 清理构建衍生品（保留 src-tauri/target/ 缓存以加速下次构建）
-echo ""
-echo "▶ Cleaning build intermediates..."
-rm -rf "$BUNDLE_DIR/dmg"/*.dmg "$BUNDLE_DIR/dmg"/*.sh \
-       "$BUNDLE_DIR/dmg"/*.icns 2>/dev/null || true
-rm -rf "$BUNDLE_DIR/nsis" "$BUNDLE_DIR/msi" "$BUNDLE_DIR/deb" "$BUNDLE_DIR/appimage" 2>/dev/null || true
-rm -rf "$BUNDLE_DIR/macos" 2>/dev/null || true
-echo "✓ Intermediate bundles cleaned"

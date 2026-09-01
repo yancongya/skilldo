@@ -1,10 +1,82 @@
-# SkillDo
+<a id="readme-top"></a>
 
-[English](README.md) | [简体中文](docs/README.zh.md)
+<p align="center">
+  <a href="https://github.com/yancongya/skilldo">
+    <img src="docs/assets/logo.svg" alt="SkillDo Logo" width="96" height="96">
+  </a>
+</p>
 
-> **Install once, sync everywhere.** The agent-native skill manager for 47+ AI tools.
+<h1 align="center">SkillDo</h1>
 
-SkillDo manages AI Agent Skills from a single source of truth and syncs them to all your coding tools. Use the **CLI** for automation, the **desktop app** for visual management, or let **agents** drive it programmatically via structured JSON output.
+<p align="center">
+  <a href="https://github.com/yancongya/skilldo/actions"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/yancongya/skilldo/ci.yml?branch=main"></a>
+  <a href="https://github.com/yancongya/skilldo/releases"><img alt="Version" src="https://img.shields.io/github/v/release/yancongya/skilldo"></a>
+  <a href="https://github.com/yancongya/skilldo/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/yancongya/skilldo"></a>
+  <a href="https://github.com/yancongya/skilldo"><img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-blue"></a>
+  <a href="https://github.com/yancongya/skilldo/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/yancongya/skilldo?style=social"></a>
+</p>
+
+<p align="center">
+  <b>Install once, sync everywhere.</b> The agent-native skill manager for 45 AI coding tools.
+  <br />
+  <a href="docs/README.zh.md"><strong>简体中文</strong></a>
+</p>
+
+> [!NOTE]
+> This README and the Chinese version (`docs/README.zh.md`) are kept structurally mirrored — same section outline, same tool count (45), same terminology. Use `readme-writer`'s `check_bilingual_headings.py` to verify.
+
+---
+
+## Table of Contents
+
+<details>
+  <summary>Click to expand</summary>
+
+- [About the Project](#about-the-project)
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [CLI Commands](#cli-commands)
+- [Architecture](#architecture)
+- [Cross-device Profiles](#cross-device-profiles)
+- [Supported Tools](#supported-tools)
+- [Build Scripts](#build-scripts)
+- [Tech Stack](#tech-stack)
+- [Roadmap](#roadmap)
+- [FAQ](#faq)
+- [Supported Platforms](#supported-platforms)
+- [Contributing](#contributing)
+- [License](#license)
+
+</details>
+
+---
+
+## About the Project
+
+SkillDo manages AI Agent Skills from a single source of truth (the Central Repo) and syncs them to all your coding tools. Use the **CLI** for automation, the **desktop app** for visual management, or let **agents** drive it programmatically via structured JSON output.
+
+**Why SkillDo:**
+- *One source of truth* — install a skill once in the Central Repo, sync everywhere (symlink → junction → copy triple fallback).
+- *45 AI tools, one workflow* — Claude Code, Codex, Cursor, Windsurf, WorkBuddy, and 40 more, with per-tool global/project-level targets.
+- *Agent-native* — every command speaks `--json`; agents discover `skilldo` via `SKILL.md` in their skill directories.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Features
+
+- **Explore**: browse curated skills and search online, install and sync to all detected tools in one click.
+- **Tags**: create, rename, and delete custom tags on a dedicated page; jump to the matching skill list.
+- **Tag filtering**: tag skills and filter My Skills by tag, including `no-tag` skills.
+- **Global / project-level sync**: sync to the global directory (all projects) or scope to a single project.
+- **Sync scope control**: switch a skill between global and project scope, manage project directories, filter by scope.
+- **Skill detail**: click a skill to view full file content with tree browser, Markdown rendering, and 40+ language syntax highlighting.
+- **Unified view**: see total Hub-hosted skills, scope badges, and per-tool生效 status.
+- **Migration takeover**: scan tools' existing skills, import them into the Central Repo, and sync in one click.
+- **Multi-source import**: local directory / Git URL (with searchable multi-skill candidate selection and `.claude/skills/` support).
+- **Update**: pull from source into the Central Repo and back-fill copy-mode targets.
+- **New-tool detection**: prompt to sync all managed skills when a new tool is detected.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Quick Start
 
@@ -71,16 +143,19 @@ npm run dev                # Web preview only (no backend)
 ./scripts/build.sh         # Build for current platform
 ```
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## CLI Commands
 
-The desktop buttons and `scripts/skilldo-pull|publish` (`.sh`/`.bat`) call the same shared pipeline. Publish refreshes sources, pushes eligible owned repositories, records exact revisions, and then uploads both the portable Profile and lossless database backup. Local-only Skills are reported but cannot be reconstructed on another computer.
+All commands support `--json` for agent-friendly structured output and `--yes` to skip confirmations. The desktop buttons and `scripts/skilldo-pull|publish` (`.sh`/`.bat`) call the same shared pipeline.
 
-When devices have different repository-backed or package-backed Skill lists, synchronization keeps their union. Concurrent tags and global tool targets for the same Skill are also combined. Project-owned Skills remain files in their parent project repository; the Profile stores only the repository URL, branch/revision, and repository-relative Skill paths. It never treats another computer's absolute project path as portable data. Source/revision disagreements and delete-versus-edit cases remain explicit conflicts so one device cannot silently replace or remove another device's state.
+<details>
+  <summary>Show all commands</summary>
 
 | Command | Description |
 |---------|-------------|
 | `skilldo list [--json]` | List managed skills and sync targets |
-| `skilldo status [--json]` | Show which of 47+ AI tools are installed |
+| `skilldo status [--json]` | Show which of 45 AI tools are installed |
 | `skilldo device status\|pull\|publish [--yes] [--json]` | Inspect, retrieve, or publish complete cross-device state |
 | `skilldo author status\|detect\|set [--json]` | Detect or configure the current environment author without exposing the `gh` token |
 | `skilldo project skills [--path <project>] [--json]` | Discover project-local Skills with parent Git repository, revision, and repository-relative paths |
@@ -106,7 +181,9 @@ When devices have different repository-backed or package-backed Skill lists, syn
 | `skilldo profile import <path> [--strategy abort\|local\|remote] [--json]` | Merge an offline Profile |
 | `skilldo profile resolve --strategy local\|remote [--json]` | Resolve current WebDAV conflicts and synchronize |
 
-All commands support `--json` for agent-friendly structured output and `--yes` to skip confirmations.
+</details>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Architecture
 
@@ -132,7 +209,9 @@ All commands support `--json` for agent-friendly structured output and `--yes` t
 - CLI and GUI state stay in sync automatically
 - Agents discover `skilldo` via `SKILL.md` in their skill directories
 
-## Cross-device profiles
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Cross-device Profiles
 
 On every new device, install either the desktop app or standalone CLI, then configure the same WebDAV endpoint. The NAS filesystem path is not entered on clients; use its HTTPS WebDAV URL and remote directory.
 
@@ -160,9 +239,19 @@ If an older import was incorrectly recorded as local, run `skilldo repair source
 
 The separate `skilldo-backup.json` v2 format embeds a consistent SQLite image as Base64 with a SHA-256 checksum. It preserves every database table, ID, timestamp, setting, tag, origin record, target, discovery row, index, and sequence. At the user's request it also includes GitHub and WebDAV credentials, so the backup location must be private. Repository working trees and local-only skill files are filesystem content, not database data; use the Profile/Git flow to reconstruct repository skills on another computer.
 
-## Supported Tools (47+)
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Claude Code, Codex, Cursor, OpenCode, Cline, Augment, OpenClaw, Gemini CLI, Kiro CLI, iFlow, Qoder, Qwen Code, Antigravity, Pi, Amp, Continue, Windsurf, GitHub Copilot, and 29 more.
+## Supported Tools
+
+SkillDo supports **45** AI coding tools. Project-level skill directories are relative to the selected project root. Tools marked "not supported" have no confirmed project-level skill directory and only support global sync.
+
+The full table with per-tool global/project-level paths and detection rules is maintained in the [Chinese README](docs/README.zh.md#支持的-ai-编程工具) and in [`src-tauri/src/core/tool_adapters/mod.rs`](src-tauri/src/core/tool_adapters/mod.rs).
+
+Representative tools: WorkBuddy, Claude Code, Codex, Cursor, OpenCode, Cline, Augment, OpenClaw, Gemini CLI, Kiro CLI, iFlow, Qoder, Qwen Code, Antigravity, Pi, Amp, Continue, Windsurf, GitHub Copilot, Trae, Roo Code, and more.
+
+> Tool count is generated from source via `readme-writer`'s `gen_tool_table.py` — keep it in sync, do not hand-edit.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Build Scripts
 
@@ -179,6 +268,8 @@ Build artifacts are collected to `out/` with intermediates cleaned up.
 
 Pushes to `main` are released automatically after CI succeeds when changes affect application or CLI code. The automation increments the patch version, promotes the Unreleased changelog into a Chinese version section, creates the tag, and dispatches the existing signed macOS/Windows release workflow. Documentation-only changes, the generated featured catalog, commits containing `[skip release]`, and failed CI runs do not publish a release.
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## Tech Stack
 
 - **Frontend**: React 19 + TypeScript + Vite 7 + Tailwind CSS 4
@@ -186,6 +277,53 @@ Pushes to `main` are released automatically after CI succeeds when changes affec
 - **CLI**: clap + same core engine as the desktop app
 - **Sync**: Symlink → junction (Windows) → copy (triple fallback)
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Roadmap
+
+- [x] Desktop app (macOS + Windows) with visual skill management
+- [x] Standalone CLI with structured `--json` output
+- [x] Cross-device profiles via WebDAV
+- [ ] First-class Linux release matrix (deb + AppImage in release pipeline)
+- [ ] More AI tools and refined project-level path detection
+- [ ] Richer Explore marketplace and curated catalogs
+
+See [open issues](https://github.com/yancongya/skilldo/issues) for the full list.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## FAQ
+
+- **Where do skills live?** The Central Repo defaults to `~/.skillshub` and is configurable in Settings.
+- **What are tags for?** Tags only help you find and organize skills; they do not change a skill's sync directory or which tools can use it.
+- **What is project-level sync?** A shared skill is still stored once in the Central Repo; the project directory is just a sync target. Project-owned skills should be committed directly to the parent project's Git repo. The cross-device Profile stores only the repo URL, branch/revision, and repo-relative paths — never another computer's absolute project path.
+- **Why is Cursor forced to Copy?** Cursor does not currently support symlink/junction skill directories, so syncing to Cursor always uses directory copy.
+- **Why does it sometimes fall back to Copy?** The default is symlink/junction, but on some systems (especially Windows) link creation may fail due to permissions/policy, and SkillDo automatically falls back to directory copy.
+- **What does `TARGET_EXISTS|...` mean?** The target directory already exists and is not overwritten by default (for safety). Clean the target first, or retry through the explicit takeover/overwrite flow.
+- **macOS Gatekeeper note** (unsigned/unnotarized builds may behave differently across macOS versions): if you see "damaged / cannot verify developer", run `xattr -cr "/Applications/SkillDo.app"` ([ref](https://v2.tauri.app/distribute/#macos)).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Supported Platforms
+
+- **macOS** — verified
+- **Windows** — expected per architecture, not locally verified
+- **Linux** — expected per architecture, not locally verified (build from source)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please run `npm run check` before submitting. Code changes affecting app/CLI trigger an automatic release after CI; add `[skip release]` to the commit message to suppress it.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 ## License
 
-MIT
+Distributed under the [MIT License](LICENSE).
