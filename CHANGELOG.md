@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-01
+
+### 更新
+- fix(publish): 复用 gh 登录态获取 token，推送后清除 remote 明文 token
+- feat(ui): default new publishes to private + show visibility in plan
+- feat(ui): add 'Publish to GitHub' for local (un-repoified) skills
+- feat: add WorkBuddy adapter and refresh bilingual README
+- feat(cli): add `skilldo publish` to repo-ify and push local skills
+
 ## [0.7.3] - 2026-09-01
 
 ### Fixed
