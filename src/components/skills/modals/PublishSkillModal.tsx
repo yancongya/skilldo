@@ -36,7 +36,7 @@ const PublishSkillModal = ({
 }: PublishSkillModalProps) => {
   const [repoName, setRepoName] = useState('')
   const [owner, setOwner] = useState('')
-  const [privateRepo, setPrivateRepo] = useState(false)
+  const [privateRepo, setPrivateRepo] = useState(true)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +46,7 @@ const PublishSkillModal = ({
     if (!skill) return
     setRepoName(slugify(skill.name))
     setOwner('')
-    setPrivateRepo(false)
+    setPrivateRepo(true)
     setMessage('')
     setError(null)
     setBusy(false)
@@ -96,6 +96,9 @@ const PublishSkillModal = ({
             <code>
               github.com/{ownerOrYou}/{repoOrSlug}
             </code>
+            <span className={`repo-visibility ${privateRepo ? 'is-private' : 'is-public'}`}>
+              {privateRepo ? t('repoPrivate') : t('repoPublic')}
+            </span>
           </div>
 
           <div className="form-group">

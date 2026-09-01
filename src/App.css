@@ -1954,6 +1954,26 @@
   margin: 0 32px;
 }
 
+.repo-visibility {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.repo-visibility.is-private {
+  background: rgba(244, 63, 94, 0.16);
+  color: #fb7185;
+}
+
+.repo-visibility.is-public {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+}
+
 .alert-title {
   font-weight: 700;
   color: var(--status-error);
