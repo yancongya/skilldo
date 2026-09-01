@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Copy, RefreshCw, Tag, Trash2 } from 'lucide-react'
+import { Copy, RefreshCw, Tag, Trash2, UploadCloud } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill, UpdateCheckResultDto } from './types'
@@ -23,6 +23,7 @@ type SkillCardCompactProps = {
   onOpenScope: (skill: ManagedSkill) => void
   onOpenDetail: (skill: ManagedSkill) => void
   onEditTags: (skill: ManagedSkill) => void
+  onPublish?: (skill: ManagedSkill) => void
   getSkillScope: (skill: ManagedSkill) => 'global' | 'project'
   getSkillProjects: (skill: ManagedSkill) => string[]
   t: TFunction
@@ -40,6 +41,7 @@ const SkillCardCompact = ({
   onOpenScope,
   onOpenDetail,
   onEditTags,
+  onPublish,
   getSkillScope,
   getSkillProjects,
   t,
@@ -101,6 +103,18 @@ const SkillCardCompact = ({
         </div>
       </button>
       <div className="skill-card-compact-actions">
+        {!syncable && onPublish ? (
+          <button
+            className="card-btn publish-action"
+            type="button"
+            onClick={() => onPublish(skill)}
+            disabled={loading}
+            aria-label={t('publishToGithub')}
+            title={t('publishToGithub')}
+          >
+            <UploadCloud size={13} />
+          </button>
+        ) : null}
         <button
           className="card-btn"
           type="button"

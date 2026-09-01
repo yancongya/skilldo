@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { Copy, RefreshCw, Tag, Trash2 } from 'lucide-react'
+import { Copy, RefreshCw, Tag, Trash2, UploadCloud } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { ManagedSkill, ToolOption, UpdateCheckResultDto } from './types'
@@ -26,6 +26,7 @@ type SkillCardProps = {
   onOpenScope: (skill: ManagedSkill) => void
   onOpenDetail: (skill: ManagedSkill) => void
   onEditTags: (skill: ManagedSkill) => void
+  onPublish?: (skill: ManagedSkill) => void
   getSkillScope: (skill: ManagedSkill) => 'global' | 'project'
   getSkillProjects: (skill: ManagedSkill) => string[]
   t: TFunction
@@ -48,6 +49,7 @@ const SkillCard = ({
   onOpenScope,
   onOpenDetail,
   onEditTags,
+  onPublish,
   getSkillScope,
   getSkillProjects,
   t,
@@ -250,6 +252,18 @@ const SkillCard = ({
         </div>
       </div>
       <div className="skill-actions-col">
+        {!syncable && onPublish ? (
+          <button
+            className="card-btn publish-action"
+            type="button"
+            onClick={() => onPublish(skill)}
+            disabled={loading}
+            aria-label={t('publishToGithub')}
+            title={t('publishToGithub')}
+          >
+            <UploadCloud size={16} />
+          </button>
+        ) : null}
         <button
           className={`card-btn tag-action${skill.tags.length > 0 ? ' has-tags' : ''}`}
           type="button"

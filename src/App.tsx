@@ -22,6 +22,7 @@ import NewToolsModal from './components/skills/modals/NewToolsModal'
 import ScopeSyncModal from './components/skills/modals/ScopeSyncModal'
 import SharedDirModal from './components/skills/modals/SharedDirModal'
 import NamePromptModal from './components/skills/modals/NamePromptModal'
+import PublishSkillModal, { type PublishParams } from './components/skills/modals/PublishSkillModal'
 import SettingsPage from './components/skills/SettingsPage'
 import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
@@ -122,6 +123,8 @@ function App() {
   const [toolStatus, setToolStatus] = useState<ToolStatusDto | null>(null)
   const [showNewToolsModal, setShowNewToolsModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showPublishSkillModal, setShowPublishSkillModal] = useState(false)
+  const [publishSkillTarget, setPublishSkillTarget] = useState<ManagedSkill | null>(null)
   const [showImportModal, setShowImportModal] = useState(false)
   const [pendingSharedToggle, setPendingSharedToggle] = useState<{
     skill: ManagedSkill
@@ -3091,6 +3094,48 @@ function App() {
     [invokeTauri, loadManagedSkills, t],
   )
 
+  const handleOpenPublish = useCallback((skill: ManagedSkill) => {
+    setPublishSkillTarget(skill)
+    setShowPublishSkillModal(true)
+  }, [])
+
+  const handleRepoify = useCallback(
+    async (params: PublishParams) => {
+      if (!publishSkillTarget) return
+      const skill = publishSkillTarget
+      setLoading(true)
+      setLoadingStartAt(Date.now())
+      setError(null)
+      try {
+        setActionMessage(t('actions.publishing', { name: skill.name }))
+        const result = await invokeTauri<{
+          skillId: string
+          name: string
+          repoUrl: string
+          commit?: string | null
+          pushed: boolean
+        }>('repoify_skill', {
+          skillId: skill.id,
+          repoName: params.repoName ?? null,
+          owner: params.owner ?? null,
+          private: params.privateRepo,
+          message: params.message ?? null,
+        })
+        setSuccessToastMessage(t('publishSuccess', { name: skill.name, url: result.repoUrl }))
+        setActionMessage(null)
+        await loadManagedSkills()
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err)
+        setError(raw)
+        throw err
+      } finally {
+        setLoading(false)
+        setLoadingStartAt(null)
+      }
+    },
+    [invokeTauri, loadManagedSkills, publishSkillTarget, t],
+  )
+
   const handleUpdateSkill = useCallback(
     (skill: ManagedSkill) => {
       void handleUpdateManaged(skill)
@@ -3253,6 +3298,7 @@ function App() {
               onOpenScope={handleOpenScope}
               onOpenDetail={handleOpenDetail}
               onEditTags={handleOpenEditTags}
+              onPublishSkill={handleOpenPublish}
               getSkillScope={getSkillScope}
               getSkillProjects={getSkillProjects}
               t={t}
@@ -3373,6 +3419,18 @@ function App() {
               ? handleCreateGit
               : handleCreatePackage
         }
+        t={t}
+      />
+
+      <PublishSkillModal
+        open={showPublishSkillModal}
+        skill={publishSkillTarget}
+        defaultOwner=""
+        onClose={() => {
+          setShowPublishSkillModal(false)
+          setPublishSkillTarget(null)
+        }}
+        onPublish={handleRepoify}
         t={t}
       />
 
