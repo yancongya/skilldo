@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-01
+
+### Fixed
+- **Release updater signing**: Provision a dedicated updater signing key so macOS and Windows release artifacts include verifiable signatures and `updater.json` can be published reliably.
+
 ## [0.7.0] - 2026-09-01
 
 ### Added
