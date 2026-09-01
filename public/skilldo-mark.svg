@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="skilldo-title skilldo-description">
+  <title id="skilldo-title">SkillDo</title>
+  <desc id="skilldo-description">A terminal prompt on two stacked Skill cards</desc>
+  <style>
+    #mark { --front: #0B0D12; --prompt: #F4F7F6; --front-outline: transparent; }
+    @media (prefers-color-scheme: dark) {
+      #mark { --front: #161A22; --prompt: #FFFFFF; --front-outline: #F4F7F6; }
+    }
+    #light:target ~ #mark { --front: #0B0D12; --prompt: #F4F7F6; --front-outline: transparent; }
+    #dark:target ~ #mark { --front: #161A22; --prompt: #FFFFFF; --front-outline: #F4F7F6; }
+  </style>
+  <g id="light"/>
+  <g id="dark"/>
+  <g id="mark">
+    <rect x="142" y="126" width="660" height="660" rx="154" fill="#78F2C2"/>
+    <rect x="222" y="206" width="660" height="660" rx="154" fill="var(--front)" stroke="var(--front-outline)" stroke-width="18"/>
+    <path d="M405 393 548 536 405 679" fill="none" stroke="var(--prompt)" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M625 678h124" fill="none" stroke="var(--prompt)" stroke-width="82" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -10,8 +10,7 @@ const cliArgs = process.argv.slice(2)
 const sourceArg = cliArgs[0]
 
 const defaultSourceCandidates = [
-  path.join(outDir, 'icon-source.png'),
-  path.join(projectRoot, 'public', 'logo.png'),
+  path.join(projectRoot, 'public', 'skilldo-mark.svg'),
 ]
 
 const source =
@@ -20,7 +19,7 @@ const source =
 
 if (!source) {
   console.error(
-    '未找到图标源文件，请传入路径，例如：node scripts/tauri-icon-desktop.mjs public/logo.png',
+    '未找到图标源文件，请传入路径，例如：node scripts/tauri-icon-desktop.mjs public/skilldo-mark.svg',
   )
   process.exit(1)
 }
@@ -29,9 +28,21 @@ if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skilldo-tauri-icons-'))
 try {
+  let renderSource = source
+  if (path.extname(source).toLowerCase() === '.svg') {
+    const staticSvg = fs
+      .readFileSync(source, 'utf8')
+      .replace(/\s*<style>[\s\S]*?<\/style>/, '')
+      .replace(/\s*<g id="(?:light|dark)"\/>/g, '')
+      .replace('fill="var(--front)"', 'fill="#0B0D12"')
+      .replace('stroke="var(--front-outline)"', 'stroke="transparent"')
+      .replaceAll('stroke="var(--prompt)"', 'stroke="#F4F7F6"')
+    renderSource = path.join(tempDir, 'skilldo-mark-static.svg')
+    fs.writeFileSync(renderSource, staticSvg)
+  }
   const res = spawnSync(
     'npx',
-    ['--yes', 'tauri', 'icon', source, '-o', tempDir],
+    ['--yes', 'tauri', 'icon', renderSource, '-o', tempDir],
     { stdio: 'inherit', cwd: projectRoot },
   )
   if (res.status !== 0) process.exit(res.status ?? 1)
@@ -61,10 +72,8 @@ try {
       fs.rmSync(path.join(outDir, entry.name), { recursive: true, force: true })
       continue
     }
-    if (entry.name === 'icon-source.png') continue
     if (!keepFiles.has(entry.name)) fs.rmSync(path.join(outDir, entry.name))
   }
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true })
 }
-

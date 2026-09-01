@@ -83,12 +83,6 @@
   height: 38px;
   display: block;
   flex: 0 0 auto;
-  border-radius: 10px;
-  filter: drop-shadow(0 8px 16px rgb(37 99 235 / 0.18));
-}
-
-:root[data-theme='dark'] .logo-icon {
-  filter: drop-shadow(0 10px 18px rgb(96 165 250 / 0.22));
 }
 
 .brand-text-wrap {
@@ -101,7 +95,7 @@
   font-weight: 700;
   font-size: 20px;
   letter-spacing: -0.025em;
-  color: var(--accent-primary);
+  color: var(--text-primary);
 }
 
 .brand-subtitle {
