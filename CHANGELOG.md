@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-01
+
 ### Added
 - **客户端自动更新通知**：桌面客户端启动后自动检查新版本，并复用现有更新弹窗展示中文更新说明与安装入口。
 - **Windows 自动更新清单**：Release 流水线现在校验并发布 Windows x64、ARM64 安装包签名，并将四个平台完整写入 `updater.json`。
