@@ -36,7 +36,7 @@ const PublishSkillModal = ({
 }: PublishSkillModalProps) => {
   const [repoName, setRepoName] = useState('')
   const [owner, setOwner] = useState('')
-  const [privateRepo, setPrivateRepo] = useState(true)
+  const [privateRepo, setPrivateRepo] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +46,7 @@ const PublishSkillModal = ({
     if (!skill) return
     setRepoName(slugify(skill.name))
     setOwner('')
-    setPrivateRepo(true)
+    setPrivateRepo(false)
     setMessage('')
     setError(null)
     setBusy(false)
