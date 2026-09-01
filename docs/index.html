@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SkillDo — One skill library. Every agent. Every machine.</title>
+<meta name="description" content="Install once, sync everywhere. SkillDo manages AI agent skills across 45 coding tools — from the terminal, a desktop app, or any machine via WebDAV sync.">
+<link rel="icon" type="image/svg+xml" href="../public/skilldo-mark.svg">
+<style>
+:root {
+  --accent: #78F2C2;
+  --accent-dim: rgba(120, 242, 194, 0.14);
+  --accent-line: rgba(120, 242, 194, 0.35);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  --radius: 14px;
+  --max-w: 1120px;
+}
+[data-theme="dark"] {
+  --bg: #0B0D12;
+  --bg-2: #10141C;
+  --bg-3: #161A22;
+  --bg-4: #1C2230;
+  --text: #F4F7F6;
+  --text-2: #9BA3AE;
+  --text-3: #5E6672;
+  --border: rgba(244, 247, 246, 0.09);
+  --border-2: rgba(244, 247, 246, 0.16);
+  --card: #12161F;
+}
+[data-theme="light"] {
+  --bg: #F4F7F6;
+  --bg-2: #EDF1EF;
+  --bg-3: #E4EAE7;
+  --bg-4: #D9E1DD;
+  --text: #0B0D12;
+  --text-2: #4A5260;
+  --text-3: #8A93A0;
+  --border: rgba(11, 13, 18, 0.10);
+  --border-2: rgba(11, 13, 18, 0.18);
+  --card: #FFFFFF;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: auto; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background 0.35s ease, color 0.35s ease;
+}
+::selection { background: var(--accent); color: #0B0D12; }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+/* ---------- Nav ---------- */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner {
+  max-width: var(--max-w); margin: 0 auto; padding: 0 28px;
+  height: 62px; display: flex; align-items: center; gap: 28px;
+}
+.nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+.nav-logo svg { width: 26px; height: 26px; }
+.nav-links { display: flex; gap: 24px; font-size: 14px; color: var(--text-2); margin-left: 12px; }
+.nav-links a:hover { color: var(--text); }
+.nav-spacer { flex: 1; }
+.nav-btn {
+  border: 1px solid var(--border-2); background: transparent; color: var(--text-2);
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; display: flex; align-items: center; gap: 6px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.nav-btn:hover { color: var(--text); border-color: var(--accent-line); }
+.nav-gh {
+  display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 500;
+  background: var(--accent); color: #0B0D12; border-radius: 8px; padding: 7px 14px;
+  transition: transform 0.15s ease;
+}
+.nav-gh:hover { transform: translateY(-1px); }
+.nav-gh svg { width: 15px; height: 15px; }
+@media (max-width: 760px) { .nav-links { display: none; } }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; padding: 150px 28px 90px; overflow: hidden; }
+.hero-orbit {
+  position: absolute; inset: 0; margin: auto; pointer-events: none;
+  width: min(1200px, 140vw); height: min(1200px, 140vw); max-height: 1300px;
+  top: -22%;
+}
+.hero-inner { position: relative; max-width: var(--max-w); margin: 0 auto; text-align: center; }
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--accent);
+  border: 1px solid var(--accent-line); background: var(--accent-dim);
+  border-radius: 999px; padding: 6px 14px; margin-bottom: 26px; letter-spacing: 0.02em;
+}
+.hero-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.hero h1 {
+  font-size: clamp(38px, 6vw, 68px); line-height: 1.08; font-weight: 700;
+  letter-spacing: -0.03em; max-width: 900px; margin: 0 auto 22px;
+}
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero-sub {
+  font-size: clamp(16px, 2vw, 19px); color: var(--text-2); max-width: 640px;
+  margin: 0 auto 40px;
+}
+.hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 9px;
+  background: var(--accent); color: #0B0D12; font-weight: 600; font-size: 15.5px;
+  padding: 14px 26px; border-radius: 11px; transition: transform 0.15s ease, box-shadow 0.2s;
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px -8px var(--accent-line); }
+.btn-primary svg, .btn-ghost svg { width: 16px; height: 16px; }
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 9px;
+  border: 1px solid var(--border-2); color: var(--text); font-weight: 500; font-size: 15.5px;
+  padding: 14px 26px; border-radius: 11px; transition: border-color 0.2s, transform 0.15s;
+}
+.btn-ghost:hover { border-color: var(--accent-line); transform: translateY(-2px); }
+.hero-meta {
+  margin-top: 46px; display: flex; gap: 34px; justify-content: center; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-3);
+}
+.hero-meta b { color: var(--text-2); font-weight: 500; }
+
+/* ---------- Sections ---------- */
+.section { max-width: var(--max-w); margin: 0 auto; padding: 96px 28px; }
+.sec-tag {
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--accent);
+  letter-spacing: 0.08em; margin-bottom: 14px;
+}
+.sec-title { font-size: clamp(28px, 4vw, 42px); font-weight: 700; letter-spacing: -0.025em; line-height: 1.15; margin-bottom: 16px; }
+.sec-sub { font-size: 17px; color: var(--text-2); max-width: 620px; }
+.reveal { opacity: 0; transform: translateY(42px); }
+
+/* ---------- Pain: before/after ---------- */
+.pain-grid { display: grid; grid-template-columns: 1fr 64px 1fr; gap: 0; align-items: center; margin-top: 56px; }
+.pain-card {
+  border: 1px solid var(--border); background: var(--card); border-radius: var(--radius);
+  padding: 28px; min-height: 300px; display: flex; flex-direction: column; gap: 14px;
+}
+.pain-card.after { border-color: var(--accent-line); }
+.pain-head { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15.5px; }
+.pain-head .pill {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500; border-radius: 6px; padding: 3px 8px;
+}
+.pain-before .pill { background: rgba(226, 75, 74, 0.12); color: #E24B4A; }
+.pain-after .pill { background: var(--accent-dim); color: var(--accent); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-2);
+  border: 1px dashed var(--border-2); border-radius: 7px; padding: 6px 10px;
+}
+.chip.dup { border-color: rgba(226, 75, 74, 0.4); color: #E24B4A; }
+.chip.single { border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-dim); }
+.pain-note { font-size: 13.5px; color: var(--text-3); margin-top: auto; }
+.pain-arrow { display: flex; justify-content: center; }
+.pain-arrow svg { width: 34px; height: 34px; color: var(--accent); }
+@media (max-width: 860px) {
+  .pain-grid { grid-template-columns: 1fr; gap: 20px; }
+  .pain-arrow { transform: rotate(90deg); }
+}
+
+/* ---------- Forms: three modes ---------- */
+.modes { display: flex; flex-direction: column; gap: 84px; margin-top: 64px; }
+.mode { display: grid; grid-template-columns: 5fr 6fr; gap: 60px; align-items: center; }
+.mode.flip .mode-visual { order: -1; }
+.mode-num {
+  font-family: var(--font-mono); font-size: 13px; color: var(--accent); margin-bottom: 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+.mode-num::after { content: ""; height: 1px; width: 44px; background: var(--accent-line); }
+.mode h3 { font-size: clamp(22px, 3vw, 30px); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
+.mode p { color: var(--text-2); font-size: 15.5px; margin-bottom: 18px; }
+.mode-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.mode-list li { display: flex; gap: 11px; align-items: baseline; font-size: 14.5px; color: var(--text-2); }
+.mode-list li::before { content: "—"; color: var(--accent); font-weight: 600; flex-shrink: 0; }
+.mode-list li b { color: var(--text); font-weight: 500; }
+@media (max-width: 900px) {
+  .mode { grid-template-columns: 1fr; gap: 30px; }
+  .mode.flip .mode-visual { order: 0; }
+}
+
+/* Mock panels shared */
+.mock {
+  border: 1px solid var(--border-2); border-radius: var(--radius); overflow: hidden;
+  background: var(--card); box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.55);
+}
+.mock-bar {
+  display: flex; align-items: center; gap: 8px; padding: 11px 16px;
+  background: var(--bg-3); border-bottom: 1px solid var(--border);
+}
+.mock-bar i { width: 11px; height: 11px; border-radius: 50%; background: var(--bg-4); }
+.mock-bar i:nth-child(1) { background: #ED6A5E; } .mock-bar i:nth-child(2) { background: #F5BE4F; } .mock-bar i:nth-child(3) { background: #61C554; }
+.mock-title { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); margin-left: 8px; }
+.mock-label {
+  position: absolute; top: 14px; right: 14px; z-index: 5;
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em;
+  color: var(--text-3); border: 1px solid var(--border-2); border-radius: 6px;
+  padding: 3px 8px; background: color-mix(in srgb, var(--card) 88%, transparent);
+}
+
+/* CLI mock */
+.cli-body { padding: 20px 22px 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.75; }
+.cli-line { display: flex; gap: 10px; }
+.cli-prompt { color: var(--accent); flex-shrink: 0; }
+.cli-cmd { color: var(--text); }
+.cli-out { color: var(--text-2); white-space: pre; overflow-x: auto; }
+.cli-out .k { color: #7FB4E8; } .cli-out .s { color: var(--accent); } .cli-out .n { color: #E8B478; }
+.cli-cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: text-bottom; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Desktop app mock */
+.app { position: relative; display: grid; grid-template-columns: 172px 1fr; min-height: 348px; }
+.app-side { border-right: 1px solid var(--border); padding: 18px 14px; background: var(--bg-2); display: flex; flex-direction: column; gap: 4px; }
+.app-side-label { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); letter-spacing: 0.07em; margin: 0 8px 10px; }
+.app-nav-item {
+  display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-2);
+  padding: 8px 10px; border-radius: 8px;
+}
+.app-nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.app-nav-item.on { background: var(--accent-dim); color: var(--accent); }
+.app-main { padding: 18px 20px; }
+.app-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
+.app-search {
+  flex: 1; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border);
+  border-radius: 9px; padding: 8px 13px; font-size: 13px; color: var(--text-3); background: var(--bg-2);
+}
+.app-search svg { width: 14px; height: 14px; }
+.app-btn { border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-dim); border-radius: 9px; padding: 8px 14px; font-size: 13px; font-weight: 500; }
+.app-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.app-card { border: 1px solid var(--border); border-radius: 11px; padding: 13px 14px; background: var(--bg-2); }
+.app-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.app-card-ico { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-dim); display: flex; align-items: center; justify-content: center; }
+.app-card-ico svg { width: 14px; height: 14px; color: var(--accent); }
+.app-card-name { font-size: 13.5px; font-weight: 600; }
+.app-card-src { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); }
+.app-card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
+.app-sync { display: flex; gap: 4px; }
+.app-sync i { width: 7px; height: 7px; border-radius: 2px; background: var(--bg-4); }
+.app-sync i.on { background: var(--accent); }
+.app-card-act { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2.5px 8px; }
+
+/* Sync mock */
+.sync { position: relative; padding: 34px 26px 30px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 18px; align-items: center; }
+.device { border: 1px solid var(--border-2); border-radius: 12px; padding: 16px 18px; background: var(--bg-2); }
+.device-name { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.device-name svg { width: 14px; height: 14px; color: var(--accent); }
+.device-rows { display: flex; flex-direction: column; gap: 6px; }
+.device-row { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); display: flex; justify-content: space-between; gap: 12px; }
+.device-row b { color: var(--text-2); font-weight: 400; }
+.device-row .ok { color: var(--accent); }
+.sync-hub { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 120px; }
+.sync-cloud {
+  width: 58px; height: 58px; border-radius: 16px; background: var(--accent-dim);
+  border: 1px solid var(--accent-line); display: flex; align-items: center; justify-content: center;
+}
+.sync-cloud svg { width: 26px; height: 26px; color: var(--accent); }
+.sync-hub span { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.sync-flow { position: relative; height: 34px; }
+.sync-flow svg { width: 100%; height: 100%; }
+.sync-flow .ln { stroke: var(--accent-line); stroke-width: 1.5; stroke-dasharray: 5 6; fill: none; animation: flow 1.6s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -22; } }
+@media (max-width: 700px) { .sync { grid-template-columns: 1fr; } .sync-hub { transform: rotate(90deg); } }
+
+/* ---------- Single source ---------- */
+.source-wrap { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; margin-top: 56px; }
+.source-diagram { position: relative; aspect-ratio: 1 / 0.92; }
+.source-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 158px; height: 158px; border-radius: 26px; background: var(--accent-dim);
+  border: 1.5px solid var(--accent); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 5px; text-align: center; z-index: 2;
+}
+.source-center svg { width: 30px; height: 30px; color: var(--accent); }
+.source-center b { font-size: 13.5px; font-weight: 600; }
+.source-center span { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); }
+.sat {
+  position: absolute; width: 106px; padding: 9px 0; text-align: center;
+  border: 1px solid var(--border-2); border-radius: 10px; background: var(--card);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+  transition: border-color 0.3s, color 0.3s, background 0.3s;
+}
+.sat.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.source-lines { position: absolute; inset: 0; width: 100%; height: 100%; }
+.source-lines line { stroke: var(--border-2); stroke-width: 1; }
+.source-lines line.lit { stroke: var(--accent-line); }
+.fallback { margin-top: 26px; display: flex; flex-direction: column; gap: 9px; }
+.fallback-row {
+  display: flex; align-items: center; gap: 13px; border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 16px; background: var(--card); font-size: 14px; color: var(--text-2);
+}
+.fallback-row svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+.fallback-row b { color: var(--text); font-weight: 500; font-family: var(--font-mono); font-size: 13px; }
+@media (max-width: 900px) { .source-wrap { grid-template-columns: 1fr; } }
+
+/* ---------- Agent native / publish ---------- */
+.agent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 56px; }
+.agent-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 26px; display: flex; flex-direction: column; gap: 14px; }
+.agent-card h4 { display: flex; align-items: center; gap: 11px; font-size: 17.5px; font-weight: 600; }
+.agent-card h4 svg { width: 20px; height: 20px; color: var(--accent); }
+.agent-card p { font-size: 14.5px; color: var(--text-2); }
+.code-block {
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.8;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; overflow-x: auto; color: var(--text-2); margin-top: 2px;
+}
+.code-block .c { color: var(--accent); } .code-block .p { color: #7FB4E8; }
+.pub-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.pub-step {
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2);
+  border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 11px; background: var(--bg-2);
+}
+.pub-step.hl { border-color: var(--accent-line); color: var(--accent); background: var(--accent-dim); }
+.pub-arrow { color: var(--text-3); font-size: 13px; }
+@media (max-width: 860px) { .agent-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Tools matrix ---------- */
+.tools-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 9px; margin-top: 52px;
+}
+.tool-cell {
+  font-family: var(--font-mono); font-size: 12px; text-align: center;
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 6px;
+  color: var(--text-2); background: var(--card);
+  transition: border-color 0.25s, color 0.25s, transform 0.25s; opacity: 0;
+}
+.tool-cell:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-3px); }
+.tools-more { text-align: center; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-3); margin-top: 20px; }
+
+/* ---------- Quick start / footer ---------- */
+.final { text-align: center; padding: 110px 28px 60px; }
+.final h2 { font-size: clamp(26px, 3.6vw, 38px); font-weight: 700; letter-spacing: -0.02em; margin-bottom: 14px; }
+.final p { color: var(--text-2); font-size: 16px; max-width: 520px; margin: 0 auto 34px; }
+.install-cmd {
+  display: inline-flex; align-items: center; gap: 14px;
+  font-family: var(--font-mono); font-size: 13.5px;
+  border: 1px solid var(--border-2); border-radius: 11px; padding: 15px 20px;
+  background: var(--bg-2); color: var(--text-2); max-width: 100%;
+}
+.install-cmd .c { color: var(--accent); }
+.copy-btn {
+  border: none; background: transparent; color: var(--text-3); display: flex;
+  padding: 4px; border-radius: 6px; transition: color 0.2s;
+}
+.copy-btn:hover { color: var(--accent); }
+.copy-btn svg { width: 15px; height: 15px; }
+.final-meta { margin-top: 30px; font-size: 13.5px; color: var(--text-3); }
+.final-meta a { color: var(--text-2); border-bottom: 1px solid var(--border-2); }
+.footer {
+  border-top: 1px solid var(--border); padding: 30px 28px 38px;
+  display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;
+  max-width: var(--max-w); margin: 0 auto; font-size: 13px; color: var(--text-3);
+}
+.footer-links { display: flex; gap: 20px; }
+.footer-links a:hover { color: var(--text-2); }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translate(-50%, 70px); z-index: 200;
+  background: var(--accent); color: #0B0D12; font-size: 13.5px; font-weight: 500;
+  border-radius: 9px; padding: 10px 20px; transition: transform 0.3s ease; pointer-events: none;
+}
+.toast.show { transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal, .tool-cell { opacity: 1 !important; transform: none !important; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="nav-logo" href="#top" aria-label="SkillDo">
+      <svg viewBox="0 0 1024 1024"><rect x="142" y="126" width="660" height="660" rx="154" fill="#78F2C2"/><rect x="222" y="206" width="660" height="660" rx="154" fill="var(--bg-3)" stroke="var(--border-2)" stroke-width="18"/><path d="M405 393 548 536 405 679" fill="none" stroke="var(--text)" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/><path d="M625 678h124" fill="none" stroke="var(--text)" stroke-width="82" stroke-linecap="round"/></svg>
+      SkillDo
+    </a>
+    <div class="nav-links">
+      <a href="#modes" data-i18n="navModes">Three forms</a>
+      <a href="#source" data-i18n="navSource">Single source</a>
+      <a href="#agents" data-i18n="navAgents">Agent native</a>
+      <a href="#tools" data-i18n="navTools">45 tools</a>
+    </div>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn" id="langBtn" aria-label="Switch language">中文</button>
+    <button class="nav-btn" id="themeBtn" aria-label="Switch theme">
+      <svg id="themeIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></svg>
+    </button>
+    <a class="nav-gh" href="https://github.com/yancongya/skilldo" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      <span data-i18n="navGithub">GitHub</span>
+    </a>
+  </div>
+</nav>
+
+<main>
+<!-- ================= HERO ================= -->
+<header class="hero" id="top">
+  <svg class="hero-orbit" viewBox="0 0 1200 1200" fill="none" aria-hidden="true">
+    <g stroke="var(--border)" stroke-width="1">
+      <circle cx="600" cy="600" r="200" opacity="0.45"/>
+      <circle cx="600" cy="600" r="340" opacity="0.30"/>
+      <circle cx="600" cy="600" r="480" opacity="0.18"/>
+      <circle cx="600" cy="600" r="590" opacity="0.10"/>
+    </g>
+    <g class="orbit-lines" stroke="var(--accent-line)" stroke-width="1.2" opacity="0.55">
+      <line x1="600" y1="600" x2="600" y2="20"/>
+      <line x1="600" y1="600" x2="1150" y2="340"/>
+      <line x1="600" y1="600" x2="1010" y2="990"/>
+      <line x1="600" y1="600" x2="190" y2="990"/>
+      <line x1="600" y1="600" x2="50" y2="340"/>
+      <line x1="600" y1="600" x2="980" y2="110"/>
+      <line x1="600" y1="600" x2="220" y2="110"/>
+    </g>
+    <g fill="var(--accent)" opacity="0.85">
+      <circle cx="600" cy="20" r="3.5"/><circle cx="1150" cy="340" r="3.5"/><circle cx="1010" cy="990" r="3.5"/>
+      <circle cx="190" cy="990" r="3.5"/><circle cx="50" cy="340" r="3.5"/><circle cx="980" cy="110" r="3.5"/><circle cx="220" cy="110" r="3.5"/>
+    </g>
+  </svg>
+  <div class="hero-inner">
+    <div class="hero-eyebrow"><span class="dot"></span><span data-i18n="heroEyebrow">v0.7 · macOS / Windows / CLI</span></div>
+    <h1 data-i18n-html="heroTitle">One skill library.<br>Every agent. <em>Every machine.</em></h1>
+    <p class="hero-sub" data-i18n="heroSub">Install once, sync everywhere. SkillDo manages AI agent skills across 45 coding tools — from the terminal, a desktop app, or any machine you own.</p>
+    <div class="hero-cta">
+      <a class="btn-primary" href="#start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span data-i18n="ctaCli">Install the CLI</span>
+      </a>
+      <a class="btn-ghost" href="https://github.com/yancongya/skilldo/releases" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        <span data-i18n="ctaApp">Get the desktop app</span>
+      </a>
+    </div>
+    <div class="hero-meta">
+      <span><b>45</b> <span data-i18n="metaTools">AI tools</span></span>
+      <span><b>3</b> <span data-i18n="metaForms">ways to use it</span></span>
+      <span><b>1</b> <span data-i18n="metaSource">source of truth</span></span>
+      <span><b>0</b> <span data-i18n="metaLock">lock-in, ever</span></span>
+    </div>
+  </div>
+</header>
+
+<!-- ================= PAIN ================= -->
+<section class="section" id="pain">
+  <div class="reveal">
+    <div class="sec-tag" data-i18n="painTag">01 · THE MESS</div>
+    <h2 class="sec-title" data-i18n="painTitle">You wrote one skill. Then copied it five times.</h2>
+    <p class="sec-sub" data-i18n="painSub">Every agent has its own skills folder, its own path, its own format. A skill you polished for one tool gets re-copied, re-tweaked, and forgotten everywhere else.</p>
+  </div>
+  <div class="pain-grid">
+    <div class="pain-card reveal">
+      <div class="pain-head"><span class="pill" data-i18n="painBeforePill">BEFORE</span><span data-i18n="painBeforeTitle">Scattered folders</span></div>
+      <div class="chip-row">
+        <span class="chip dup">~/.claude/skills/pdf.md</span>
+        <span class="chip dup">~/.codex/skills/pdf.md</span>
+        <span class="chip dup">~/.cursor/skills/pdf.md</span>
+        <span class="chip dup">~/.gemini/skills/pdf.md</span>
+        <span class="chip dup">~/work/skills/pdf.md</span>
+      </div>
+      <p class="pain-note" data-i18n="painBeforeNote">Five copies. One fix means five edits — and you will miss one.</p>
+    </div>
+    <div class="pain-arrow reveal">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16M13 5l7 7-7 7"/></svg>
+    </div>
+    <div class="pain-card after reveal">
+      <div class="pain-head"><span class="pill" data-i18n="painAfterPill">AFTER</span><span data-i18n="painAfterTitle">One central repo</span></div>
+      <div class="chip-row">
+        <span class="chip single">~/.skillshub/pdf/</span>
+      </div>
+      <p class="pain-note" data-i18n="painAfterNote">One canonical copy. Every tool points at it. Update once — all 45 tools get the latest version.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MODES ================= -->
+<section class="section" id="modes">
+  <div class="reveal">
+    <div class="sec-tag" data-i18n="modesTag">02 · THREE FORMS, ONE ENGINE</div>
+    <h2 class="sec-title" data-i18n="modesTitle">Terminal, desktop, or another machine.</h2>
+    <p class="sec-sub" data-i18n="modesSub">The CLI and the desktop app share the exact same database and core engine. Use whichever fits the moment — state never drifts.</p>
+  </div>
+  <div class="modes">
+
+    <div class="mode reveal">
+      <div class="mode-copy">
+        <div class="mode-num">01 / CLI</div>
+        <h3 data-i18n="modeCliTitle">The terminal is the dashboard</h3>
+        <p data-i18n="modeCliSub">Install, sync, update, and publish skills with one command. Every command speaks <b style="font-family:var(--font-mono);font-size:0.9em">--json</b> — readable by you, and by the agent driving you.</p>
+        <ul class="mode-list">
+          <li data-i18n-html="modeCliL1"><b>Agent-native output</b> — structured JSON on every subcommand</li>
+          <li data-i18n-html="modeCliL2"><b>Standalone binary</b> — curl one line, no Node, no runtime</li>
+          <li data-i18n-html="modeCliL3"><b>Safe by default</b> — destructive actions require --yes</li>
+        </ul>
+      </div>
+      <div class="mode-visual mock">
+        <span class="mock-label" data-i18n="mockLabel">UI MOCK</span>
+        <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">skilldo — zsh</span></div>
+        <div class="cli-body">
+          <div class="cli-line"><span class="cli-prompt">❯</span><span class="cli-cmd">skilldo list --json</span></div>
+          <div class="cli-out">{
+  <span class="k">"total"</span>: <span class="n">46</span>,
+  <span class="k">"skills"</span>: [
+    { <span class="k">"name"</span>: <span class="s">"readme-please"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">13</span> },
+    { <span class="k">"name"</span>: <span class="s">"mac-dev-cleanup"</span>, <span class="k">"source"</span>: <span class="s">"git"</span>, <span class="k">"targets"</span>: <span class="n">9</span> },
+    ...
+  ]
+}</div>
+          <div class="cli-line" style="margin-top:10px"><span class="cli-prompt">❯</span><span class="cli-cmd">skilldo update --all --yes<span class="cli-cursor"></span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mode flip reveal">
+      <div class="mode-copy">
+        <div class="mode-num">02 / DESKTOP</div>
+        <h3 data-i18n="modeAppTitle">A cockpit, when you want one</h3>
+        <p data-i18n="modeAppSub">Prefer clicking to typing? The desktop app does everything the CLI does — browse the skill market, take over existing skills, see every sync target at a glance.</p>
+        <ul class="mode-list">
+          <li data-i18n-html="modeAppL1"><b>Explore marketplace</b> — search, install, sync to all detected tools</li>
+          <li data-i18n-html="modeAppL2"><b>Migration takeover</b> — import skills your tools already have</li>
+          <li data-i18n-html="modeAppL3"><b>One-click publish</b> — turn a local skill into a GitHub repo</li>
+        </ul>
+      </div>
+      <div class="mode-visual mock">
+        <span class="mock-label" data-i18n="mockLabel">UI MOCK</span>
+        <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">SkillDo</span></div>
+        <div class="app">
+          <div class="app-side">
+            <div class="app-side-label" data-i18n="appLibrary">LIBRARY</div>
+            <div class="app-nav-item on">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <span data-i18n="appMySkills">My skills</span>
+            </div>
+            <div class="app-nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <span data-i18n="appExplore">Explore</span>
+            </div>
+            <div class="app-nav-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.06-.4.1-.8.1-1.2Z"/></svg>
+              <span data-i18n="appSettings">Settings</span>
+            </div>
+          </div>
+          <div class="app-main">
+            <div class="app-toolbar">
+              <div class="app-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                <span data-i18n="appSearchPh">Search 46 skills…</span>
+              </div>
+              <button class="app-btn" data-i18n="appPublish">Publish</button>
+            </div>
+            <div class="app-cards">
+              <div class="app-card">
+                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><div class="app-card-name">readme-please</div><div class="app-card-src">github · v2.1.0</div></div></div>
+                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div><span class="app-card-act">13 targets</span></div>
+              </div>
+              <div class="app-card">
+                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h18M3 12h18M3 19.5h18"/></svg></div><div><div class="app-card-name">copywriting</div><div class="app-card-src">github · v1.4.2</div></div></div>
+                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><span class="app-card-act">9 targets</span></div>
+              </div>
+              <div class="app-card">
+                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="app-card-name">auth-manager</div><div class="app-card-src">github · v3.0.1</div></div></div>
+                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div><span class="app-card-act">7 targets</span></div>
+              </div>
+              <div class="app-card">
+                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg></div><div><div class="app-card-name">tailwindcss</div><div class="app-card-src">github · v4.0.9</div></div></div>
+                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><span class="app-card-act">11 targets</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mode reveal">
+      <div class="mode-copy">
+        <div class="mode-num">03 / SYNC</div>
+        <h3 data-i18n="modeSyncTitle">Your skills travel with you</h3>
+        <p data-i18n="modeSyncSub">New machine? One command restores everything — skills, settings, even credentials — from a WebDAV backup on your own NAS or cloud. No vendor server in between.</p>
+        <ul class="mode-list">
+          <li data-i18n-html="modeSyncL1"><b>Full-state backup</b> — database snapshot with config and tokens</li>
+          <li data-i18n-html="modeSyncL2"><b>Profile merge</b> — pull and merge across devices without wiping</li>
+          <li data-i18n-html="modeSyncL3"><b>Your storage</b> — WebDAV you control; nothing leaves your infra</li>
+        </ul>
+      </div>
+      <div class="mode-visual mock">
+        <span class="mock-label" data-i18n="mockLabel">UI MOCK</span>
+        <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">device sync</span></div>
+        <div class="sync">
+          <div class="device">
+            <div class="device-name">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              MacBook Pro
+            </div>
+            <div class="device-rows">
+              <div class="device-row"><b>skills</b><span>46</span></div>
+              <div class="device-row"><b>settings</b><span class="ok" data-i18n="syncOk">in sync</span></div>
+              <div class="device-row"><b>tokens</b><span class="ok" data-i18n="syncOk">in sync</span></div>
+            </div>
+          </div>
+          <div class="sync-hub">
+            <div class="sync-cloud">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .4-9A7 7 0 0 0 4.3 12.2 4 4 0 0 0 6 19.9Z"/></svg>
+            </div>
+            <span>WebDAV · <span data-i18n="syncYours">yours</span></span>
+          </div>
+          <div class="device">
+            <div class="device-name">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M10 18h4"/></svg>
+              <span data-i18n="syncNewDevice">New device</span>
+            </div>
+            <div class="device-rows">
+              <div class="device-row"><b>skills</b><span>46</span></div>
+              <div class="device-row"><b>settings</b><span class="ok" data-i18n="syncRestored">restored</span></div>
+              <div class="device-row"><b>tokens</b><span class="ok" data-i18n="syncRestored">restored</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="sync-flow" aria-hidden="true"><svg viewBox="0 0 500 34" preserveAspectRatio="none"><path class="ln" d="M10 17 H490"/><path class="ln" d="M490 17 H10"/></svg></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ================= SINGLE SOURCE ================= -->
+<section class="section" id="source">
+  <div class="source-wrap">
+    <div class="reveal">
+      <div class="sec-tag" data-i18n="sourceTag">03 · SINGLE SOURCE OF TRUTH</div>
+      <h2 class="sec-title" data-i18n="sourceTitle">Edit once. Live everywhere.</h2>
+      <p class="sec-sub" data-i18n="sourceSub">The Central Repo holds the one canonical copy of every skill. Tools don't get copies — they get links pointing at it. Update in one place, and every tool sees the new version immediately.</p>
+      <div class="fallback">
+        <div class="fallback-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+          <span><b>symlink</b> — <span data-i18n="fbSymlink">macOS / Linux default, zero duplication</span></span>
+        </div>
+        <div class="fallback-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span><b>junction</b> — <span data-i18n="fbJunction">Windows fallback, same semantics</span></span>
+        </div>
+        <div class="fallback-row">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="3" height="3" rx="0.5"/><rect x="13" y="8" width="3" height="3" rx="0.5"/><rect x="8" y="13" width="3" height="3" rx="0.5"/><rect x="13" y="13" width="3" height="3" rx="0.5"/></svg>
+          <span><b>copy</b> — <span data-i18n="fbCopy">last resort for tools that reject links (e.g. Cursor)</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="source-diagram reveal" id="sourceDiagram">
+      <svg class="source-lines" viewBox="0 0 500 460" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="250" y1="230" x2="80"  y2="60"/>
+        <line x1="250" y1="230" x2="250" y2="60"/>
+        <line x1="250" y1="230" x2="420" y2="60"/>
+        <line x1="250" y1="230" x2="70"  y2="230"/>
+        <line x1="250" y1="230" x2="430" y2="230"/>
+        <line x1="250" y1="230" x2="110" y2="400"/>
+        <line x1="250" y1="230" x2="250" y2="400"/>
+        <line x1="250" y1="230" x2="390" y2="400"/>
+      </svg>
+      <div class="source-center">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3Z"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"/><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+        <b data-i18n="srcCenterTitle">Central Repo</b>
+        <span>~/.skillshub</span>
+      </div>
+      <span class="sat" style="left:4%; top:8%">Claude Code</span>
+      <span class="sat" style="left:41%; top:4%">Codex</span>
+      <span class="sat" style="left:78%; top:8%">Cursor</span>
+      <span class="sat" style="left:0%; top:47%">WorkBuddy</span>
+      <span class="sat" style="left:82%; top:47%">Windsurf</span>
+      <span class="sat" style="left:6%; top:83%">Gemini CLI</span>
+      <span class="sat" style="left:41%; top:87%">OpenCode</span>
+      <span class="sat" style="left:76%; top:83%">+38 more</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= AGENT NATIVE ================= -->
+<section class="section" id="agents">
+  <div class="reveal">
+    <div class="sec-tag" data-i18n="agentTag">04 · BUILT FOR AGENTS, FIRST</div>
+    <h2 class="sec-title" data-i18n="agentTitle">Not just used by you. Used by your agent.</h2>
+    <p class="sec-sub" data-i18n="agentSub">SkillDo ships as a skill itself. Agents discover it via SKILL.md and drive the full lifecycle — install, sync, update — without you typing a thing.</p>
+  </div>
+  <div class="agent-grid">
+    <div class="agent-card reveal">
+      <h4>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+        <span data-i18n="agentJsonTitle">Every command speaks JSON</span>
+      </h4>
+      <p data-i18n="agentJsonSub">Structured, machine-readable output on every subcommand — designed for agents to parse, decide, and act on.</p>
+      <div class="code-block"><span class="c">❯</span> skilldo status --json
+{ <span class="p">"tools"</span>: 45, <span class="p">"installed"</span>: 13,
+  <span class="p">"detected"</span>: [<span class="p">"claude_code"</span>, <span class="p">"codex"</span>, ...] }</div>
+    </div>
+    <div class="agent-card reveal">
+      <h4>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        <span data-i18n="agentPubTitle">One command, repo-ified</span>
+      </h4>
+      <p data-i18n="agentPubSub">Wrote a skill worth keeping? Publish turns a local folder into a tracked GitHub repo — future updates flow through the standard push path.</p>
+      <div class="pub-steps">
+        <span class="pub-step">local skill</span><span class="pub-arrow">→</span>
+        <span class="pub-step hl">skilldo publish</span><span class="pub-arrow">→</span>
+        <span class="pub-step">git init</span><span class="pub-arrow">→</span>
+        <span class="pub-step">create repo</span><span class="pub-arrow">→</span>
+        <span class="pub-step">push</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TOOLS ================= -->
+<section class="section" id="tools">
+  <div class="reveal">
+    <div class="sec-tag" data-i18n="toolsTag">05 · COVERAGE</div>
+    <h2 class="sec-title" data-i18n="toolsTitle">45 tools. One workflow.</h2>
+    <p class="sec-sub" data-i18n="toolsSub">Global and project-level sync targets for every major AI coding tool — with per-tool detection rules and path conventions maintained in source.</p>
+  </div>
+  <div class="tools-grid" id="toolsGrid"></div>
+  <p class="tools-more" data-i18n="toolsMore">Tool list generated from source — new adapters ship regularly.</p>
+</section>
+
+<!-- ================= FINAL ================= -->
+<section class="final" id="start">
+  <div class="reveal">
+    <h2 data-i18n="finalTitle">Start in one line.</h2>
+    <p data-i18n="finalSub">A standalone binary. No Node, no runtime, no account.</p>
+    <div class="install-cmd">
+      <span><span class="c">❯</span> curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash</span>
+      <button class="copy-btn" id="copyBtn" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash" aria-label="Copy install command">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </button>
+    </div>
+    <p class="final-meta">
+      <span data-i18n="finalMeta1">Windows:</span>
+      <code style="font-family:var(--font-mono);font-size:12.5px">irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex</code>
+    </p>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <span>SkillDo · <span data-i18n="footerTag">Install once, sync everywhere.</span></span>
+  <div class="footer-links">
+    <a href="https://github.com/yancongya/skilldo" target="_blank" rel="noopener" data-i18n="footerRepo">Repository</a>
+    <a href="https://github.com/yancongya/skilldo/releases" target="_blank" rel="noopener" data-i18n="footerReleases">Releases</a>
+    <a href="https://github.com/yancongya/skilldo/issues" target="_blank" rel="noopener" data-i18n="footerIssues">Issues</a>
+  </div>
+</footer>
+
+<div class="toast" id="toast" data-i18n="toastCopied">Copied to clipboard</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js" defer></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- i18n ---------- */
+  var I18N = {
+    en: {
+      navModes: "Three forms", navSource: "Single source", navAgents: "Agent native", navTools: "45 tools", navGithub: "GitHub",
+      heroEyebrow: "v0.7 · macOS / Windows / CLI",
+      heroTitle: "One skill library.<br>Every agent. <em>Every machine.</em>",
+      heroSub: "Install once, sync everywhere. SkillDo manages AI agent skills across 45 coding tools — from the terminal, a desktop app, or any machine you own.",
+      ctaCli: "Install the CLI", ctaApp: "Get the desktop app",
+      metaTools: "AI tools", metaForms: "ways to use it", metaSource: "source of truth", metaLock: "lock-in, ever",
+      painTag: "01 · THE MESS",
+      painTitle: "You wrote one skill. Then copied it five times.",
+      painSub: "Every agent has its own skills folder, its own path, its own format. A skill you polished for one tool gets re-copied, re-tweaked, and forgotten everywhere else.",
+      painBeforePill: "BEFORE", painBeforeTitle: "Scattered folders",
+      painBeforeNote: "Five copies. One fix means five edits — and you will miss one.",
+      painAfterPill: "AFTER", painAfterTitle: "One central repo",
+      painAfterNote: "One canonical copy. Every tool points at it. Update once — all 45 tools get the latest version.",
+      modesTag: "02 · THREE FORMS, ONE ENGINE",
+      modesTitle: "Terminal, desktop, or another machine.",
+      modesSub: "The CLI and the desktop app share the exact same database and core engine. Use whichever fits the moment — state never drifts.",
+      modeCliTitle: "The terminal is the dashboard",
+      modeCliSub: "Install, sync, update, and publish skills with one command. Every command speaks --json — readable by you, and by the agent driving you.",
+      modeCliL1: "<b>Agent-native output</b> — structured JSON on every subcommand",
+      modeCliL2: "<b>Standalone binary</b> — curl one line, no Node, no runtime",
+      modeCliL3: "<b>Safe by default</b> — destructive actions require --yes",
+      modeAppTitle: "A cockpit, when you want one",
+      modeAppSub: "Prefer clicking to typing? The desktop app does everything the CLI does — browse the skill market, take over existing skills, see every sync target at a glance.",
+      modeAppL1: "<b>Explore marketplace</b> — search, install, sync to all detected tools",
+      modeAppL2: "<b>Migration takeover</b> — import skills your tools already have",
+      modeAppL3: "<b>One-click publish</b> — turn a local skill into a GitHub repo",
+      modeSyncTitle: "Your skills travel with you",
+      modeSyncSub: "New machine? One command restores everything — skills, settings, even credentials — from a WebDAV backup on your own NAS or cloud. No vendor server in between.",
+      modeSyncL1: "<b>Full-state backup</b> — database snapshot with config and tokens",
+      modeSyncL2: "<b>Profile merge</b> — pull and merge across devices without wiping",
+      modeSyncL3: "<b>Your storage</b> — WebDAV you control; nothing leaves your infra",
+      mockLabel: "UI MOCK", appLibrary: "LIBRARY", appMySkills: "My skills", appExplore: "Explore", appSettings: "Settings",
+      appSearchPh: "Search 46 skills…", appPublish: "Publish",
+      syncOk: "in sync", syncRestored: "restored", syncNewDevice: "New device", syncYours: "yours",
+      sourceTag: "03 · SINGLE SOURCE OF TRUTH",
+      sourceTitle: "Edit once. Live everywhere.",
+      sourceSub: "The Central Repo holds the one canonical copy of every skill. Tools don't get copies — they get links pointing at it. Update in one place, and every tool sees the new version immediately.",
+      fbSymlink: "macOS / Linux default, zero duplication",
+      fbJunction: "Windows fallback, same semantics",
+      fbCopy: "last resort for tools that reject links (e.g. Cursor)",
+      srcCenterTitle: "Central Repo",
+      agentTag: "04 · BUILT FOR AGENTS, FIRST",
+      agentTitle: "Not just used by you. Used by your agent.",
+      agentSub: "SkillDo ships as a skill itself. Agents discover it via SKILL.md and drive the full lifecycle — install, sync, update — without you typing a thing.",
+      agentJsonTitle: "Every command speaks JSON",
+      agentJsonSub: "Structured, machine-readable output on every subcommand — designed for agents to parse, decide, and act on.",
+      agentPubTitle: "One command, repo-ified",
+      agentPubSub: "Wrote a skill worth keeping? Publish turns a local folder into a tracked GitHub repo — future updates flow through the standard push path.",
+      toolsTag: "05 · COVERAGE",
+      toolsTitle: "45 tools. One workflow.",
+      toolsSub: "Global and project-level sync targets for every major AI coding tool — with per-tool detection rules and path conventions maintained in source.",
+      toolsMore: "Tool list generated from source — new adapters ship regularly.",
+      finalTitle: "Start in one line.",
+      finalSub: "A standalone binary. No Node, no runtime, no account.",
+      finalMeta1: "Windows:",
+      footerTag: "Install once, sync everywhere.",
+      footerRepo: "Repository", footerReleases: "Releases", footerIssues: "Issues",
+      toastCopied: "Copied to clipboard"
+    },
+    zh: {
+      navModes: "三种形态", navSource: "单一真源", navAgents: "Agent 原生", navTools: "45 工具", navGithub: "GitHub",
+      heroEyebrow: "v0.7 · macOS / Windows / CLI",
+      heroTitle: "一套技能库。<br>所有 Agent。<em>所有设备。</em>",
+      heroSub: "装一次，处处同步。SkillDo 统一管理 45 个 AI 编码工具的技能——终端、桌面客户端、任意设备，同一份技能库。",
+      ctaCli: "安装 CLI", ctaApp: "下载桌面客户端",
+      metaTools: "AI 工具", metaForms: "种使用方式", metaSource: "个真源", metaLock: "锁定，永不",
+      painTag: "01 · 乱象",
+      painTitle: "你写好一个技能，然后复制了五遍。",
+      painSub: "每个 Agent 都有自己的技能目录、自己的路径、自己的格式。为一个工具打磨的技能，被复制、改动、然后遗忘在别处。",
+      painBeforePill: "之前", painBeforeTitle: "散落的文件夹",
+      painBeforeNote: "五份副本。改一处等于改五处——而且你总会漏掉一个。",
+      painAfterPill: "之后", painAfterTitle: "一个中央仓库",
+      painAfterNote: "唯一正本。所有工具指向它。更新一次，45 个工具同时拿到最新版。",
+      modesTag: "02 · 三种形态，同一引擎",
+      modesTitle: "终端、桌面，或另一台机器。",
+      modesSub: "CLI 和桌面客户端共享同一个数据库和核心引擎。哪个顺手用哪个——状态永不漂移。",
+      modeCliTitle: "终端即管理台",
+      modeCliSub: "一条命令完成安装、同步、更新、发布。每条命令都说 --json——你能读，驱动你的 agent 也能读。",
+      modeCliL1: "<b>Agent 原生输出</b>——每个子命令都吐结构化 JSON",
+      modeCliL2: "<b>独立二进制</b>——curl 一行装好，无需 Node、无需运行时",
+      modeCliL3: "<b>默认安全</b>——破坏性操作必须显式 --yes",
+      modeAppTitle: "想要驾驶舱？也有",
+      modeAppSub: "不想敲命令？桌面客户端做 CLI 能做的一切——逛技能市场、接管存量技能、一屏看清所有同步目标。",
+      modeAppL1: "<b>Explore 市场</b>——搜索、安装、一键同步到所有检测到的工具",
+      modeAppL2: "<b>迁移接管</b>——导入各工具里已有的技能，统一纳管",
+      modeAppL3: "<b>一键发布</b>——把本地技能变成 GitHub 仓库",
+      modeSyncTitle: "技能跟着人走",
+      modeSyncSub: "换了新电脑？一条命令从你自己的 NAS 或网盘的 WebDAV 备份完整恢复——技能、配置、连密钥都在。中间没有厂商服务器。",
+      modeSyncL1: "<b>全量备份</b>——含配置与令牌的数据库快照",
+      modeSyncL2: "<b>Profile 合并</b>——跨设备拉取合并，不清空原数据",
+      modeSyncL3: "<b>你自己的存储</b>——WebDAV 由你掌控，数据不出你的基础设施",
+      mockLabel: "界面示意", appLibrary: "技能库", appMySkills: "我的技能", appExplore: "探索", appSettings: "设置",
+      appSearchPh: "搜索 46 个技能…", appPublish: "发布",
+      syncOk: "已同步", syncRestored: "已恢复", syncNewDevice: "新设备", syncYours: "你的",
+      sourceTag: "03 · 单一真源",
+      sourceTitle: "改一处，处处生效。",
+      sourceSub: "中央仓库保存每个技能的唯一正本。工具拿到的不是副本，而是指向它的链接。一处更新，所有工具立刻看到最新版。",
+      fbSymlink: "macOS / Linux 默认，零重复",
+      fbJunction: "Windows 回退方案，语义相同",
+      fbCopy: "兜底选项，用于拒绝链接的工具（如 Cursor）",
+      srcCenterTitle: "中央仓库",
+      agentTag: "04 · 为 AGENT 而生",
+      agentTitle: "不止你用它，你的 agent 也用它。",
+      agentSub: "SkillDo 本身就是一个 skill。Agent 通过 SKILL.md 发现它，自主完成安装、同步、更新的完整闭环——你一个字都不用敲。",
+      agentJsonTitle: "每条命令都说 JSON",
+      agentJsonSub: "所有子命令输出结构化、机器可读的结果——为 agent 解析、决策、行动而生。",
+      agentPubTitle: "一条命令，仓库化",
+      agentPubSub: "写了个值得留下的技能？publish 把本地文件夹变成受 git 跟踪的 GitHub 仓库——后续更新走标准 push 路径。",
+      toolsTag: "05 · 覆盖面",
+      toolsTitle: "45 个工具，一套工作流。",
+      toolsSub: "为每个主流 AI 编码工具提供全局与项目级同步目标——检测规则与路径约定在源码中维护。",
+      toolsMore: "工具清单由源码自动生成——新适配器持续增加。",
+      finalTitle: "一行开始。",
+      finalSub: "独立二进制。无需 Node、无需运行时、无需注册。",
+      finalMeta1: "Windows：",
+      footerTag: "装一次，处处同步。",
+      footerRepo: "仓库", footerReleases: "发布", footerIssues: "议题",
+      toastCopied: "已复制到剪贴板"
+    }
+  };
+  var lang = localStorage.getItem("skilldo-lang") || "en";
+  function applyLang(l) {
+    var dict = I18N[l];
+    document.querySelectorAll("[data-i18n]").forEach(function (el) {
+      var k = el.getAttribute("data-i18n");
+      if (dict[k] != null) el.textContent = dict[k];
+    });
+    document.querySelectorAll("[data-i18n-html]").forEach(function (el) {
+      var k = el.getAttribute("data-i18n-html");
+      if (dict[k] != null) el.innerHTML = dict[k];
+    });
+    document.documentElement.lang = l;
+    document.getElementById("langBtn").textContent = l === "en" ? "中文" : "English";
+    localStorage.setItem("skilldo-lang", l);
+  }
+  document.getElementById("langBtn").addEventListener("click", function () {
+    lang = lang === "en" ? "zh" : "en";
+    applyLang(lang);
+  });
+
+  /* ---------- Theme ---------- */
+  var theme = localStorage.getItem("skilldo-theme") ||
+    (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  function applyTheme(t) {
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem("skilldo-theme", t);
+  }
+  document.getElementById("themeBtn").addEventListener("click", function () {
+    theme = theme === "dark" ? "light" : "dark";
+    applyTheme(theme);
+  });
+
+  /* ---------- Tools grid ---------- */
+  var TOOLS = ["Claude Code","Codex","Cursor","WorkBuddy","Windsurf","GitHub Copilot","Gemini CLI","OpenCode","Cline","Augment","Antigravity","Amp","Continue","Trae","Trae CN","Roo Code","Kilo Code","Goose","OpenClaw","OpenHands","Droid","Qwen Code","iFlow CLI","Kiro CLI","Kode","Qoder","Qoder Work","Pi","Junie","Crush","Kimi CLI","Command Code","CodeBuddy","Copaw","McpJam","Mistral Vibe","Mux","OpenClaude","Zencoder","Neovate","Pochi","AdaL","Clawdbot","Moltbot","Hermes Agent"];
+  var grid = document.getElementById("toolsGrid");
+  TOOLS.forEach(function (t) {
+    var cell = document.createElement("div");
+    cell.className = "tool-cell";
+    cell.textContent = t;
+    grid.appendChild(cell);
+  });
+
+  /* ---------- Copy ---------- */
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var text = this.getAttribute("data-text");
+    var done = function () {
+      var toast = document.getElementById("toast");
+      toast.classList.add("show");
+      setTimeout(function () { toast.classList.remove("show"); }, 1800);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text, done); });
+    } else { fallbackCopy(text, done); }
+  });
+  function fallbackCopy(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta); done();
+  }
+
+  /* ---------- Motion (GSAP + Lenis, reduced-motion aware) ---------- */
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function initMotion() {
+    if (reduced || typeof gsap === "undefined") return;
+    if (typeof Lenis !== "undefined") {
+      var lenis = new Lenis({ duration: 1.05, smoothWheel: true });
+      function raf(t) { lenis.raf(t); requestAnimationFrame(raf); }
+      requestAnimationFrame(raf);
+    }
+    if (typeof ScrollTrigger === "undefined") return;
+    gsap.registerPlugin(ScrollTrigger);
+
+    /* Hero: orbit lines draw-in, whole-group entrance */
+    var lines = document.querySelectorAll(".orbit-lines line");
+    lines.forEach(function (l) {
+      var len = Math.hypot(600 - parseFloat(l.getAttribute("x2")), 600 - parseFloat(l.getAttribute("y2")));
+      l.style.strokeDasharray = len;
+      l.style.strokeDashoffset = len;
+    });
+    var tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+    tl.to(".hero-eyebrow", { opacity: 1, y: 0, duration: 0.6 }, 0.1)
+      .fromTo(".hero h1", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.8 }, 0.2)
+      .fromTo(".hero-sub", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.7 }, 0.38)
+      .fromTo(".hero-cta", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6 }, 0.52)
+      .fromTo(".hero-meta", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 0.66)
+      .to(lines, { strokeDashoffset: 0, duration: 1.4, stagger: 0.07, ease: "power2.inOut" }, 0.3);
+
+    /* Sections: whole-card reveal */
+    gsap.utils.toArray(".reveal").forEach(function (el) {
+      gsap.to(el, {
+        opacity: 1, y: 0, duration: 0.9, ease: "power3.out",
+        scrollTrigger: { trigger: el, start: "top 86%" }
+      });
+    });
+
+    /* Source diagram: ripple — center pulse, then satellites light up (whole-card moves) */
+    var sats = document.querySelectorAll("#sourceDiagram .sat");
+    var srcLines = document.querySelectorAll("#sourceDiagram .source-lines line");
+    var srcTl = gsap.timeline({
+      scrollTrigger: { trigger: "#sourceDiagram", start: "top 72%" }
+    });
+    srcTl.fromTo(".source-center", { scale: 0.82, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.55, ease: "back.out(1.6)" })
+      .fromTo(sats, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, stagger: 0.08 }, "-=0.15")
+      .add(function () {
+        sats.forEach(function (s, i) {
+          setTimeout(function () { s.classList.add("lit"); }, i * 90);
+        });
+        srcLines.forEach(function (l, i) {
+          setTimeout(function () { l.classList.add("lit"); }, i * 90);
+        });
+      });
+
+    /* Tools: cell stagger */
+    gsap.to(".tool-cell", {
+      opacity: 1, y: 0, duration: 0.5, ease: "power2.out", stagger: 0.018,
+      scrollTrigger: { trigger: "#toolsGrid", start: "top 82%" }
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    applyTheme(theme);
+    applyLang(lang);
+    var cds = document.querySelectorAll('script[src*="cdnjs"], script[src*="jsdelivr"]');
+    var pending = cds.length, fired = false;
+    function ready() { if (!fired && pending <= 0) { fired = true; initMotion(); } }
+    cds.forEach(function (s) {
+      s.addEventListener("load", function () { pending--; ready(); });
+      s.addEventListener("error", function () { pending--; ready(); });
+    });
+    setTimeout(function () {
+      if (!fired) {
+        var r = document.querySelectorAll(".reveal");
+        if (typeof gsap === "undefined") {
+          r.forEach(function (el) { el.style.opacity = 1; el.style.transform = "none"; });
+          document.querySelectorAll(".tool-cell").forEach(function (c) { c.style.opacity = 1; });
+          document.querySelectorAll(".orbit-lines line").forEach(function (l) { l.style.strokeDashoffset = 0; });
+        }
+        fired = true; initMotion();
+      }
+    }, 2600);
+    ready();
+  });
+})();
+</script>
+</body>
+</html>
