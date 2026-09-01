@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **发布默认可见性改回公开**：发布弹窗默认值与 CLI 默认恢复为 public（v0.7.4 发布时默认私有），用户仍可在弹窗中切换私有/公开。
+
 ## [0.7.4] - 2026-09-01
 
 ### 更新

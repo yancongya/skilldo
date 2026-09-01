@@ -23,7 +23,7 @@
 </p>
 
 > [!NOTE]
-> This README and the Chinese version (`docs/README.zh.md`) are kept structurally mirrored — same section outline, same tool count (45), same terminology. Use `readme-writer`'s `check_bilingual_headings.py` to verify.
+> This README and the Chinese version (`docs/README.zh.md`) are kept structurally mirrored — same section outline, same tool count (45), same terminology. Use `readme-please`'s `check_bilingual_headings.py` to verify.
 
 ---
 

@@ -23,7 +23,7 @@
 </p>
 
 > [!NOTE]
-> 本中文版与英文版（`../README.md`）保持结构镜像——相同章节大纲、相同工具数（45）、相同术语。可用 `readme-writer` 的 `check_bilingual_headings.py` 校验。
+> 本中文版与英文版（`../README.md`）保持结构镜像——相同章节大纲、相同工具数（45）、相同术语。可用 `readme-please` 的 `check_bilingual_headings.py` 校验。
 
 ---
 
@@ -319,7 +319,7 @@ SkillDo 支持 **45** 个 AI 编程工具。项目级 skills 目录相对所选�
 | `hermes_agent` | Hermes Agent | `.hermes/skills` | 不支持 | `.hermes` |
 | `workbuddy` | WorkBuddy | `.workbuddy/skills` | `.workbuddy/skills` | `.workbuddy` |
 
-> 工具数由 `readme-writer` 的 `gen_tool_table.py` 从源码自动生成——请保持同步，不要手抄维护。
+> 工具数由 `readme-please` 的 `gen_tool_table.py` 从源码自动生成——请保持同步，不要手抄维护。
 
 完整路径规则与检测逻辑见 [`src-tauri/src/core/tool_adapters/mod.rs`](../src-tauri/src/core/tool_adapters/mod.rs)。
 

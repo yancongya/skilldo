@@ -2,7 +2,7 @@
 
 ## Overview
 
-SkillDo is a cross-platform desktop app (Tauri 2 + React 19) for managing AI Agent Skills and syncing them to 47+ AI coding tools. Core concept: "Install once, sync everywhere."
+SkillDo is a cross-platform desktop app (Tauri 2 + React 19) for managing AI Agent Skills and syncing them to 45 AI coding tools. Core concept: "Install once, sync everywhere."
 
 ## Tech Stack
 
@@ -63,7 +63,7 @@ src-tauri/src/                # Rust backend
     ├── installer.rs          # Skill installation (local/git, with multi-skill detection)
     ├── sync_engine.rs        # Sync engine (symlink/junction/copy triple fallback)
     ├── git_fetcher.rs        # Git clone/pull (with cache and TTL)
-    ├── tool_adapters/mod.rs  # Tool adapter registry (47 AI tools)
+    ├── tool_adapters/mod.rs  # Tool adapter registry (45 AI tools)
     ├── onboarding.rs         # Existing skill scanning/discovery
     ├── github_search.rs      # GitHub API search
     ├── central_repo.rs       # Central repository path management

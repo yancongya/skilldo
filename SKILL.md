@@ -1,6 +1,6 @@
 ---
 name: skilldo-cli
-description: Manage AI agent skills from the terminal with the SkillDo CLI (skilldo). Install, sync, update, delete, and push skills across 47+ AI tools. Agent-native, structured JSON output.
+description: Manage AI agent skills from the terminal with the SkillDo CLI (skilldo). Install, sync, update, delete, and push skills across 45 AI tools. Agent-native, structured JSON output.
 ---
 
 # SkillDo CLI (`skilldo`)
@@ -40,7 +40,7 @@ The installers select the current architecture, verify the release SHA-256, plac
 | Command | Description |
 |---------|-------------|
 | `skilldo list [--json]` | List managed skills and their sync targets |
-| `skilldo status [--json]` | Show installation status of all 47+ supported AI tools |
+| `skilldo status [--json]` | Show installation status of all 45 supported AI tools |
 | `skilldo explore [--query Q] [--json]` | Browse the skill market across enabled sources |
 | `skilldo sources list [--json]` | List configured explore sources |
 | `skilldo install --url <repo> [--name N] [--yes]` | Install a skill from a git URL or local path |
