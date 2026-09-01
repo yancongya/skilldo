@@ -1,0 +1,88 @@
+name: 自动发布补丁版本
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: auto-release-main
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout verified main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Determine whether a release is needed
+        id: decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+          if [ -z "$latest_tag" ]; then
+            echo '❌ 未找到稳定版本标签，自动发布无法确定基线' >&2
+            exit 1
+          fi
+          if git log -1 --format=%B | grep -Fq '[skip release]'; then
+            echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+            echo 'should_release=false' >> "$GITHUB_OUTPUT"
+            echo '提交包含 [skip release]，跳过发布'
+            exit 0
+          fi
+          should_release="$(node scripts/prepare-auto-release.mjs should-release "$latest_tag")"
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+          echo "基线：$latest_tag；需要发布：$should_release"
+
+      - name: Prepare version and Chinese changelog
+        if: steps.decision.outputs.should_release == 'true'
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(node scripts/prepare-auto-release.mjs prepare '${{ steps.decision.outputs.latest_tag }}' | tail -n 1)"
+          npm run version:check
+          node scripts/extract-changelog.mjs "$tag" CHANGELOG.md >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version and push tag atomically
+        if: steps.decision.outputs.should_release == 'true'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json CHANGELOG.md
+          git diff --cached --check
+          git commit -m "chore(release): ${TAG} [skip release]"
+          git tag -a "$TAG" -m "SkillDo ${TAG} 正式版"
+          git push --atomic origin HEAD:main "refs/tags/${TAG}"
+
+      - name: Trigger signed multi-platform release
+        if: steps.decision.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh workflow run release.yml --ref "$TAG"

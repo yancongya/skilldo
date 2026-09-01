@@ -107,6 +107,8 @@ Release 会同时发布四个 CLI 压缩包和对应 `.sha256` 文件。只有�
 
 GitHub Release 标题、更新说明、安装提示和 Changelog 发布条目默认使用中文；命令、文件名与平台标识保持原格式。
 
+代码推送到 `main` 且 CI 全部通过后，GitHub Actions 会自动递增补丁版本、把 Unreleased 内容整理为中文版本记录、创建标签，并调用现有的 macOS/Windows 签名发布流水线。仅修改文档、自动生成的精选 Skill 列表、提交信息包含 `[skip release]` 或 CI 失败时不会发布，避免无意义版本和残缺 Release。
+
 ## 新设备连接 WebDAV 并同步
 
 每台设备首次使用时都要输入一次 WebDAV 网址、用户名、密码和远程目录。客户端不填 NAS 物理路径，只填 HTTPS WebDAV 地址和远程目录。

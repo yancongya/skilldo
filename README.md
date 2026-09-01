@@ -177,6 +177,8 @@ Claude Code, Codex, Cursor, OpenCode, Cline, Augment, OpenClaw, Gemini CLI, Kiro
 
 Build artifacts are collected to `out/` with intermediates cleaned up.
 
+Pushes to `main` are released automatically after CI succeeds when changes affect application or CLI code. The automation increments the patch version, promotes the Unreleased changelog into a Chinese version section, creates the tag, and dispatches the existing signed macOS/Windows release workflow. Documentation-only changes, the generated featured catalog, commits containing `[skip release]`, and failed CI runs do not publish a release.
+
 ## Tech Stack
 
 - **Frontend**: React 19 + TypeScript + Vite 7 + Tailwind CSS 4

@@ -7,9 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **客户端自动更新通知**：桌面客户端启动后自动检查新版本，并复用现有更新弹窗展示中文更新说明与安装入口。
 - **Windows 自动更新清单**：Release 流水线现在校验并发布 Windows x64、ARM64 安装包签名，并将四个平台完整写入 `updater.json`。
+- **Main 自动发布**：代码推送到 `main` 并通过 CI 后，自动递增补丁版本、生成中文版本记录、创建标签并触发签名 Release 流水线。
 
 ### Changed
 - **中文 Release 规范**：GitHub Release 标题、更新说明、安装提示和平台限制默认使用中文。
+- **完整版本同步**：版本设置和检查现在同时覆盖 npm 与 Cargo 的清单和锁文件，避免自动发布出现版本漂移。
 
 ### Fixed
 - **安装后立即重启**：macOS 和 Windows 完成更新安装后可直接从客户端重新启动，不再仅提示用户手动退出。
