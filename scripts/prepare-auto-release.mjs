@@ -12,6 +12,7 @@ export function nextPatchVersion(version) {
 }
 
 export function isReleaseWorthyPath(file) {
+  if (file === '.github/workflows/release.yml') return true
   return !(
     file === '.gitignore' ||
     file === 'featured-skills.json' ||

@@ -11,6 +11,7 @@ test('skips documentation and generated catalog changes', () => {
   assert.equal(isReleaseWorthyPath('README.md'), false)
   assert.equal(isReleaseWorthyPath('docs/README.zh.md'), false)
   assert.equal(isReleaseWorthyPath('featured-skills.json'), false)
+  assert.equal(isReleaseWorthyPath('.github/workflows/release.yml'), true)
   assert.equal(isReleaseWorthyPath('src/App.tsx'), true)
 })
 

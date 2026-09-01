@@ -215,7 +215,7 @@ jobs:
           echo "Arch: ${{ matrix.arch }}"
           # Add Strawberry Perl to PATH for OpenSSL build
           export PATH="/c/Strawberry/perl/bin:$PATH"
-          npm run tauri:build -- --target ${{ matrix.target }} --bundles nsis --no-sign
+          npm run tauri:build -- --target ${{ matrix.target }} --bundles nsis
           echo "=== Build completed ==="
           ls -la src-tauri/target/${{ matrix.target }}/release/bundle/ || true
 
