@@ -10,6 +10,7 @@
     "dialog:default",
     "dialog:allow-open",
     "updater:default",
+    "process:default",
     "opener:default"
   ]
 }

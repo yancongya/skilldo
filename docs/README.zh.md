@@ -1,8 +1,8 @@
 # SkillDo（Tauri Desktop）
 
-一个跨平台桌面应用（Tauri + React），用于统一管理 Agent Skills，并把它们同步到多种 AI 编程工具的全局或项目级 skills 目录（优先 symlink/junction，失败回退 copy），实现 “Install once, sync everywhere”。
+[English](../README.md) | [简体中文](README.zh.md)
 
-> English documentation: [`README.md`](../README.md)
+一个跨平台桌面应用（Tauri + React），用于统一管理 Agent Skills，并把它们同步到多种 AI 编程工具的全局或项目级 skills 目录（优先 symlink/junction，失败回退 copy），实现 “Install once, sync everywhere”。
 
 ## 主要功能
 
@@ -98,6 +98,14 @@ irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli
 ```
 
 Release 会同时发布四个 CLI 压缩包和对应 `.sha256` 文件。只有开发或自行构建时才需要 clone 完整仓库。
+
+## 客户端自动更新
+
+桌面客户端启动后会自动检查 GitHub Release；发现新版本时弹出中文版本说明。macOS 可以在弹窗中下载安装，并点击“立即重启”完成替换；Windows 的 NSIS updater 会在开始安装时自动退出当前客户端。也可以随时前往“设置 → 应用更新”手动检查。
+
+自动更新签名链从 v0.7.1 建立：低于 v0.7.1 的旧客户端需要手动安装一次当前版本；Windows v0.7.1 还需要手动升级到首个包含 Windows updater 清单的新版本。之后只要持续使用同一 updater 私钥，macOS Intel/Apple Silicon 与 Windows x64/ARM64 都可沿 Release 链更新。普通发布不得轮换 updater 公私钥。
+
+GitHub Release 标题、更新说明、安装提示和 Changelog 发布条目默认使用中文；命令、文件名与平台标识保持原格式。
 
 ## 新设备连接 WebDAV 并同步
 

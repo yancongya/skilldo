@@ -133,6 +133,7 @@ function App() {
   const [updateInstalling, setUpdateInstalling] = useState(false)
   const [updateDone, setUpdateDone] = useState(false)
   const updateObjRef = useRef<Update | null>(null) as MutableRefObject<Update | null>
+  const updateCheckStartedRef = useRef(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'updated' | 'name'>('updated')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'global' | 'project'>('all')
@@ -593,6 +594,36 @@ function App() {
       toast.error(err instanceof Error ? err.message : String(err), { duration: 3200 })
     }
   }, [])
+
+  const handleRestartAfterUpdate = useCallback(async () => {
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process')
+      await relaunch()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err), { duration: 3200 })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isTauri || updateCheckStartedRef.current) return
+    updateCheckStartedRef.current = true
+
+    void (async () => {
+      try {
+        const { check } = await import('@tauri-apps/plugin-updater')
+        const update = await check()
+        if (!update) return
+        if (localStorage.getItem('skills-ignored-update-version') === update.version) return
+
+        updateObjRef.current = update
+        setUpdateAvailableVersion(update.version)
+        setUpdateBody(update.body ?? null)
+        setUpdateDone(false)
+      } catch {
+        // Startup update checks are best-effort; manual checks remain available in Settings.
+      }
+    })()
+  }, [isTauri])
 
   useEffect(() => {
     if (!successToastMessage) return
@@ -3563,9 +3594,9 @@ function App() {
                 <button
                   className="btn btn-primary"
                   type="button"
-                  onClick={handleDismissUpdate}
+                  onClick={handleRestartAfterUpdate}
                 >
-                  {t('done')}
+                  {t('restartNow')}
                 </button>
               ) : (
                 <>

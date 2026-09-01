@@ -1,5 +1,7 @@
 # SkillDo
 
+[English](README.md) | [简体中文](docs/README.zh.md)
+
 > **Install once, sync everywhere.** The agent-native skill manager for 47+ AI tools.
 
 SkillDo manages AI Agent Skills from a single source of truth and syncs them to all your coding tools. Use the **CLI** for automation, the **desktop app** for visual management, or let **agents** drive it programmatically via structured JSON output.
@@ -53,6 +55,10 @@ skilldo explore --query "rag" --json
 ### Desktop App
 
 Download the `.dmg` for macOS or `.exe` for Windows from [Releases](https://github.com/yancongya/skilldo/releases). The GUI provides visual skill management, explore, and one-click sync. Linux can currently be built from source but is not part of the release matrix.
+
+The desktop app checks for updates after startup and shows the Chinese release notes when a newer version is available. macOS users can download, install, and relaunch from the prompt. On Windows, the NSIS updater exits the running app automatically before installation. Manual checks remain available under **Settings → App updates**.
+
+Because the updater signing key was established in v0.7.1, installations older than v0.7.1 must install a current release manually once. Windows v0.7.1 also requires one manual upgrade to the first release that includes the Windows updater manifest. Do not rotate the updater key for ordinary releases; losing it breaks the trusted update chain for installed clients.
 
 ### Development
 

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **客户端自动更新通知**：桌面客户端启动后自动检查新版本，并复用现有更新弹窗展示中文更新说明与安装入口。
+- **Windows 自动更新清单**：Release 流水线现在校验并发布 Windows x64、ARM64 安装包签名，并将四个平台完整写入 `updater.json`。
+
+### Changed
+- **中文 Release 规范**：GitHub Release 标题、更新说明、安装提示和平台限制默认使用中文。
+
+### Fixed
+- **安装后立即重启**：macOS 和 Windows 完成更新安装后可直接从客户端重新启动，不再仅提示用户手动退出。
+
 ## [0.7.1] - 2026-09-01
 
 ### Fixed

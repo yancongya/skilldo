@@ -40,5 +40,8 @@ src-tauri/target/release/bundle/
 # OMO tool remnants
 .omo/
 
+# Local agent workspace data
+.workbuddy/
+
 # Local CLI wrapper (generated)
 skilldo

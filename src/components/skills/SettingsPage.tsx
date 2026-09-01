@@ -461,6 +461,16 @@ const SettingsPage = ({
     }
   }, [])
 
+  const handleRestartUpdate = useCallback(async () => {
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process')
+      await relaunch()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : String(err))
+      setUpdateStatus('error')
+    }
+  }, [])
+
   const [appVersion, setAppVersion] = useState<string | null>(null)
   const versionText = useMemo(() => {
     if (!isTauri) return t('notAvailable')
@@ -949,7 +959,16 @@ const SettingsPage = ({
             <div className="settings-update-status">{t('installingUpdate')}</div>
           )}
           {updateStatus === 'done' && (
-            <div className="settings-update-ok">{t('updateInstalledRestart')}</div>
+            <div className="settings-update-available">
+              <span className="settings-update-ok">{t('updateInstalledRestart')}</span>
+              <button
+                className="btn btn-primary btn-sm"
+                type="button"
+                onClick={handleRestartUpdate}
+              >
+                {t('restartNow')}
+              </button>
+            </div>
           )}
           {updateStatus === 'error' && (
             <div className="settings-update-error">
