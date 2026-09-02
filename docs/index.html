@@ -1304,6 +1304,8 @@ button { font-family: inherit; cursor: pointer; }
           return {
             r0: Math.hypot(dx, dy),
             th0: Math.atan2(dy, dx),
+            rx0: dx,
+            ry0: dy,
             delay: s1 * 0.42,
             dur: 0.42 + s2 * 0.16,
             orbit: (1.6 + s3 * 1.5) * (i % 2 ? -1 : 1),
@@ -1322,8 +1324,8 @@ button { font-family: inherit; cursor: pointer; }
           var e = 1 - Math.pow(1 - pp, 2.1);
           var r = pr.r0 * (1 - e);
           gsap.set(el, {
-            x: Math.cos(pr.th0 + pr.orbit * e) * r,
-            y: Math.sin(pr.th0 + pr.orbit * e) * r,
+            x: Math.cos(pr.th0 + pr.orbit * e) * r - pr.rx0,
+            y: Math.sin(pr.th0 + pr.orbit * e) * r - pr.ry0,
             rotation: pr.selfSpin * e,
             scale: 1 - 0.96 * e,
             opacity: pp < 0.72 ? 1 : 1 - (pp - 0.72) / 0.28
