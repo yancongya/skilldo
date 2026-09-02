@@ -245,11 +245,57 @@ The separate `skilldo-backup.json` v2 format embeds a consistent SQLite image as
 
 SkillDo supports **45** AI coding tools. Project-level skill directories are relative to the selected project root. Tools marked "not supported" have no confirmed project-level skill directory and only support global sync.
 
-The full table with per-tool global/project-level paths and detection rules is maintained in the [Chinese README](docs/README.zh.md#支持的-ai-编程工具) and in [`src-tauri/src/core/tool_adapters/mod.rs`](src-tauri/src/core/tool_adapters/mod.rs).
+| tool key | Tool | Global skills directory (relative to ~) | Project-level skills directory (relative to project root) | Detected if present (relative to ~) |
+| --- | --- | --- | --- | --- |
+| `cursor` | Cursor | `.cursor/skills` | `.agents/skills` | `.cursor` |
+| `claude_code` | Claude Code | `.claude/skills` | `.claude/skills` | `.claude` |
+| `codex` | Codex | `.codex/skills` | `.agents/skills` | `.codex` |
+| `opencode` | OpenCode | `.config/opencode/skills` | `.agents/skills` | `.config/opencode` |
+| `antigravity` | Antigravity | `.gemini/antigravity/skills` | `.agents/skills` | `.gemini/antigravity` |
+| `amp` | Amp | `.config/agents/skills` | `.agents/skills` | `.config/agents` |
+| `kimi_cli` | Kimi Code CLI | `.config/agents/skills` | `.agents/skills` | `.config/agents` |
+| `augment` | Augment | `.augment/skills` | `.augment/skills` | `.augment` |
+| `openclaw` | OpenClaw | `.openclaw/skills` | `skills` | `.openclaw` |
+| `copaw` | Copaw | `.copaw/skill_pool` | `.copaw/skill_pool` | `.copaw` |
+| `cline` | Cline | `.agents/skills` | `.agents/skills` | `.agents` |
+| `codebuddy` | CodeBuddy | `.codebuddy/skills` | `.codebuddy/skills` | `.codebuddy` |
+| `command_code` | Command Code | `.commandcode/skills` | `.commandcode/skills` | `.commandcode` |
+| `continue` | Continue | `.continue/skills` | `.continue/skills` | `.continue` |
+| `crush` | Crush | `.config/crush/skills` | `.crush/skills` | `.config/crush` |
+| `junie` | Junie | `.junie/skills` | `.junie/skills` | `.junie` |
+| `iflow_cli` | iFlow CLI | `.iflow/skills` | `.iflow/skills` | `.iflow` |
+| `kiro_cli` | Kiro CLI | `.kiro/skills` | `.kiro/skills` | `.kiro` |
+| `kode` | Kode | `.kode/skills` | `.kode/skills` | `.kode` |
+| `mcpjam` | MCPJam | `.mcpjam/skills` | `.mcpjam/skills` | `.mcpjam` |
+| `mistral_vibe` | Mistral Vibe | `.vibe/skills` | `.vibe/skills` | `.vibe` |
+| `mux` | Mux | `.mux/skills` | `.mux/skills` | `.mux` |
+| `openclaude` | OpenClaude IDE | `.openclaude/skills` | `.openclaude/skills` | `.openclaude` |
+| `openhands` | OpenHands | `.openhands/skills` | `.openhands/skills` | `.openhands` |
+| `pi` | Pi | `.pi/agent/skills` | `.pi/skills` | `.pi` |
+| `qoder` | Qoder | `.qoder/skills` | `.qoder/skills` | `.qoder` |
+| `qoderwork` | QoderWork | `.qoderwork/skills` | `.qoderwork/skills` | `.qoderwork` |
+| `qwen_code` | Qwen Code | `.qwen/skills` | `.qwen/skills` | `.qwen` |
+| `trae` | Trae | `.trae/skills` | `.trae/skills` | `.trae` |
+| `trae_cn` | Trae CN | `.trae-cn/skills` | `.trae/skills` | `.trae-cn` |
+| `zencoder` | Zencoder | `.zencoder/skills` | `.zencoder/skills` | `.zencoder` |
+| `neovate` | Neovate | `.neovate/skills` | `.neovate/skills` | `.neovate` |
+| `pochi` | Pochi | `.pochi/skills` | `.pochi/skills` | `.pochi` |
+| `adal` | AdaL | `.adal/skills` | `.adal/skills` | `.adal` |
+| `kilo_code` | Kilo Code | `.kilocode/skills` | `.kilocode/skills` | `.kilocode` |
+| `roo_code` | Roo Code | `.roo/skills` | `.roo/skills` | `.roo` |
+| `goose` | Goose | `.config/goose/skills` | `.goose/skills` | `.config/goose` |
+| `gemini_cli` | Gemini CLI | `.gemini/skills` | `.agents/skills` | `.gemini` |
+| `github_copilot` | GitHub Copilot | `.copilot/skills` | `.agents/skills` | `.copilot` |
+| `clawdbot` | Clawdbot | `.clawdbot/skills` | `.clawdbot/skills` | `.clawdbot` |
+| `droid` | Droid | `.factory/skills` | `.factory/skills` | `.factory` |
+| `windsurf` | Windsurf | `.codeium/windsurf/skills` | `.windsurf/skills` | `.codeium/windsurf` |
+| `moltbot` | MoltBot | `.moltbot/skills` | `.moltbot/skills` | `.moltbot` |
+| `hermes_agent` | Hermes Agent | `.hermes/skills` | not supported | `.hermes` |
+| `workbuddy` | WorkBuddy | `.workbuddy/skills` | `.workbuddy/skills` | `.workbuddy` |
 
-Representative tools: WorkBuddy, Claude Code, Codex, Cursor, OpenCode, Cline, Augment, OpenClaw, Gemini CLI, Kiro CLI, iFlow, Qoder, Qwen Code, Antigravity, Pi, Amp, Continue, Windsurf, GitHub Copilot, Trae, Roo Code, and more.
+> Tool count is generated from source via `readme-please`'s `gen_tool_table.py` — keep it in sync, do not hand-edit.
 
-> Tool count is generated from source via `readme-writer`'s `gen_tool_table.py` — keep it in sync, do not hand-edit.
+Full path rules and detection logic are in [`src-tauri/src/core/tool_adapters/mod.rs`](src-tauri/src/core/tool_adapters/mod.rs).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -267,6 +313,17 @@ Representative tools: WorkBuddy, Claude Code, Codex, Cursor, OpenCode, Cline, Au
 Build artifacts are collected to `out/` with intermediates cleaned up.
 
 Pushes to `main` are released automatically after CI succeeds when changes affect application or CLI code. The automation increments the patch version, promotes the Unreleased changelog into a Chinese version section, creates the tag, and dispatches the existing signed macOS/Windows release workflow. Documentation-only changes, the generated featured catalog, commits containing `[skip release]`, and failed CI runs do not publish a release.
+
+Per-system build commands (from `package.json`):
+
+- macOS (dmg): `npm run tauri:build:mac:dmg`
+- macOS (universal dmg): `npm run tauri:build:mac:universal:dmg`
+- Windows (MSI): `npm run tauri:build:win:msi`
+- Windows (NSIS exe): `npm run tauri:build:win:exe`
+- Windows (MSI + NSIS): `npm run tauri:build:win:all`
+- Linux (deb): `npm run tauri:build:linux:deb`
+- Linux (AppImage): `npm run tauri:build:linux:appimage`
+- Linux (deb + AppImage): `npm run tauri:build:linux:all`
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

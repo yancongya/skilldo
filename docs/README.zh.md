@@ -6,7 +6,7 @@
   </a>
 </p>
 
-<h1 align="center">SkillDo（Tauri Desktop）</h1>
+<h1 align="center">SkillDo</h1>
 
 <p align="center">
   <a href="https://github.com/yancongya/skilldo/actions"><img alt="构建" src="https://img.shields.io/github/actions/workflow/status/yancongya/skilldo/ci.yml?branch=main"></a>
@@ -75,22 +75,6 @@ SkillDo 是一个跨平台桌面应用（Tauri + React），用于统一管理 A
 - **多来源导入**：本地目录 / Git 仓库 URL（含可搜索的 multi-skill 候选选择、`.claude/skills/` 目录格式支持）
 - **更新**：从原来源更新中心仓库内容，并回灌 copy 模式的目标
 - **新工具检测**：发现新安装工具时提示是否同步所有已托管 skills
-
-### My Skills — 技能管理列表
-
-![My Skills](./assets/my-skills.svg)
-
-### Explore — 探索与在线搜索
-
-![Explore](./assets/explore-search.svg)
-
-### Manual Add — 手动添加技能
-
-![Manual Add](./assets/manual-add.svg)
-
-### Skill Detail — 技能详情与文件浏览
-
-![Skill Detail](./assets/skill-detail.svg)
 
 <p align="right">(<a href="#readme-top">回到顶部</a>)</p>
 
@@ -409,4 +393,4 @@ SkillDo 支持 **45** 个 AI 编程工具。项目级 skills 目录相对所选�
 
 ## 许可证
 
-基于 [MIT License](../../LICENSE) 发布。
+基于 [MIT License](../LICENSE) 发布。
