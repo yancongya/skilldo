@@ -1289,6 +1289,47 @@ button { font-family: inherit; cursor: pointer; }
     var gridEl = document.getElementById("toolsGrid");
     if (gridEl && cvCore) {
       gsap.set(cvCore, { xPercent: -50, yPercent: -50, scale: 0.3 });
+      /* per-card pseudo-random spiral params (stable across refresh) */
+      var cellsArr = gsap.utils.toArray(".tool-cell");
+      var spiralProg = { v: 0 };
+      var spiralParams = [];
+      function measureSpiral() {
+        var gw = gridEl.clientWidth, gh = gridEl.clientHeight;
+        spiralParams = cellsArr.map(function (el, i) {
+          var dx = (el.offsetLeft + el.offsetWidth / 2) - gw / 2;
+          var dy = (el.offsetTop + el.offsetHeight / 2) - gh / 2;
+          var s1 = ((i * 9301 + 49297) % 233280) / 233280;
+          var s2 = ((i * 4177 + 12345) % 65536) / 65536;
+          var s3 = ((i * 7919 + 45677) % 65536) / 65536;
+          return {
+            r0: Math.hypot(dx, dy),
+            th0: Math.atan2(dy, dx),
+            delay: s1 * 0.42,
+            dur: 0.42 + s2 * 0.16,
+            orbit: (1.6 + s3 * 1.5) * (i % 2 ? -1 : 1),
+            selfSpin: (260 + s2 * 260) * (i % 2 ? -1 : 1)
+          };
+        });
+      }
+      measureSpiral();
+      function applySpiral() {
+        var t = spiralProg.v;
+        for (var i = 0; i < cellsArr.length; i++) {
+          var el = cellsArr[i], pr = spiralParams[i];
+          var pp = (t - pr.delay) / pr.dur;
+          if (pp <= 0) { gsap.set(el, { x: 0, y: 0, rotation: 0, scale: 1, opacity: 1 }); continue; }
+          if (pp > 1) pp = 1;
+          var e = 1 - Math.pow(1 - pp, 2.1);
+          var r = pr.r0 * (1 - e);
+          gsap.set(el, {
+            x: Math.cos(pr.th0 + pr.orbit * e) * r,
+            y: Math.sin(pr.th0 + pr.orbit * e) * r,
+            rotation: pr.selfSpin * e,
+            scale: 1 - 0.96 * e,
+            opacity: pp < 0.72 ? 1 : 1 - (pp - 0.72) / 0.28
+          });
+        }
+      }
       var cvTl = gsap.timeline({
         scrollTrigger: {
           trigger: "#tools",
@@ -1300,16 +1341,11 @@ button { font-family: inherit; cursor: pointer; }
         }
       });
       cvTl
-        .to(gridEl, { rotation: 200, scale: 0.88, ease: "none", duration: 0.75 }, 0)
-        .to(cvCore, { rotation: -200, ease: "none", duration: 0.75 }, 0)
         .to(cvHint, { opacity: 0, duration: 0.08, ease: "none" }, 0)
-        .to(".tool-cell", {
-          x: function (i, el) { return (el.offsetLeft + el.offsetWidth / 2) - gridEl.clientWidth / 2; },
-          y: function (i, el) { return (el.offsetTop + el.offsetHeight / 2) - gridEl.clientHeight / 2; },
-          scale: 0.02, opacity: 0,
-          stagger: { each: 0.005, from: "random" },
-          duration: 0.42, ease: "power2.in"
-        }, 0.22)
+        .to(spiralProg, {
+          v: 1, duration: 0.62, ease: "none",
+          onStart: applySpiral, onUpdate: applySpiral
+        }, 0.06)
         .to(cvGlow, { opacity: 0.85, scale: 1.7, duration: 0.16, ease: "power1.out" }, 0.42)
         .to(cvGlow, { opacity: 0, duration: 0.12, ease: "power1.in" }, 0.58)
         .to(cvCore, { opacity: 1, scale: 1, duration: 0.2, ease: "back.out(1.8)" }, 0.5)
@@ -1317,7 +1353,8 @@ button { font-family: inherit; cursor: pointer; }
           opacity: 1, y: 0,
           stagger: { each: 0.04, from: "start" },
           duration: 0.12, ease: "power2.out"
-        }, 0.68);
+        }, 0.66);
+      ScrollTrigger.addEventListener("refreshInit", measureSpiral);
     }
 
     gsap.to(".tool-cell", {
