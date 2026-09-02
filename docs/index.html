@@ -29,6 +29,7 @@
   --card: #FFFFFF;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html { overflow-x: hidden; }
 body {
   background: var(--bg); color: var(--text); font-family: var(--font-sans);
   font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased;
@@ -365,6 +366,94 @@ button { font-family: inherit; cursor: pointer; }
 .ic-note { font-size: 12px; color: var(--text-3); }
 .ic-note code { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
 @media (max-width: 960px) { .install-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Overflow guards (grid/flex min-width:auto) ---------- */
+.mode-copy, .mode-visual, .agent-card, .install-card, .pain-card, .app-main,
+.source-diagram, .cli-body, .mock, .tools-head, .app-cards {
+  min-width: 0;
+}
+.cli-out, .code-block, .cli-body { max-width: 100%; }
+.ic-note code { overflow-wrap: anywhere; }
+.source-wrap > .reveal { min-width: 0; }
+
+/* ---------- Custom scroll axis (no native scrollbar) ---------- */
+html { scrollbar-width: none; -ms-overflow-style: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display: none; }
+*::-webkit-scrollbar { width: 0; height: 0; }
+.cv-scrollbar {
+  position: fixed; top: 0; right: 0; width: 3px; height: 100%; z-index: 150;
+  background: var(--border); pointer-events: none;
+}
+#scrollProgress {
+  display: block; width: 100%; height: 100%; background: var(--accent);
+  transform: scaleY(0); transform-origin: top center;
+  transition: transform 0.12s linear;
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 640px) {
+  .cv-scrollbar { display: none; }
+  .nav-inner { padding: 0 16px; gap: 10px; }
+  .nav-gh span { display: none; }
+  .nav-gh { padding: 7px 10px; }
+  .hero { padding: 106px 18px 60px; }
+  .hero h1 { font-size: clamp(29px, 8.4vw, 40px); line-height: 1.15; max-width: 100%; }
+  .hero-sub { font-size: 15.5px; margin-bottom: 30px; }
+  .hero-cta { flex-direction: column; align-items: stretch; }
+  .btn-primary, .btn-ghost { justify-content: center; padding: 15px 22px; }
+  .hero-meta { gap: 14px 18px; font-size: 12px; margin-top: 32px; }
+  .hero-meta b { font-size: 14px; }
+  .hero-hint { font-size: 12px; margin-top: 18px; }
+  .section { padding: 62px 18px; }
+  .sec-title { font-size: clamp(24px, 7vw, 32px); }
+  .sec-sub { font-size: 15.5px; }
+  .pain-card { min-height: 200px; padding: 20px; }
+  .pain-grid { gap: 14px; }
+  .modes { gap: 54px; margin-top: 44px; }
+  .mode { gap: 26px; }
+  .mode p { font-size: 15px; }
+  .cli-body { padding: 16px 16px 14px; font-size: 12px; min-height: 250px; }
+  .cli-tab { font-size: 11.5px; padding: 8px 11px; }
+  .cli-tab-hint { display: none; }
+  .app { grid-template-columns: 1fr; }
+  .app-side { display: none; }
+  .app-cards { grid-template-columns: 1fr; }
+  .app-main { padding: 16px 16px 18px; }
+  .sync { padding: 22px 16px; gap: 14px; }
+  .device { padding: 14px; }
+  .sync-hub { transform: rotate(90deg); min-width: 90px; }
+  .source-wrap { gap: 36px; margin-top: 40px; }
+  .source-diagram { max-width: 340px; margin: 0 auto; }
+  .sat { width: 84px; font-size: 10px; padding: 7px 0; }
+  .fallback-row { font-size: 13px; padding: 11px 13px; gap: 10px; }
+  .agent-grid { gap: 16px; margin-top: 40px; }
+  .agent-card { padding: 20px; }
+  .code-block { font-size: 11.5px; padding: 12px 13px; }
+  .pub-steps { gap: 4px; }
+  .pub-step { font-size: 10.5px; padding: 6px 9px; }
+  .tools-head { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .tools-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 30px; }
+  .tool-cell {
+    padding: 13px 5px; font-size: 11.5px; min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cv-hint { display: none; }
+  .cv-identities { gap: 8px; margin-top: 14px; }
+  .cv-id-badge { font-size: 11px; padding: 5px 11px; }
+  .cv-core svg { width: 64px; height: 64px; }
+  .cv-tagline { font-size: 12px; }
+  .install-grid { gap: 14px; margin-top: 40px; }
+  .install-card { padding: 20px 18px; }
+  .ic-action { flex-direction: column; }
+  .ic-btn { width: 100%; }
+  .footer { padding: 24px 18px 30px; font-size: 12.5px; }
+  .footer-links { gap: 14px; }
+  .toast { font-size: 13px; bottom: 18px; padding: 10px 16px; }
+}
+@media (max-width: 380px) {
+  .hero h1 { font-size: 27px; }
+  .tools-grid { grid-template-columns: 1fr; }
+}
 
 /* ---------- Footer ---------- */
 .footer {
@@ -832,6 +921,7 @@ button { font-family: inherit; cursor: pointer; }
   </div>
 </footer>
 
+<div class="cv-scrollbar" aria-hidden="true"><span id="scrollProgress"></span></div>
 <div class="toast" id="toast" data-i18n="toastCopied">Copied to clipboard</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
@@ -1233,8 +1323,15 @@ button { font-family: inherit; cursor: pointer; }
   function initMotion() {
     if (reduced || typeof gsap === "undefined") return;
     if (typeof Lenis !== "undefined") {
-      var lenis = new Lenis({ duration: 1.05, smoothWheel: true });
+      var lenis = new Lenis({ duration: 1.05, smoothWheel: true, syncTouch: true, touchInertiaMultiplier: 18 });
       window.__lenis = lenis;
+      var progBar = document.getElementById("scrollProgress");
+      if (progBar) {
+        lenis.on("scroll", function (e) {
+          var lim = e.limit || 1;
+          progBar.style.transform = "scaleY(" + Math.min(e.scroll / lim, 1).toFixed(4) + ")";
+        });
+      }
       function raf(t) { lenis.raf(t); requestAnimationFrame(raf); }
       requestAnimationFrame(raf);
     }
@@ -1314,6 +1411,8 @@ button { font-family: inherit; cursor: pointer; }
         });
       }
       measureSpiral();
+      var mm = gsap.matchMedia();
+      mm.add("(min-width: 701px)", function () {
       function applySpiral() {
         var t = spiralProg.v;
         for (var i = 0; i < cellsArr.length; i++) {
@@ -1357,6 +1456,16 @@ button { font-family: inherit; cursor: pointer; }
           duration: 0.12, ease: "power2.out"
         }, 0.66);
       ScrollTrigger.addEventListener("refreshInit", measureSpiral);
+      return function () {
+        ScrollTrigger.removeEventListener("refreshInit", measureSpiral);
+        cellsArr.forEach(function (el) {
+          gsap.set(el, { x: 0, y: 0, rotation: 0, scale: 1, opacity: 1 });
+        });
+        gsap.set(cvCore, { opacity: 0, scale: 0.3 });
+        gsap.set(cvGlow, { opacity: 0, scale: 0.3 });
+        gsap.set(cvHint, { opacity: 1 });
+      };
+      });
     }
 
     gsap.to(".tool-cell", {
@@ -1364,6 +1473,24 @@ button { font-family: inherit; cursor: pointer; }
       scrollTrigger: { trigger: "#toolsGrid", start: "top 82%" }
     });
   }
+
+  /* Fallback scroll progress when Lenis is not active (reduced-motion) */
+  (function bindNativeProgress() {
+    var bar = document.getElementById("scrollProgress");
+    if (!bar) return;
+    var ticking = false;
+    function upd() {
+      var d = document.documentElement;
+      var top = d.scrollTop || document.body.scrollTop;
+      var lim = (d.scrollHeight - window.innerHeight) || 1;
+      bar.style.transform = "scaleY(" + Math.min(top / lim, 1).toFixed(4) + ")";
+      ticking = false;
+    }
+    window.addEventListener("scroll", function () {
+      if (!ticking) { ticking = true; requestAnimationFrame(upd); }
+    }, { passive: true });
+    upd();
+  })();
 
   document.addEventListener("DOMContentLoaded", function () {
     applyTheme(theme);
