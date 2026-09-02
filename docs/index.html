@@ -178,30 +178,48 @@ button { font-family: inherit; cursor: pointer; }
 .cli-tab.on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 .cli-tab-hint { font-size: 11.5px; color: var(--text-3); margin-left: auto; align-self: center; font-family: var(--font-mono); }
 
-/* Desktop app mock */
-.app { position: relative; display: grid; grid-template-columns: 172px 1fr; min-height: 348px; }
-.app-side { border-right: 1px solid var(--border); padding: 18px 14px; background: var(--bg-2); display: flex; flex-direction: column; gap: 4px; }
-.app-side-label { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); letter-spacing: 0.07em; margin: 0 8px 10px; }
-.app-nav-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: var(--text-2); padding: 8px 10px; border-radius: 8px; }
-.app-nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
-.app-nav-item.on { background: var(--accent-dim); color: var(--accent); }
-.app-main { padding: 18px 20px; }
-.app-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
-.app-search { flex: 1; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border); border-radius: 9px; padding: 8px 13px; font-size: 13px; color: var(--text-3); background: var(--bg-2); }
-.app-search svg { width: 14px; height: 14px; }
-.app-btn { border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-dim); border-radius: 9px; padding: 8px 14px; font-size: 13px; font-weight: 500; }
-.app-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.app-card { border: 1px solid var(--border); border-radius: 11px; padding: 13px 14px; background: var(--bg-2); }
-.app-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.app-card-ico { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-dim); display: flex; align-items: center; justify-content: center; }
+/* Desktop app mock (top tabs) */
+.app { position: relative; display: flex; flex-direction: column; min-height: 348px; }
+.app-tabs {
+  display: flex; gap: 4px; padding: 10px 12px; flex-wrap: wrap;
+  background: var(--bg-3); border-bottom: 1px solid var(--border);
+}
+.app-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-sans); font-size: 13px; color: var(--text-2);
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  padding: 7px 12px; transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.app-tab svg { width: 14px; height: 14px; flex-shrink: 0; }
+.app-tab:hover { color: var(--text); }
+.app-tab.on { background: var(--accent-dim); border-color: var(--accent-line); color: var(--accent); }
+.app-main { padding: 16px 18px 18px; flex: 1; min-width: 0; }
+.app-toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+.app-search { flex: 1; display: flex; align-items: center; gap: 9px; border: 1px solid var(--border); border-radius: 9px; padding: 8px 13px; font-size: 13px; color: var(--text-3); background: var(--bg-2); min-width: 0; }
+.app-search svg { width: 14px; height: 14px; flex-shrink: 0; }
+.app-btn { border: 1px solid var(--accent-line); color: var(--accent); background: var(--accent-dim); border-radius: 9px; padding: 8px 14px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.app-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.app-card { border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px; background: var(--bg-2); min-width: 0; }
+.app-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.app-card-ico { width: 26px; height: 26px; border-radius: 7px; background: var(--accent-dim); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .app-card-ico svg { width: 14px; height: 14px; color: var(--accent); }
-.app-card-name { font-size: 13.5px; font-weight: 600; }
+.app-card-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-card-src { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); }
-.app-card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 9px; }
-.app-sync { display: flex; gap: 4px; }
+.app-card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 6px; }
+.app-sync { display: flex; gap: 4px; flex-shrink: 0; }
 .app-sync i { width: 7px; height: 7px; border-radius: 2px; background: var(--bg-4); }
 .app-sync i.on { background: var(--accent); }
-.app-card-act { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2.5px 8px; }
+.app-card-act { font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2.5px 8px; white-space: nowrap; }
+.app-panel { display: none; }
+.app-panel.on { display: block; }
+.app-rows { display: flex; flex-direction: column; gap: 8px; }
+.app-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  font-size: 12.5px; color: var(--text-3); font-family: var(--font-mono);
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 13px; background: var(--bg-2);
+}
+.app-row b { color: var(--text-2); font-weight: 500; }
+.app-row .ok { color: var(--accent); }
 
 /* Sync mock */
 .sync { position: relative; padding: 34px 26px 30px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 18px; align-items: center; }
@@ -415,8 +433,8 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
   .cli-body { padding: 16px 16px 14px; font-size: 12px; min-height: 250px; }
   .cli-tab { font-size: 11.5px; padding: 8px 11px; }
   .cli-tab-hint { display: none; }
-  .app { grid-template-columns: 1fr; }
-  .app-side { display: none; }
+  .app-tabs { padding: 8px 8px; gap: 2px; }
+  .app-tab { font-size: 12px; padding: 6px 9px; }
   .app-cards { grid-template-columns: 1fr; }
   .app-main { padding: 16px 16px 18px; }
   .sync { padding: 22px 16px; gap: 14px; }
@@ -637,45 +655,76 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
         <span class="mock-label" style="position:absolute;top:14px;right:14px;z-index:5" data-i18n="mockLabel">UI MOCK</span>
         <div class="mock-bar"><i></i><i></i><i></i><span class="mock-title">SkillDo</span></div>
         <div class="app">
-          <div class="app-side">
-            <div class="app-side-label" data-i18n="appLibrary">LIBRARY</div>
-            <div class="app-nav-item on">
+          <div class="app-tabs" role="tablist">
+            <button class="app-tab on" data-panel="skills" role="tab" aria-selected="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               <span data-i18n="appMySkills">My skills</span>
-            </div>
-            <div class="app-nav-item">
+            </button>
+            <button class="app-tab" data-panel="explore" role="tab" aria-selected="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
               <span data-i18n="appExplore">Explore</span>
-            </div>
-            <div class="app-nav-item">
+            </button>
+            <button class="app-tab" data-panel="settings" role="tab" aria-selected="false">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.06-.4.1-.8.1-1.2Z"/></svg>
               <span data-i18n="appSettings">Settings</span>
-            </div>
+            </button>
           </div>
           <div class="app-main">
-            <div class="app-toolbar">
-              <div class="app-search">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-                <span data-i18n="appSearchPh">Search 46 skills…</span>
+            <div class="app-panel on" data-panel="skills">
+              <div class="app-toolbar">
+                <div class="app-search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  <span data-i18n="appSearchPh">Search 46 skills…</span>
+                </div>
+                <button class="app-btn" data-i18n="appPublish">Publish</button>
               </div>
-              <button class="app-btn" data-i18n="appPublish">Publish</button>
+              <div class="app-cards">
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div style="min-width:0"><div class="app-card-name">readme-please</div><div class="app-card-src">github · v2.1.0</div></div></div>
+                  <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div><span class="app-card-act">13 targets</span></div>
+                </div>
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h18M3 12h18M3 19.5h18"/></svg></div><div style="min-width:0"><div class="app-card-name">copywriting</div><div class="app-card-src">github · v1.4.2</div></div></div>
+                  <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><span class="app-card-act">9 targets</span></div>
+                </div>
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div style="min-width:0"><div class="app-card-name">auth-manager</div><div class="app-card-src">github · v3.0.1</div></div></div>
+                  <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div><span class="app-card-act">7 targets</span></div>
+                </div>
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg></div><div style="min-width:0"><div class="app-card-name">tailwindcss</div><div class="app-card-src">github · v4.0.9</div></div></div>
+                  <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><span class="app-card-act">11 targets</span></div>
+                </div>
+              </div>
             </div>
-            <div class="app-cards">
-              <div class="app-card">
-                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div><div><div class="app-card-name">readme-please</div><div class="app-card-src">github · v2.1.0</div></div></div>
-                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div><span class="app-card-act">13 targets</span></div>
+            <div class="app-panel" data-panel="explore">
+              <div class="app-toolbar">
+                <div class="app-search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  <span data-i18n="appExplorePh">Search the skill market…</span>
+                </div>
               </div>
-              <div class="app-card">
-                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h18M3 12h18M3 19.5h18"/></svg></div><div><div class="app-card-name">copywriting</div><div class="app-card-src">github · v1.4.2</div></div></div>
-                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div><span class="app-card-act">9 targets</span></div>
+              <div class="app-cards">
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17l-5.9 3 1.2-6.5L2.5 8.9 9.1 8 12 2z"/></svg></div><div style="min-width:0"><div class="app-card-name">find-skills</div><div class="app-card-src" data-i18n="appInstalls1">1.5M installs</div></div></div>
+                  <div class="app-card-foot"><span class="app-card-act" data-i18n="appInstallBtn">Install</span></div>
+                </div>
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg></div><div style="min-width:0"><div class="app-card-name">web-design-guidelines</div><div class="app-card-src" data-i18n="appInstalls2">420K installs</div></div></div>
+                  <div class="app-card-foot"><span class="app-card-act" data-i18n="appInstallBtn">Install</span></div>
+                </div>
+                <div class="app-card">
+                  <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><path d="M3 12h18"/></svg></div><div style="min-width:0"><div class="app-card-name">react-best-practices</div><div class="app-card-src" data-i18n="appInstalls3">390K installs</div></div></div>
+                  <div class="app-card-foot"><span class="app-card-act" data-i18n="appInstallBtn">Install</span></div>
+                </div>
               </div>
-              <div class="app-card">
-                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><div><div class="app-card-name">auth-manager</div><div class="app-card-src">github · v3.0.1</div></div></div>
-                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i></div><span class="app-card-act">7 targets</span></div>
-              </div>
-              <div class="app-card">
-                <div class="app-card-top"><div class="app-card-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 8l7-5 7 5M5 16l7 5 7-5"/></svg></div><div><div class="app-card-name">tailwindcss</div><div class="app-card-src">github · v4.0.9</div></div></div>
-                <div class="app-card-foot"><div class="app-sync"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div><span class="app-card-act">11 targets</span></div>
+            </div>
+            <div class="app-panel" data-panel="settings">
+              <div class="app-rows">
+                <div class="app-row"><span data-i18n="appSetRepo">Central repo</span><b>~/.skillshub</b></div>
+                <div class="app-row"><span data-i18n="appSetWebdav">WebDAV sync</span><b class="ok" data-i18n="appConnected">connected</b></div>
+                <div class="app-row"><span data-i18n="appSetTools">Detected tools</span><b>13 / 45</b></div>
+                <div class="app-row"><span data-i18n="appSetUpdate">Auto-update</span><b class="ok">on</b></div>
               </div>
             </div>
           </div>
@@ -993,6 +1042,10 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
       mockLabel: "INTERACTIVE · UI MOCK", cliHint: "click to run ↑",
       appLibrary: "LIBRARY", appMySkills: "My skills", appExplore: "Explore", appSettings: "Settings",
       appSearchPh: "Search 46 skills…", appPublish: "Publish",
+      appExplorePh: "Search the skill market…", appInstallBtn: "Install",
+      appInstalls1: "1.5M installs", appInstalls2: "420K installs", appInstalls3: "390K installs",
+      appSetRepo: "Central repo", appSetWebdav: "WebDAV sync", appSetTools: "Detected tools",
+      appSetUpdate: "Auto-update", appConnected: "connected",
       syncOk: "in sync", syncRestored: "restored", syncNewDevice: "New device", syncYours: "yours",
       sourceTag: "03 · SINGLE SOURCE OF TRUTH",
       sourceTitle: "Edit once. Live everywhere.",
@@ -1070,6 +1123,10 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
       mockLabel: "可交互 · 界面示意", cliHint: "点击运行 ↑",
       appLibrary: "技能库", appMySkills: "我的技能", appExplore: "探索", appSettings: "设置",
       appSearchPh: "搜索 46 个技能…", appPublish: "发布",
+      appExplorePh: "搜索技能市场…", appInstallBtn: "安装",
+      appInstalls1: "150 万次安装", appInstalls2: "42 万次安装", appInstalls3: "39 万次安装",
+      appSetRepo: "中央仓库", appSetWebdav: "WebDAV 同步", appSetTools: "已检测工具",
+      appSetUpdate: "自动更新", appConnected: "已连接",
       syncOk: "已同步", syncRestored: "已恢复", syncNewDevice: "新设备", syncYours: "你的",
       sourceTag: "03 · 单一真源",
       sourceTitle: "改一处，处处生效。",
@@ -1232,6 +1289,21 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
     grid.appendChild(cell);
   });
 
+
+  /* ---------- Desktop app mock: top tab switching ---------- */
+  var appTabs = document.querySelectorAll(".app-tab");
+  var appPanels = document.querySelectorAll(".app-panel");
+  appTabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      appTabs.forEach(function (t) { t.classList.remove("on"); t.setAttribute("aria-selected", "false"); });
+      tab.classList.add("on");
+      tab.setAttribute("aria-selected", "true");
+      var key = tab.getAttribute("data-panel");
+      appPanels.forEach(function (pn) {
+        pn.classList.toggle("on", pn.getAttribute("data-panel") === key);
+      });
+    });
+  });
 
   /* ---------- Source diagram: hover satellites ---------- */
   var satEls = Array.prototype.slice.call(document.querySelectorAll("#sourceDiagram .sat"));
