@@ -289,6 +289,99 @@ button { font-family: inherit; cursor: pointer; }
 .tool-cell.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
 .tools-more { text-align: center; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-3); margin-top: 20px; }
 
+
+/* ---------- Converge: black-hole scroll ---------- */
+.converge {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  z-index: 1;
+}
+.cv-stage { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--bg); }
+.cv-hint {
+  position: absolute; top: calc(72px + 2vh); left: 50%; transform: translateX(-50%);
+  font-family: var(--font-mono); font-size: 13px; color: var(--text-3); letter-spacing: 0.04em;
+  opacity: 1; transition: opacity 0.4s; white-space: nowrap; z-index: 10;
+}
+.cv-hint.hide { opacity: 0; pointer-events: none; }
+.cv-ring {
+  position: absolute; width: 100%; height: 100%;
+  will-change: transform;
+}
+.cv-dot {
+  position: absolute; left: 50%; top: 50%;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+  border: 1px solid var(--border); border-radius: 7px; padding: 4px 9px;
+  background: var(--card); white-space: nowrap;
+  transform-origin: center center;
+  transition: border-color 0.2s, color 0.2s;
+}
+.cv-dot.lit { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.cv-glow {
+  position: absolute; width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-dim) 0%, transparent 70%);
+  opacity: 0; transform: scale(0.3);
+  pointer-events: none;
+}
+.cv-core {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(0.3);
+  opacity: 0; text-align: center; z-index: 5; pointer-events: none;
+}
+.cv-core svg { width: 90px; height: 90px; margin-bottom: 14px; }
+.cv-name {
+  font-size: clamp(30px, 5vw, 46px); font-weight: 700; letter-spacing: -0.03em;
+  color: var(--text); margin-bottom: 10px;
+}
+.cv-tagline {
+  font-family: var(--font-mono); font-size: 14px; color: var(--text-2); letter-spacing: 0.01em;
+}
+.cv-identities {
+  display: flex; gap: 16px; justify-content: center; margin-top: 20px;
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--text-3);
+  flex-wrap: wrap;
+}
+.cv-id-badge {
+  border: 1px solid var(--border-2); border-radius: 999px; padding: 6px 14px;
+  background: var(--bg-2); display: inline-flex; align-items: center; gap: 7px;
+  opacity: 0; transform: translateY(10px);
+}
+.cv-id-badge svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .converge { height: auto; padding: 80px 28px; text-align: center; }
+  .cv-ring { display: none; }
+  .cv-core, .cv-id-badge { opacity: 1 !important; transform: none !important; }
+  .cv-core { position: relative; left: auto; top: auto; transform: none !important; }
+  .cv-hint { display: none; }
+  .cv-glow { display: none; }
+}
+.no-motion .converge { height: auto; padding: 80px 28px; text-align: center; }
+.no-motion .cv-ring { display: none; }
+.no-motion .cv-core, .no-motion .cv-id-badge { opacity: 1 !important; transform: none !important; }
+.no-motion .cv-core { position: relative; left: auto; top: auto; transform: none !important; }
+.no-motion .cv-hint { display: none; }
+.no-motion .cv-glow { display: none; }
+
+/* ---------- Three identities highlight in modes ---------- */
+.identity-trio {
+  display: flex; gap: 14px; margin-top: 20px; flex-wrap: wrap;
+}
+.identity-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 12.5px;
+  border: 1px solid var(--border-2); border-radius: 999px; padding: 8px 15px;
+  background: var(--bg-2); color: var(--text-2);
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.identity-chip svg { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+.identity-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+
 /* ---------- Install: three channels ---------- */
 .install-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 56px; }
 .install-card {
@@ -458,7 +551,7 @@ button { font-family: inherit; cursor: pointer; }
   <div class="reveal">
     <div class="sec-tag" data-i18n="modesTag">02 · THREE FORMS, ONE ENGINE</div>
     <h2 class="sec-title" data-i18n="modesTitle">Terminal, desktop, or another machine.</h2>
-    <p class="sec-sub" data-i18n="modesSub">The CLI and the desktop app share the exact same database and core engine. Use whichever fits the moment — state never drifts.</p>
+    <p class="sec-sub" data-i18n="modesSub">The CLI and the desktop app share the exact same database and core engine. Use whichever fits the moment — state never drifts. SkillDo is one program: a <b>desktop app</b> you open, a <b>CLI</b> your agent calls, and a <b>skill</b> it discovers via SKILL.md. Same engine, three faces.</p>
   </div>
   <div class="modes">
 
@@ -702,12 +795,36 @@ button { font-family: inherit; cursor: pointer; }
   </div>
   <div class="tools-grid" id="toolsGrid"></div>
   <p class="tools-more" data-i18n="toolsMore">Tool list generated from source — new adapters ship regularly.</p>
+
+<!-- ================= CONVERGE ================= -->
+<section class="converge" id="converge">
+  <div class="cv-stage">
+    <div class="cv-hint" id="cvHint" data-i18n="cvHint">keep scrolling — watch them converge ↓</div>
+    <div class="cv-ring" id="cvRing"></div>
+    <div class="cv-glow" id="cvGlow"></div>
+    <div class="cv-core" id="cvCore">
+      <svg viewBox="0 0 1024 1024" role="img">
+        <rect x="142" y="126" width="660" height="660" rx="154" fill="#78F2C2"/>
+        <rect x="222" y="206" width="660" height="660" rx="154" fill="var(--bg-3)" stroke="var(--border-2)" stroke-width="18"/>
+        <path d="M405 393 548 536 405 679" fill="none" stroke="var(--text)" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M625 678h124" fill="none" stroke="var(--text)" stroke-width="82" stroke-linecap="round"/>
+      </svg>
+      <div class="cv-name">SkillDo</div>
+      <div class="cv-tagline" data-i18n="cvTagline">Install once, sync everywhere.</div>
+      <div class="cv-identities">
+        <span class="cv-id-badge" data-i18n-html="cvIdCli"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>CLI tool</span>
+        <span class="cv-id-badge" data-i18n-html="cvIdApp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Desktop app</span>
+        <span class="cv-id-badge" data-i18n-html="cvIdSkill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Agent skill</span>
+      </div>
+    </div>
+  </div>
 </section>
+
 
 <!-- ================= INSTALL ================= -->
 <section class="section" id="start">
   <div class="reveal">
-    <div class="sec-tag" data-i18n="installTag">06 · GET STARTED</div>
+    <div class="sec-tag" data-i18n="installTag">07 · GET STARTED</div>
     <h2 class="sec-title" data-i18n="installTitle">Three ways in. Pick yours.</h2>
     <p class="sec-sub" data-i18n="installSub">A standalone CLI, a desktop installer, or — the agent-native way — just hand a prompt to the agent you already trust.</p>
   </div>
@@ -824,7 +941,7 @@ button { font-family: inherit; cursor: pointer; }
       painAfterNote: "One canonical copy. Every tool points at it. Update once — all 45 tools get the latest version.",
       modesTag: "02 · THREE FORMS, ONE ENGINE",
       modesTitle: "Terminal, desktop, or another machine.",
-      modesSub: "The CLI and the desktop app share the exact same database and core engine. Use whichever fits the moment — state never drifts.",
+      modesSub: "The CLI and the desktop app share the exact same database and core engine. Use whichever fits the moment — state never drifts. SkillDo is one program: a <b>desktop app</b> you open, a <b>CLI</b> your agent calls, and a <b>skill</b> it discovers via SKILL.md. Same engine, three faces.",
       modeCliTitle: "The terminal is the dashboard",
       modeCliSub: "Install, sync, update, and publish skills with one command. Every command speaks --json — readable by you, and by the agent driving you.",
       modeCliL1: "<b>Agent-native output</b> — structured JSON on every subcommand",
@@ -863,7 +980,12 @@ button { font-family: inherit; cursor: pointer; }
       toolsSub: "Global and project-level sync targets for every major AI coding tool — with per-tool detection rules and path conventions maintained in source.",
       toolsLit: "/ 45 lit — click the ones you use",
       toolsMore: "Tool list generated from source — new adapters ship regularly.",
-      installTag: "06 · GET STARTED",
+      cvHint: "keep scrolling — watch them converge ↓",
+      cvTagline: "Install once, sync everywhere.",
+      cvIdCli: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>CLI tool',
+      cvIdApp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Desktop app',
+      cvIdSkill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Agent skill',
+      installTag: "07 · GET STARTED",
       installTitle: "Three ways in. Pick yours.",
       installSub: "A standalone CLI, a desktop installer, or — the agent-native way — just hand a prompt to the agent you already trust.",
       ic1Title: "The CLI", ic1Desc: "A standalone binary — no Node, no runtime, no account. One line installs and verifies it via SHA-256.",
@@ -896,7 +1018,7 @@ button { font-family: inherit; cursor: pointer; }
       painAfterNote: "唯一正本。所有工具指向它。更新一次，45 个工具同时拿到最新版。",
       modesTag: "02 · 三种形态，同一引擎",
       modesTitle: "终端、桌面，或另一台机器。",
-      modesSub: "CLI 和桌面客户端共享同一个数据库和核心引擎。哪个顺手用哪个——状态永不漂移。",
+      modesSub: "CLI 和桌面客户端共享同一个数据库和核心引擎。哪个顺手用哪个——状态永不漂移。SkillDo 是同一个程序的三张面孔：你可以打开的<b>桌面客户端</b>、你的 agent 调用的 <b>CLI</b>、以及 agent 通过 SKILL.md 发现的 <b>skill</b>。",
       modeCliTitle: "终端即管理台",
       modeCliSub: "一条命令完成安装、同步、更新、发布。每条命令都说 --json——你能读，驱动你的 agent 也能读。",
       modeCliL1: "<b>Agent 原生输出</b>——每个子命令都吐结构化 JSON",
@@ -935,7 +1057,12 @@ button { font-family: inherit; cursor: pointer; }
       toolsSub: "为每个主流 AI 编码工具提供全局与项目级同步目标——检测规则与路径约定在源码中维护。",
       toolsLit: "/ 45 已点亮——点你用的工具",
       toolsMore: "工具清单由源码自动生成——新适配器持续增加。",
-      installTag: "06 · 开始使用",
+      cvHint: "继续往下滚——看它们汇聚 ↓",
+      cvTagline: "装一次，处处同步。",
+      cvIdCli: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>CLI 工具',
+      cvIdApp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>桌面客户端',
+      cvIdSkill: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Agent 技能',
+      installTag: "07 · 开始使用",
       installTitle: "三条路，任你选。",
       installSub: "独立 CLI、桌面安装包，或者——最 agent-native 的方式——把一段 prompt 交给你已经信任的 agent。",
       ic1Title: "CLI", ic1Desc: "独立二进制——无需 Node、无需运行时、无需注册。一行命令安装，SHA-256 校验。",
@@ -1072,6 +1199,25 @@ button { font-family: inherit; cursor: pointer; }
     grid.appendChild(cell);
   });
 
+
+  /* ---------- Converge: build dots + GSAP timeline ---------- */
+  var cvRing = document.getElementById("cvRing");
+  var cvGlow = document.getElementById("cvGlow");
+  var cvCore = document.getElementById("cvCore");
+  var cvHint = document.getElementById("cvHint");
+  var cvN = TOOLS.length;
+  var cvDots = [];
+  if (cvRing) {
+    TOOLS.forEach(function (t, i) {
+      var dot = document.createElement("span");
+      dot.className = "cv-dot";
+      dot.textContent = t;
+      cvRing.appendChild(dot);
+      cvDots.push(dot);
+    });
+  }
+
+
   /* ---------- Source diagram: hover satellites ---------- */
   var satEls = Array.prototype.slice.call(document.querySelectorAll("#sourceDiagram .sat"));
   var lineEls = Array.prototype.slice.call(document.querySelectorAll("#sourceDiagram .source-lines line"));
@@ -1163,6 +1309,7 @@ button { font-family: inherit; cursor: pointer; }
     if (reduced || typeof gsap === "undefined") return;
     if (typeof Lenis !== "undefined") {
       var lenis = new Lenis({ duration: 1.05, smoothWheel: true });
+      window.__lenis = lenis;
       function raf(t) { lenis.raf(t); requestAnimationFrame(raf); }
       requestAnimationFrame(raf);
     }
@@ -1208,6 +1355,41 @@ button { font-family: inherit; cursor: pointer; }
           }, i * 110);
         });
       });
+
+
+    /* Converge: black-hole scroll */
+    if (cvRing && cvDots.length > 0 && document.getElementById("converge")) {
+      var R = Math.min(window.innerWidth, window.innerHeight) * 0.34;
+      cvDots.forEach(function (d, i) {
+        var angle = (i / cvDots.length) * Math.PI * 2 - Math.PI / 2;
+        gsap.set(d, { x: Math.cos(angle) * R, y: Math.sin(angle) * R });
+      });
+      var cvTl = gsap.timeline({
+        scrollTrigger: {
+          trigger: ".converge",
+          start: "top top",
+          end: "+=240%",
+          pin: ".converge",
+          scrub: 0.7
+        }
+      });
+      cvTl
+        .to(cvRing, { rotation: 320, ease: "none", duration: 1 }, 0)
+        .to(cvHint, { opacity: 0, duration: 0.12, ease: "none" }, 0)
+        .to(cvDots, {
+          x: 0, y: 0, scale: 0.05, opacity: 0,
+          stagger: { each: 0.005, from: "random" },
+          duration: 0.45, ease: "power2.in"
+        }, 0.18)
+        .to(cvGlow, { opacity: 0.85, scale: 1.6, duration: 0.18, ease: "power1.out" }, 0.38)
+        .to(cvGlow, { opacity: 0, duration: 0.12, ease: "power1.in" }, 0.56)
+        .to(cvCore, { opacity: 1, scale: 1, duration: 0.2, ease: "back.out(1.8)" }, 0.48)
+        .to(".cv-id-badge", {
+          opacity: 1, y: 0,
+          stagger: { each: 0.04, from: "start" },
+          duration: 0.12, ease: "power2.out"
+        }, 0.65);
+    }
 
     gsap.to(".tool-cell", {
       opacity: 1, y: 0, duration: 0.5, ease: "power2.out", stagger: 0.018,
