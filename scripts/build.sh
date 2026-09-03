@@ -140,8 +140,9 @@ for f in "$BUNDLE_DIR/nsis/"*.exe "$BUNDLE_DIR/msi/"*.msi "$BUNDLE_DIR/deb/"*.de
   [ -f "$f" ] && cp "$f" "$OUT_DIR/" && echo "→ output/$(basename "$f")"
 done
 
-# 桌面端也顺带把 CLI 二进制复制出来（它已经被编译了）
-cp src-tauri/target/release/skilldo "$OUT_DIR/" && echo "→ output/skilldo"
+# 清理 .app 里多余的 CLI 二进制（Tauri 会把同 package 所有 bin 都打包进去）
+APP_BUNDLE="$BUNDLE_DIR/macos/SkillDo.app/Contents/MacOS"
+rm -f "$APP_BUNDLE/skilldo" 2>/dev/null && echo "→ cleaned extra CLI binary from .app"
 
 # 清理不需要的衍生物：dist/（前端临时产物）+ bundle/（打包中间产物）
 # 保留 src-tauri/target/ 让下次增量编译不用从头
