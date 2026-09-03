@@ -1,0 +1,3 @@
+# Downloaded native binaries (installed by postinstall)
+bin/skilldo-*
+bin/.tmp-*

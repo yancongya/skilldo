@@ -1,0 +1,39 @@
+{
+  "name": "skilldo",
+  "version": "0.7.5",
+  "description": "The agent-native skill manager for 45 AI coding tools — install once, sync everywhere.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yancongya/skilldo.git",
+    "directory": "npm"
+  },
+  "bin": {
+    "skilldo": "bin/skilldo.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node bin/install-binary.js",
+    "preinstall": ""
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "skill",
+    "claude",
+    "cursor",
+    "codex",
+    "developer-tools",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
