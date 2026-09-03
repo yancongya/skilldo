@@ -12,7 +12,9 @@ use super::cache_cleanup::get_git_cache_ttl_secs;
 use super::cancel_token::CancelToken;
 use super::central_repo::{ensure_central_repo, resolve_central_repo_path};
 use super::content_hash::hash_dir;
-use super::git_fetcher::{clone_or_pull, clone_or_pull_sparse, commit_all_and_push};
+use super::git_fetcher::{
+    clone_local_repo, clone_or_pull, clone_or_pull_sparse, commit_all_and_push,
+};
 use super::github_download::{download_github_directory, parse_github_api_params};
 use super::skill_store::{SkillRecord, SkillStore};
 use super::sync_engine::copy_dir_recursive;
@@ -52,15 +54,50 @@ pub fn install_local_skill<R: tauri::Runtime>(
         anyhow::bail!("skill already exists in central repo: {:?}", central_path);
     }
 
-    copy_dir_recursive(source_path, &central_path)
-        .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
+    // Detect the Git source BEFORE copying so we can preserve history. If the
+    // source is a Git worktree with a remote (not merely a subdir of a larger
+    // repo), clone it — keeping a real `.git` in the central copy so that
+    // `skilldo push` works directly. Otherwise fall back to a plain file copy.
+    let detected_git = super::source_repair::detect_git_source(source_path)?
+        .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
+    let preserve_git = detected_git
+        .as_ref()
+        .map(|git| git.subpath.is_none())
+        .unwrap_or(false);
+
+    if preserve_git {
+        match clone_local_repo(source_path, &central_path) {
+            Ok(()) => {
+                // `git clone <local source>` sets origin to the local source path.
+                // Redirect it to the real remote so `skilldo push` targets GitHub
+                // (or whatever the source's origin was), not the local directory.
+                if let Some(git) = detected_git.as_ref() {
+                    let _ = run_git(
+                        &central_path,
+                        &["remote", "set-url", "origin", git.remote_url.as_str()],
+                        "git remote set-url",
+                    );
+                }
+            }
+            Err(err) => {
+                log::warn!(
+                    "[installer] git clone failed, falling back to file copy: {:#}",
+                    err
+                );
+                copy_dir_recursive(source_path, &central_path).with_context(|| {
+                    format!("copy {:?} -> {:?}", source_path, central_path)
+                })?;
+            }
+        }
+    } else {
+        copy_dir_recursive(source_path, &central_path)
+            .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
+    }
 
     let now = now_ms();
     let content_hash = compute_content_hash(&central_path);
     let description = parse_skill_md(&central_path.join("SKILL.md")).and_then(|(_, desc)| desc);
 
-    let detected_git = super::source_repair::detect_git_source(source_path)?
-        .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
     let record = SkillRecord {
         id: Uuid::new_v4().to_string(),
         name,
@@ -2361,8 +2398,40 @@ pub fn install_local_skill_cli(
             .and_then(|s| central_path.canonicalize().ok().map(|c| s == c))
             .unwrap_or(false);
     if !already_in_central {
-        copy_dir_recursive(source_path, &central_path)
-            .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
+        // Preserve Git history when the source is a Git worktree with a remote,
+        // so the consolidated copy keeps a real `.git` and `skilldo push` works.
+        let detected_git = super::source_repair::detect_git_source(source_path)?
+            .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
+        let preserve_git = detected_git
+            .as_ref()
+            .map(|git| git.subpath.is_none())
+            .unwrap_or(false);
+        if preserve_git {
+            match clone_local_repo(source_path, &central_path) {
+                Ok(()) => {
+                    // Redirect origin to the real remote (see install_local_skill).
+                    if let Some(git) = detected_git.as_ref() {
+                        let _ = run_git(
+                            &central_path,
+                            &["remote", "set-url", "origin", git.remote_url.as_str()],
+                            "git remote set-url",
+                        );
+                    }
+                }
+                Err(err) => {
+                    log::warn!(
+                        "[installer:cli] git clone failed, falling back to file copy: {:#}",
+                        err
+                    );
+                    copy_dir_recursive(source_path, &central_path).with_context(|| {
+                        format!("copy {:?} -> {:?}", source_path, central_path)
+                    })?;
+                }
+            }
+        } else {
+            copy_dir_recursive(source_path, &central_path)
+                .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
+        }
     }
 
     // Check if this central_path is already registered in the DB (e.g. from a
@@ -2937,13 +3006,8 @@ pub fn push_skill_cli(
         });
     }
 
-    // Stage all changes.
-    let status = Command::new("git")
-        .arg("add")
-        .arg("-A")
-        .current_dir(&central_path)
-        .output()
-        .context("failed to run git add")?;
+    // Stage all changes (hardened: no interactive prompt, bounded by timeout).
+    let status = run_git(&central_path, &["add", "-A"], "git add")?;
     if !status.status.success() {
         anyhow::bail!(
             "git add failed: {}",
@@ -2951,12 +3015,8 @@ pub fn push_skill_cli(
         );
     }
 
-    // Check if there's anything to commit.
-    let diff = Command::new("git")
-        .args(["diff", "--cached", "--quiet"])
-        .current_dir(&central_path)
-        .output()
-        .context("failed to run git diff")?;
+    // Check if there's anything to commit (hardened).
+    let diff = run_git(&central_path, &["diff", "--cached", "--quiet"], "git diff --cached")?;
 
     if diff.status.code() == Some(0) {
         // No changes to commit — still try push in case remote is ahead.
@@ -2972,12 +3032,8 @@ pub fn push_skill_cli(
         });
     }
 
-    // Commit.
-    let commit_out = Command::new("git")
-        .args(["commit", "-m", msg])
-        .current_dir(&central_path)
-        .output()
-        .context("failed to run git commit")?;
+    // Commit (hardened).
+    let commit_out = run_git(&central_path, &["commit", "-m", msg], "git commit")?;
     if !commit_out.status.success() {
         anyhow::bail!(
             "git commit failed: {}",
@@ -3002,12 +3058,23 @@ pub fn push_skill_cli(
     })
 }
 
+/// Run a git subcommand inside `repo_dir` with the same hardening as
+/// `git_fetcher`: never block on an interactive credential prompt, and abort if
+/// it stalls longer than the configured git timeout. This prevents `skilldo push`
+/// from hanging indefinitely when the remote needs auth that isn't available.
+fn run_git(repo_dir: &Path, args: &[&str], context: &str) -> Result<std::process::Output> {
+    let mut cmd = super::git_fetcher::git_cmd();
+    cmd.arg("-C").arg(repo_dir).args(args);
+    super::git_fetcher::run_cmd_with_timeout(
+        cmd,
+        super::git_fetcher::git_timeout(),
+        context.to_string(),
+        None,
+    )
+}
+
 fn git_push(repo_dir: &Path) -> Result<()> {
-    let out = Command::new("git")
-        .arg("push")
-        .current_dir(repo_dir)
-        .output()
-        .context("failed to run git push")?;
+    let out = run_git(repo_dir, &["push"], "git push")?;
     if !out.status.success() {
         anyhow::bail!("git push failed: {}", String::from_utf8_lossy(&out.stderr));
     }

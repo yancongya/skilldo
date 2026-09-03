@@ -372,7 +372,34 @@ pub fn commit_all_and_push(
     })
 }
 
-fn git_timeout() -> Duration {
+/// Clone a local Git worktree into `dst` so the consolidated copy keeps a real
+/// `.git` connected to the source's remote. This is the correct "complete"
+/// migration for Git-backed skills: after this, `skilldo push` can operate on
+/// the central copy directly instead of silently losing version history.
+pub fn clone_local_repo(src: &Path, dst: &Path) -> Result<()> {
+    if resolve_git_bin().is_none() {
+        anyhow::bail!("system git not found; cannot preserve Git history while consolidating");
+    }
+    let out = run_cmd_with_timeout(
+        {
+            let mut cmd = git_cmd();
+            cmd.arg("clone").arg("--no-hardlinks").arg(src).arg(dst);
+            cmd
+        },
+        git_timeout(),
+        format!("git clone {:?} -> {:?}", src, dst),
+        None,
+    )?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git clone failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn git_timeout() -> Duration {
     let secs = std::env::var("SKILLS_HUB_GIT_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -380,7 +407,7 @@ fn git_timeout() -> Duration {
     Duration::from_secs(secs)
 }
 
-fn git_fetch_timeout() -> Duration {
+pub(crate) fn git_fetch_timeout() -> Duration {
     let secs = std::env::var("SKILLS_HUB_GIT_FETCH_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
@@ -439,7 +466,7 @@ fn git_bin_works(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn git_cmd() -> Command {
+pub(crate) fn git_cmd() -> Command {
     let bin = resolve_git_bin().unwrap_or_else(|| "git".to_string());
     let mut cmd = Command::new(bin);
     // Never block on interactive auth prompts inside a GUI app.
@@ -451,7 +478,7 @@ fn git_cmd() -> Command {
     cmd
 }
 
-fn run_cmd_with_timeout(
+pub(crate) fn run_cmd_with_timeout(
     mut cmd: Command,
     timeout: Duration,
     context: String,
