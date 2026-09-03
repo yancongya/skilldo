@@ -82,19 +82,33 @@ SkillDo 是一个跨平台桌面应用（Tauri + React），用于统一管理 A
 
 ### 不 clone 源码安装
 
-可以从 [GitHub Releases](https://github.com/yancongya/skilldo/releases) 下载 macOS 或 Windows 客户端。只使用 CLI 时，可以一键安装独立二进制：
+一行命令启动交互式安装向导——选择 CLI、桌面客户端、或让 agent 代劳：
 
 ```bash
-# macOS Intel / Apple Silicon 自动识别，并校验 SHA-256
+curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install.sh | bash
+```
+
+安装器自动检测平台（macOS/Linux/Windows），显示已安装状态，然后让你选择：
+
+| 选项 | 安装内容 | 方式 |
+|---|---|---|
+| **1 → CLI** | `skilldo` 二进制 → `~/.local/bin` | 自动下载 + SHA-256 校验 |
+| **2 → Desktop** | `SkillDo.app` / `.exe` | 打开 GitHub Releases 下载 |
+| **3 → Agent** | 通过 agent 安装 CLI | 复制 prompt 给 Claude Code / Codex / Cursor |
+
+直接安装 CLI（无需交互菜单）：
+
+```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
 ```
 
 ```powershell
-# Windows x64 / ARM64 自动识别，并校验 SHA-256
+# Windows PowerShell
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-Release 会同时发布四个 CLI 压缩包和对应 `.sha256` 文件。只有开发或自行构建时才需要 clone 完整仓库。
+Release 包含 `skilldo-cli-{macos,linux}-{aarch64,x64}.tar.gz` 和 `skilldo-cli-windows-{x64,arm64}.zip`，每个都有 `.sha256` 校验文件。只有开发或自行构建时才需要 clone 完整仓库。
 
 ### 桌面客户端
 

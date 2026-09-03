@@ -906,55 +906,38 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
 <section class="section" id="start">
   <div class="reveal">
     <div class="sec-tag" data-i18n="installTag">07 · GET STARTED</div>
-    <h2 class="sec-title" data-i18n="installTitle">Three ways in. Pick yours.</h2>
-    <p class="sec-sub" data-i18n="installSub">A standalone CLI, a desktop installer, or — the agent-native way — just hand a prompt to the agent you already trust.</p>
+    <h2 class="sec-title" data-i18n="installTitle">One command. Three ways.</h2>
+    <p class="sec-sub" data-i18n="installSub">Run the installer, pick your style — CLI, desktop app, or let your agent handle it.</p>
   </div>
   <div class="install-grid">
 
-    <div class="install-card reveal">
+    <div class="install-card reveal" style="grid-column: 1 / -1; max-width: 640px; margin: 0 auto;">
       <div class="ic-head">
         <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
-        <div><div class="ic-title" data-i18n="ic1Title">The CLI</div><div class="ic-sub">macOS · Linux · Windows</div></div>
+        <div><div class="ic-title">Install SkillDo</div><div class="ic-sub">macOS · Linux · Windows</div></div>
       </div>
-      <p data-i18n="ic1Desc">A standalone binary — no Node, no runtime, no account. One line installs and verifies it via SHA-256.</p>
-      <div class="ic-action">
-        <button class="ic-btn solid wide" id="copyCurl" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash">
+      <p data-i18n="installCardDesc">One command launches an interactive installer. Choose how you want to use SkillDo:</p>
+      <div class="ic-action" style="margin-bottom: 16px;">
+        <button class="ic-btn solid wide" id="copyCurl" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install.sh | bash">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-          <span data-i18n="ic1Btn">Copy install command</span>
+          <span data-i18n="installBtn">Copy install command</span>
         </button>
       </div>
-      <p class="ic-note"><span data-i18n="ic1Note">Windows:</span> <code>irm …/install-cli.ps1 | iex</code></p>
-    </div>
-
-    <div class="install-card reveal">
-      <div class="ic-head">
-        <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
-        <div><div class="ic-title" data-i18n="ic2Title">The desktop app</div><div class="ic-sub">.dmg · .exe</div></div>
+      <div style="display: flex; gap: 24px; font-size: 13px; color: var(--text-2); flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 140px;">
+          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;">1 → CLI</div>
+          <div data-i18n="installOpt1">Standalone binary, terminal use, no runtime needed</div>
+        </div>
+        <div style="flex: 1; min-width: 140px;">
+          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;">2 → Desktop</div>
+          <div data-i18n="installOpt2">GUI app with visual management and auto-update</div>
+        </div>
+        <div style="flex: 1; min-width: 140px;">
+          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;">3 → Agent</div>
+          <div data-i18n="installOpt3">Copy a prompt to Claude Code, Codex, Cursor, etc.</div>
+        </div>
       </div>
-      <p data-i18n="ic2Desc">Download from GitHub Releases — macOS .dmg (Apple Silicon / Intel) and Windows .exe with NSIS auto-update. Linux builds from source.</p>
-      <div class="ic-action">
-        <a class="ic-btn wide" href="https://github.com/yancongya/skilldo/releases" target="_blank" rel="noopener">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          <span data-i18n="ic2Btn">Go to Releases</span>
-        </a>
-      </div>
-      <p class="ic-note" data-i18n="ic2Note">Updates are signed; the app checks for new versions on launch.</p>
-    </div>
-
-    <div class="install-card agent reveal">
-      <span class="badge" data-i18n="ic3Badge">AGENT-NATIVE</span>
-      <div class="ic-head">
-        <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M20 8V4h-4M4 16H3"/><path d="M9 12h.01M15 12h.01M9.5 16c.8.7 1.7 1 2.5 1s1.7-.3 2.5-1"/></svg></div>
-        <div><div class="ic-title" data-i18n="ic3Title">Let your agent do it</div><div class="ic-sub">claude · codex · cursor · …</div></div>
-      </div>
-      <p data-i18n="ic3Desc">Copy this prompt and paste it to any coding agent. It will star the repo, install the CLI, and report which of the 45 tools live on your machine.</p>
-      <div class="ic-action">
-        <button class="ic-btn solid wide" id="copyPrompt">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-          <span data-i18n="ic3Btn">Copy prompt for your agent</span>
-        </button>
-      </div>
-      <p class="ic-note" data-i18n="ic3Note">Works in Claude Code, Codex CLI, Cursor, and friends.</p>
+      <p class="ic-note" data-i18n="installNote">Windows PowerShell: <code>irm …/install-cli.ps1 | iex</code></p>
     </div>
 
   </div>
@@ -1346,9 +1329,6 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
   }
   document.getElementById("copyCurl").addEventListener("click", function () {
     copyText(this.getAttribute("data-text"));
-  });
-  document.getElementById("copyPrompt").addEventListener("click", function () {
-    copyText(PROMPTS[lang], I18N[lang].toastPrompt);
   });
 
   /* ---------- Hero: cursor parallax ---------- */

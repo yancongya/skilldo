@@ -82,19 +82,33 @@ SkillDo manages AI Agent Skills from a single source of truth (the Central Repo)
 
 ### Install without cloning
 
-Download the desktop installer from [GitHub Releases](https://github.com/yancongya/skilldo/releases), or install the standalone CLI directly:
+One command launches an interactive installer — choose CLI, desktop app, or let your agent handle it:
 
 ```bash
-# macOS (Apple Silicon or Intel; detects the architecture and verifies SHA-256)
+curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install.sh | bash
+```
+
+The installer detects your platform (macOS/Linux/Windows), shows what's already installed, and lets you pick:
+
+| Option | What it installs | How |
+|---|---|---|
+| **CLI** | `skilldo` binary → `~/.local/bin` | Auto-download + SHA-256 verify |
+| **Desktop** | `SkillDo.app` / `.exe` | Opens GitHub Releases to download |
+| **Agent** | CLI via agent proxy | Copies a prompt for Claude Code / Codex / Cursor |
+
+Direct links (no interactive menu):
+
+```bash
+# CLI only — macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
 ```
 
 ```powershell
-# Windows PowerShell (x64 or ARM64; detects the architecture and verifies SHA-256)
+# CLI only — Windows PowerShell
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-The release provides `skilldo-cli-macos-aarch64.tar.gz`, `skilldo-cli-macos-x86_64.tar.gz`, `skilldo-cli-windows-x64.zip`, and `skilldo-cli-windows-arm64.zip`, each with a `.sha256` file. Cloning the source repository is only required for development.
+Releases include `skilldo-cli-{macos,linux}-{aarch64,x64}.tar.gz` and `skilldo-cli-windows-{x64,arm64}.zip`, each with a `.sha256` file. Cloning the source repository is only required for development.
 
 ### CLI (recommended for agents & automation)
 
