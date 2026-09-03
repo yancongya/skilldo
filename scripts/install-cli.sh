@@ -6,7 +6,9 @@ INSTALL_DIR="${SKILLDO_INSTALL_DIR:-$HOME/.local/bin}"
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) ASSET="skilldo-cli-macos-aarch64.tar.gz" ;;
   Darwin-x86_64) ASSET="skilldo-cli-macos-x86_64.tar.gz" ;;
-  *) echo "Unsupported platform. This installer currently supports macOS arm64 and x86_64." >&2; exit 1 ;;
+  Linux-x86_64) ASSET="skilldo-cli-linux-x64.tar.gz" ;;
+  Linux-aarch64) ASSET="skilldo-cli-linux-aarch64.tar.gz" ;;
+  *) echo "Unsupported platform: $(uname -s)-$(uname -m)." >&2; echo "Supported: macOS arm64/x86_64, Linux x86_64/aarch64." >&2; exit 1 ;;
 esac
 
 BASE="${SKILLDO_DOWNLOAD_BASE:-https://github.com/${REPO}/releases/latest/download}"

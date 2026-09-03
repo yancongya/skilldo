@@ -6,8 +6,9 @@
 #   ./scripts/build.sh universal    # macOS Universal DMG（Intel + Apple Silicon）
 #   ./scripts/build.sh win          # Windows NSIS 安装包
 #   ./scripts/build.sh linux        # Linux AppImage + deb
-#   ./scripts/build.sh cli          # 仅构建 CLI 二进制（保留 target/ 缓存）
+#   ./scripts/build.sh cli          # 仅构建 CLI 二进制（当前架构，保留 target/ 缓存）
 #   ./scripts/build.sh release      # CLI 二进制 + 安装到 ~/.local/bin/skilldo
+#   ./scripts/build.sh cli-cross    # 交叉编译全平台 CLI（macOS + Linux x64/arm64）
 #
 # 清理：
 #   ./scripts/build.sh clean        # 删除编译缓存和输出目录（target/ + dist/ + output/）
@@ -88,6 +89,40 @@ case "$TARGET" in
     exit 0
     ;;
 
+  # ─── CLI cross-compile (for releases) ────────────────────
+  cli-cross)
+    echo ""
+    echo "▶ Cross-compiling CLI for all platforms..."
+    mkdir -p "$OUT_DIR"
+
+    declare -A TARGETS=(
+      ["aarch64-apple-darwin"]="skilldo-cli-macos-aarch64"
+      ["x86_64-apple-darwin"]="skilldo-cli-macos-x86_64"
+      ["x86_64-unknown-linux-gnu"]="skilldo-cli-linux-x64"
+      ["aarch64-unknown-linux-gnu"]="skilldo-cli-linux-aarch64"
+    )
+
+    cd src-tauri
+    for triple in "${!TARGETS[@]}"; do
+      name="${TARGETS[$triple]}"
+      echo "  → $triple ($name)..."
+      cargo build --release --target "$triple" --bin skilldo 2>/dev/null && {
+        bin="target/$triple/release/skilldo"
+        if [ -f "$bin" ]; then
+          tar -czf "$OUT_DIR/$name.tar.gz" -C "target/$triple/release" skilldo
+          shasum -a 256 "$OUT_DIR/$name.tar.gz" > "$OUT_DIR/$name.tar.gz.sha256"
+          echo "    ✓ $name.tar.gz"
+        fi
+      } || echo "    ⚠ $triple 交叉编译失败（可能缺少工具链），跳过"
+    done
+    cd "$PROJECT_ROOT"
+
+    echo ""
+    echo "✓ CLI cross-compile 完成"
+    print_summary
+    exit 0
+    ;;
+
   # ─── Desktop clients ──────────────────────────────────────
   app|mac)
     TAURI_FLAG="--bundles dmg"
@@ -110,7 +145,7 @@ case "$TARGET" in
   *)
     echo "Unknown target: $TARGET" >&2
     echo "" >&2
-    echo "用法: $0 [app|universal|win|msi|linux|all|cli|release|clean]" >&2
+    echo "用法: $0 [app|universal|win|msi|linux|all|cli|release|cli-cross|clean]" >&2
     exit 1
     ;;
 esac
