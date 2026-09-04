@@ -24,6 +24,7 @@ import SharedDirModal from './components/skills/modals/SharedDirModal'
 import NamePromptModal from './components/skills/modals/NamePromptModal'
 import PublishSkillModal, { type PublishParams } from './components/skills/modals/PublishSkillModal'
 import SettingsPage from './components/skills/SettingsPage'
+import WebdavReader from './components/skills/WebdavReader'
 import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
   AppConfigDto,
@@ -3242,7 +3243,9 @@ function App() {
       />
 
       <main className="skills-main">
-        {activeView === 'detail' && detailSkill ? (
+        {!isTauri && activeView !== 'settings' && activeView !== 'explore' && activeView !== 'tags' && activeView !== 'detail' ? (
+          <WebdavReader t={t} />
+        ) : activeView === 'detail' && detailSkill ? (
           <SkillDetailView
             skill={detailSkill}
             onBack={handleBackToList}

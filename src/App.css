@@ -2690,6 +2690,173 @@
   flex-shrink: 0;
 }
 
+/* ── WebDAV Reader ─────────────────────────────────── */
+
+.webdav-reader {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.webdav-reader-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.webdav-reader-ok {
+  color: var(--accent-success, #22c55e);
+  margin-left: 4px;
+}
+
+.webdav-reader-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 8px 0 20px;
+  line-height: 1.5;
+}
+
+.webdav-reader-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.webdav-reader-auth-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 500px) {
+  .webdav-reader-auth-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.webdav-reader-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--danger-bg, rgba(239, 68, 68, 0.1));
+  color: var(--danger-text, #ef4444);
+  font-size: 13px;
+}
+
+.webdav-reader-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.webdav-reader-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.webdav-reader-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.webdav-reader-stat-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.webdav-reader-config-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.webdav-reader-config-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
+.webdav-reader-config-key {
+  min-width: 140px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.webdav-reader-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.webdav-reader-skill {
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.webdav-reader-skill-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.webdav-reader-skill-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.webdav-reader-skill-type {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--tag-bg, rgba(120, 242, 194, 0.15));
+  color: var(--accent-primary);
+  font-weight: 500;
+}
+
+.webdav-reader-skill-ref {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.webdav-reader-skill-targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.webdav-reader-skill-target {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--tag-bg, rgba(255, 255, 255, 0.08));
+  color: var(--text-secondary);
+}
+
 .settings-restore-report {
   display: flex;
   flex-direction: column;
