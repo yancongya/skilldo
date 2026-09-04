@@ -2690,6 +2690,53 @@
   flex-shrink: 0;
 }
 
+/* ── Author List ───────────────────────────────────── */
+
+.settings-author-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.settings-author-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.settings-author-item:hover {
+  border-color: var(--accent-primary);
+  background: var(--bg-subtle);
+}
+
+.settings-author-item.selected {
+  border-color: var(--accent-primary);
+  background: var(--accent-ring);
+}
+
+.settings-author-name {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.settings-author-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.settings-author-check {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
 /* ── WebDAV Reader ─────────────────────────────────── */
 
 .webdav-reader {
