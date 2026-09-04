@@ -914,36 +914,52 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
     <div class="install-card reveal" style="grid-column: 1 / -1; max-width: 640px; margin: 0 auto;">
       <div class="ic-head">
         <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
-        <div><div class="ic-title">Install SkillDo</div><div class="ic-sub">macOS · Linux · Windows</div></div>
+        <div><div class="ic-title" data-i18n="installCardTitle">Install SkillDo</div><div class="ic-sub">macOS · Linux · Windows</div></div>
       </div>
       <p data-i18n="installCardDesc">One command launches an interactive installer. Choose how you want to use SkillDo:</p>
       <div class="ic-action" style="margin-bottom: 12px;">
         <button class="ic-btn solid wide" id="copyNpm" data-text="npm install -g skilldo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-          <span>npm install -g skilldo</span>
+          <span data-i18n="installNpmBtn">npm install -g skilldo</span>
         </button>
       </div>
       <div class="ic-action" style="margin-bottom: 16px;">
         <button class="ic-btn wide" id="copyCurl" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install.sh | bash">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-          <span data-i18n="installBtn">Or copy shell installer</span>
+          <span data-i18n="installShellBtn">Or copy shell installer</span>
         </button>
       </div>
       <div style="display: flex; gap: 24px; font-size: 13px; color: var(--text-2); flex-wrap: wrap;">
         <div style="flex: 1; min-width: 140px;">
-          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;">1 → CLI</div>
-          <div data-i18n="installOpt1">Standalone binary, terminal use, no runtime needed</div>
+          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;" data-i18n="installOpt1Title">1 → CLI</div>
+          <div data-i18n="installOpt1Desc">Standalone binary, terminal use, no runtime needed</div>
         </div>
         <div style="flex: 1; min-width: 140px;">
-          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;">2 → Desktop</div>
-          <div data-i18n="installOpt2">GUI app with visual management and auto-update</div>
+          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;" data-i18n="installOpt2Title">2 → Desktop</div>
+          <div data-i18n="installOpt2Desc">GUI app with visual management and auto-update</div>
         </div>
         <div style="flex: 1; min-width: 140px;">
-          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;">3 → Agent</div>
-          <div data-i18n="installOpt3">Copy a prompt to Claude Code, Codex, Cursor, etc.</div>
+          <div style="color: var(--accent); font-weight: 600; margin-bottom: 4px;" data-i18n="installOpt3Title">3 → Agent</div>
+          <div data-i18n="installOpt3Desc">Copy a prompt to Claude Code, Codex, Cursor, etc.</div>
         </div>
       </div>
-      <p class="ic-note" data-i18n="installNote">Windows PowerShell: <code>irm …/install-cli.ps1 | iex</code></p>
+      <p class="ic-note" data-i18n="installNote">Windows: use PowerShell with <code>irm …/install-cli.ps1 | iex</code></p>
+    </div>
+
+    <div class="install-card agent reveal" style="grid-column: 1 / -1; max-width: 640px; margin: 0 auto;">
+      <span class="badge" data-i18n="ic3Badge">AGENT-NATIVE</span>
+      <div class="ic-head">
+        <div class="ic-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M20 8V4h-4M4 16H3"/><path d="M9 12h.01M15 12h.01M9.5 16c.8.7 1.7 1 2.5 1s1.7-.3 2.5-1"/></svg></div>
+        <div><div class="ic-title" data-i18n="ic3Title">Let your agent do it</div><div class="ic-sub">claude · codex · cursor · …</div></div>
+      </div>
+      <p data-i18n="ic3Desc">Copy this prompt and paste it to any coding agent. It will star the repo, install the CLI, and report which of the 45 tools live on your machine.</p>
+      <div class="ic-action">
+        <button class="ic-btn solid wide" id="copyPrompt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span data-i18n="ic3Btn">Copy prompt for your agent</span>
+        </button>
+      </div>
+      <p class="ic-note" data-i18n="ic3Note">Works in Claude Code, Codex CLI, Cursor, and friends.</p>
     </div>
 
   </div>
@@ -1070,6 +1086,12 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
       ic3Title: "Let your agent do it", ic3Badge: "AGENT-NATIVE",
       ic3Desc: "Copy this prompt and paste it to any coding agent. It will star the repo, install the CLI, and report which of the 45 tools live on your machine.",
       ic3Btn: "Copy prompt for your agent", ic3Note: "Works in Claude Code, Codex CLI, Cursor, and friends.",
+      installCardTitle: "Install SkillDo", installCardDesc: "One command launches an interactive installer. Choose how you want to use SkillDo:",
+      installNpmBtn: "npm install -g skilldo", installShellBtn: "Or copy shell installer",
+      installOpt1Title: "1 → CLI", installOpt1Desc: "Standalone binary, terminal use, no runtime needed",
+      installOpt2Title: "2 → Desktop", installOpt2Desc: "GUI app with visual management and auto-update",
+      installOpt3Title: "3 → Agent", installOpt3Desc: "Copy a prompt to Claude Code, Codex, Cursor, etc.",
+      installNote: "Windows: use PowerShell with irm …/install-cli.ps1 | iex",
       footerTag: "Install once, sync everywhere.",
       footerRepo: "Repository", footerReleases: "Releases", footerIssues: "Issues",
       toastCopied: "Copied to clipboard",
@@ -1151,6 +1173,12 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
       ic3Title: "让 agent 替你装", ic3Badge: "AGENT 原生",
       ic3Desc: "复制这段 prompt，贴给任意编码 agent。它会 star 仓库、装好 CLI，并报告你这台机器上装了 45 个工具中的哪几个。",
       ic3Btn: "复制给 agent 的 prompt", ic3Note: "Claude Code、Codex CLI、Cursor 等都适用。",
+      installCardTitle: "安装 SkillDo", installCardDesc: "一行命令启动交互式安装——选择你想用的方式：",
+      installNpmBtn: "npm install -g skilldo", installShellBtn: "或复制 shell 安装脚本",
+      installOpt1Title: "1 → CLI", installOpt1Desc: "独立二进制，终端使用，无需运行时",
+      installOpt2Title: "2 → 桌面端", installOpt2Desc: "可视化管理，支持自动更新",
+      installOpt3Title: "3 → Agent", installOpt3Desc: "复制 prompt 给 Claude Code、Codex、Cursor 等",
+      installNote: "Windows 用户请用 PowerShell：irm …/install-cli.ps1 | iex",
       footerTag: "装一次，处处同步。",
       footerRepo: "仓库", footerReleases: "发布", footerIssues: "议题",
       toastCopied: "已复制到剪贴板",
@@ -1338,6 +1366,9 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
   });
   document.getElementById("copyCurl").addEventListener("click", function () {
     copyText(this.getAttribute("data-text"));
+  });
+  document.getElementById("copyPrompt").addEventListener("click", function () {
+    copyText(PROMPTS[lang], I18N[lang].toastPrompt);
   });
 
   /* ---------- Hero: cursor parallax ---------- */
