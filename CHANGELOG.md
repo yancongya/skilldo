@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-09-04
+
+### 更新
+- fix(fmt): cargo fmt 格式修复（CI rustfmt 检查失败）
+- feat(npm): npm install -g skilldo 支持
+- feat(install): 交互式安装脚本 + README/落地页统一入口
+- fix(build): install-cli.sh 支持 Linux + build.sh 新增 cli-cross 交叉编译
+- fix(build): 桌面端 .app 清理多余的 CLI 二进制
+- refactor(build): 三端独立构建 + 保留编译缓存 + 新增 clean 子命令
+- fix(skilldo): 完整迁移保留 .git 并修复 push 卡死
+- chore: update featured-skills.json
+- ci: add workflow_dispatch trigger to docs deploy
+- ci: add GitHub Pages deployment workflow for docs/
+- docs(readme): 修正官方 logo、清理占位截图、对齐中英双语 README
+
 ## [0.7.5] - 2026-09-02
 
 ### Changed
