@@ -160,6 +160,34 @@ pub fn run() {
                                 let body = serde_json::to_string(&items).unwrap_or("[]".into());
                                 json_response(&body)
                             }
+                            "/api/authors" => {
+                                // Extract unique owners from skill_origins
+                                let skills = api_store.list_skills().unwrap_or_default();
+                                let mut owner_counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+                                for rec in &skills {
+                                    if let Ok(Some(origin)) = api_store.get_skill_origin(&rec.id) {
+                                        if let Some(owner) = &origin.owner {
+                                            if !owner.is_empty() {
+                                                *owner_counts.entry(owner.clone()).or_insert(0) += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                                let mut items: Vec<serde_json::Value> = owner_counts
+                                    .into_iter()
+                                    .map(|(owner, cnt)| serde_json::json!({ "owner": owner, "skill_count": cnt }))
+                                    .collect();
+                                items.sort_by(|a, b| b["skill_count"].as_i64().unwrap_or(0).cmp(&a["skill_count"].as_i64().unwrap_or(0)));
+                                let body = serde_json::to_string(&items).unwrap_or("[]".into());
+                                json_response(&body)
+                            }
+                            "/api/current-author" => {
+                                let body = api_store.get_setting(core::app_config::CURRENT_AUTHOR_KEY)
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_else(|| r#"{"name":"","email":"","githubLogin":"","githubUrl":"","source":""}"#.into());
+                                json_response(&body)
+                            }
                             "/api/config" => {
                                 let cfg = core::app_config::load_app_config(&api_store);
                                 let body = match cfg {
