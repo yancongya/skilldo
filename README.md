@@ -82,6 +82,11 @@ SkillDo manages AI Agent Skills from a single source of truth (the Central Repo)
 
 ### Install without cloning
 
+```bash
+# npm (recommended — macOS / Linux / Windows)
+npm install -g skilldo
+```
+
 One command launches an interactive installer — choose CLI, desktop app, or let your agent handle it:
 
 ```bash

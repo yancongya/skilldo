@@ -82,6 +82,11 @@ SkillDo 是一个跨平台桌面应用（Tauri + React），用于统一管理 A
 
 ### 不 clone 源码安装
 
+```bash
+# npm（推荐 — macOS / Linux / Windows）
+npm install -g skilldo
+```
+
 一行命令启动交互式安装向导——选择 CLI、桌面客户端、或让 agent 代劳：
 
 ```bash
