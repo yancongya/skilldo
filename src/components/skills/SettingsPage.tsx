@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, FolderOpen, RotateCcw } from 'lucide-react'
+import { ArrowLeft, FolderOpen, RotateCcw, ArrowUpFromLine, ArrowDownToLine, Download, RefreshCw } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { Update } from '@tauri-apps/plugin-updater'
 import type {
@@ -1157,7 +1157,7 @@ const SettingsPage = ({
             disabled={deviceBusy}
             onClick={handleBackupWebdav}
           >
-            {deviceBusy ? t('deviceWorking') : t('syncToWebdav')}
+            {deviceBusy ? t('deviceWorking') : <><ArrowUpFromLine size={14} /> {t('syncToWebdav')}</>}
           </button>
           <button
             className="btn btn-secondary btn-sm"
@@ -1165,14 +1165,14 @@ const SettingsPage = ({
             disabled={deviceBusy}
             onClick={handleRestoreWebdav}
           >
-            {deviceBusy ? t('deviceWorking') : t('restoreFromWebdav')}
+            {deviceBusy ? t('deviceWorking') : <><ArrowDownToLine size={14} /> {t('restoreFromWebdav')}</>}
           </button>
           <button
             className="btn btn-secondary btn-sm"
             type="button"
             onClick={handleBackupToFile}
           >
-            {t('exportToFile')}
+            {<><Download size={14} /> {t('exportToFile')}</>}
           </button>
           <button
             className="btn btn-ghost btn-sm"
@@ -1181,7 +1181,7 @@ const SettingsPage = ({
             onClick={() => runDeviceAction('status')}
             title={t('deviceRefresh')}
           >
-            🔄
+            <RefreshCw size={14} />
           </button>
         </div>
 
