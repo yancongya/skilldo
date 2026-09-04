@@ -252,6 +252,8 @@ export const resources = {
       webdavReaderSources: 'Explore sources',
       webdavReaderSkillsList: 'Skills List',
       webdavReaderNoSkills: 'No skills found in this backup.',
+      webdavApiUnavailable: 'Dev API not available. The Tauri backend must be running. You can also connect via WebDAV below.',
+      webdavRefresh: 'Refresh',
       configBackup: 'Configuration backup',
       configBackupHint:
         'Export settings to JSON or restore a previous backup. GitHub and WebDAV credentials are excluded; existing matching credentials are retained during restore.',
@@ -867,6 +869,8 @@ export const resources = {
       webdavReaderSources: '技能源',
       webdavReaderSkillsList: '技能列表',
       webdavReaderNoSkills: '此备份中没有找到技能。',
+      webdavApiUnavailable: '开发 API 不可用。请确保 Tauri 后端正在运行。也可以通过下方 WebDAV 连接。',
+      webdavRefresh: '刷新',
       configBackup: '配置备份',
       configBackupHint: '将设置导出为 JSON，或导入之前的备份。备份不包含 GitHub 与 WebDAV 凭据；恢复时会保留本机匹配的现有凭据。',
       exportConfig: '导出配置',

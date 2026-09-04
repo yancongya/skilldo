@@ -38,6 +38,147 @@ pub fn run() {
             // Backfill description for skills that were installed before V2 schema.
             core::installer::backfill_skill_descriptions(&store);
 
+            // ── Dev HTTP API (browser access) ────────────────────────
+            // In debug builds, start a tiny HTTP server so the browser
+            // frontend (localhost:5173) can fetch skills/config data
+            // without Tauri IPC.
+            #[cfg(debug_assertions)]
+            {
+                let api_store = store.clone();
+                std::thread::spawn(move || {
+                    let server = match tiny_http::Server::http("127.0.0.1:15723") {
+                        Ok(s) => s,
+                        Err(e) => {
+                            log::warn!("HTTP API server failed to start: {e}");
+                            return;
+                        }
+                    };
+                    log::info!("HTTP API server listening on http://127.0.0.1:15723");
+
+                    fn json_response(body: &str) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+                        tiny_http::Response::from_string(body)
+                            .with_header(
+                                tiny_http::Header::from_bytes(
+                                    &b"Content-Type"[..],
+                                    &b"application/json"[..],
+                                )
+                                .unwrap(),
+                            )
+                            .with_header(
+                                tiny_http::Header::from_bytes(
+                                    &b"Access-Control-Allow-Origin"[..],
+                                    &b"*"[..],
+                                )
+                                .unwrap(),
+                            )
+                            .with_header(
+                                tiny_http::Header::from_bytes(
+                                    &b"Access-Control-Allow-Methods"[..],
+                                    &b"GET, OPTIONS"[..],
+                                )
+                                .unwrap(),
+                            )
+                            .with_header(
+                                tiny_http::Header::from_bytes(
+                                    &b"Access-Control-Allow-Headers"[..],
+                                    &b"Content-Type, Authorization"[..],
+                                )
+                                .unwrap(),
+                            )
+                    }
+
+                    for request in server.incoming_requests() {
+                        let url = request.url().to_string();
+
+                        // Handle CORS preflight
+                        if request.method() == &tiny_http::Method::Options {
+                            let _ = request.respond(json_response(""));
+                            continue;
+                        }
+
+                        let response = match url.as_str() {
+                            "/api/skills" => {
+                                let skills = api_store.list_skills().unwrap_or_default();
+                                let mut items = Vec::with_capacity(skills.len());
+                                for rec in &skills {
+                                    let targets: Vec<serde_json::Value> = api_store
+                                        .list_skill_targets(&rec.id)
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .map(|t| {
+                                            let target_path = std::path::Path::new(&t.target_path);
+                                            let status = if target_path.exists() {
+                                                "synced"
+                                            } else {
+                                                "missing"
+                                            };
+                                            serde_json::json!({
+                                                "tool": t.tool,
+                                                "scope": t.scope,
+                                                "project_path": t.project_path,
+                                                "mode": "symlink",
+                                                "status": status,
+                                                "target_path": t.target_path,
+                                            })
+                                        })
+                                        .collect();
+                                    let tags = api_store
+                                        .get_skill_tags(&rec.id)
+                                        .unwrap_or_default()
+                                        .into_iter()
+                                        .map(|t| serde_json::json!({ "id": t.id, "name": t.name }))
+                                        .collect::<Vec<_>>();
+                                    items.push(serde_json::json!({
+                                        "id": rec.id,
+                                        "name": rec.name,
+                                        "description": rec.description,
+                                        "source_type": rec.source_type,
+                                        "source_ref": rec.source_ref,
+                                        "central_path": rec.central_path,
+                                        "created_at": rec.created_at,
+                                        "updated_at": rec.updated_at,
+                                        "last_sync_at": rec.last_sync_at,
+                                        "status": rec.status,
+                                        "tags": tags,
+                                        "targets": targets,
+                                    }));
+                                }
+                                let body = serde_json::to_string(&items).unwrap_or("[]".into());
+                                json_response(&body)
+                            }
+                            "/api/tags" => {
+                                let tags = api_store.list_tags_with_counts().unwrap_or_default();
+                                let items: Vec<serde_json::Value> = tags
+                                    .into_iter()
+                                    .map(|t| serde_json::json!({
+                                        "id": t.id,
+                                        "name": t.name,
+                                        "skill_count": t.skill_count,
+                                        "updated_at": t.updated_at,
+                                    }))
+                                    .collect();
+                                let body = serde_json::to_string(&items).unwrap_or("[]".into());
+                                json_response(&body)
+                            }
+                            "/api/config" => {
+                                let cfg = core::app_config::load_app_config(&api_store);
+                                let body = match cfg {
+                                    Ok(c) => serde_json::to_string(&c).unwrap_or("{}".into()),
+                                    Err(_) => "{}".into(),
+                                };
+                                json_response(&body)
+                            }
+                            "/api/health" => {
+                                json_response(r#"{"status":"ok"}"#)
+                            }
+                            _ => tiny_http::Response::from_string("Not Found")
+                                .with_status_code(404),
+                        };
+                        let _ = request.respond(response);
+                    }
+                });
+            }
+
             // Best-effort cleanup of our own old git temp directories.
             // Safety:
             // - Only deletes directories that match prefix `skilldo-git-*`

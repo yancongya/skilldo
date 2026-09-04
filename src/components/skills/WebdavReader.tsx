@@ -1,129 +1,147 @@
-import { memo, useCallback, useState } from 'react'
-import { ArrowLeft, Cloud, AlertCircle, CheckCircle } from 'lucide-react'
+import { memo, useCallback, useEffect, useState } from 'react'
+import { Cloud, CheckCircle, RefreshCw } from 'lucide-react'
 import type { TFunction } from 'i18next'
 
-/** Minimal types matching the FullBackup JSON structure from Rust backup.rs */
-type SkillTargetEntry = { tool: string; scope?: string; projectPath?: string } | string
+const API_BASE = 'http://127.0.0.1:15723'
 
-type SkillEntry = {
+type ApiSkill = {
   id: string
   name: string
+  description?: string
   sourceType: string
   sourceRef?: string
-  targets?: SkillTargetEntry[]
+  targets?: Array<{ tool: string; scope?: string; projectPath?: string }>
 }
 
-type FullBackup = {
-  backupVersion?: number
-  config?: {
-    language?: string
-    storagePath?: string
-    gitCacheCleanupDays?: number
-    gitCacheTtlSecs?: number
-    githubToken?: string
-    webdav?: { url?: string; user?: string; remoteDir?: string }
-    exploreSources?: Array<{ id: string; name: string; sourceType: string; sourceRef: string }>
-    toolDirOverrides?: Array<{ toolKey: string; path: string }>
-    customScanDirs?: Array<{ path: string }>
-  }
-  skills?: SkillEntry[]
-  exportedAt?: string
+type ApiConfig = {
+  language?: string
+  storagePath?: string
+  gitCacheCleanupDays?: number
+  gitCacheTtlSecs?: number
+  webdav?: { url?: string; user?: string; remoteDir?: string }
+  exploreSources?: Array<{ id: string; name: string; sourceType: string; sourceRef: string }>
 }
 
 type WebdavReaderProps = {
   t: TFunction
 }
 
-function formatDate(epochStr: string): string {
-  const secs = Number(epochStr)
-  if (!Number.isFinite(secs) || secs <= 0) return epochStr
-  return new Date(secs * 1000).toLocaleString()
-}
-
-function resolveTargetName(target: SkillTargetEntry): string {
-  if (typeof target === 'string') return target
-  return target.tool
-}
-
 const WebdavReader = memo(function WebdavReader({ t }: WebdavReaderProps) {
-  const [url, setUrl] = useState('')
-  const [user, setUser] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [backup, setBackup] = useState<FullBackup | null>(null)
+  const [skills, setSkills] = useState<ApiSkill[]>([])
+  const [config, setConfig] = useState<ApiConfig | null>(null)
+  const [connected, setConnected] = useState(false)
 
-  const handleConnect = useCallback(async () => {
-    if (!url.trim()) return
+  const [webdavUrl, setWebdavUrl] = useState('')
+  const [webdavUser, setWebdavUser] = useState('')
+  const [webdavPassword, setWebdavPassword] = useState('')
+
+  const fetchFromApi = useCallback(async () => {
     setLoading(true)
     setError(null)
-    setBackup(null)
+    try {
+      const [skillsResp, configResp] = await Promise.all([
+        fetch(`${API_BASE}/api/skills`),
+        fetch(`${API_BASE}/api/config`),
+      ])
+      if (!skillsResp.ok) throw new Error(`API ${skillsResp.status}`)
+      const skillsData = await skillsResp.json()
+      const configData = configResp.ok ? await configResp.json() : null
+      setSkills(skillsData as ApiSkill[])
+      setConfig(configData as ApiConfig | null)
+      setConnected(true)
+    } catch {
+      setError(t('webdavApiUnavailable'))
+      setConnected(false)
+    } finally {
+      setLoading(false)
+    }
+  }, [t])
+
+  // Auto-fetch on mount
+  useEffect(() => {
+    void fetchFromApi()
+  }, [fetchFromApi])
+
+  const handleWebdavConnect = useCallback(async () => {
+    if (!webdavUrl.trim()) return
+    setLoading(true)
+    setError(null)
     try {
       const headers: Record<string, string> = {}
-      if (user) {
-        headers['Authorization'] = 'Basic ' + btoa(`${user}:${password}`)
+      if (webdavUser) {
+        headers['Authorization'] = 'Basic ' + btoa(`${webdavUser}:${webdavPassword}`)
       }
-      const resp = await fetch(url, { headers })
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
-      }
-      const text = await resp.text()
-      const data = JSON.parse(text) as FullBackup
-      setBackup(data)
+      const resp = await fetch(webdavUrl, { headers })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
+      const data = await resp.json()
+      setSkills(data.skills ?? [])
+      setConfig(data.config ?? null)
+      setConnected(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
-  }, [url, user, password])
+  }, [webdavUrl, webdavUser, webdavPassword])
 
-  const handleClear = useCallback(() => {
-    setBackup(null)
-    setError(null)
-  }, [])
+  const targetToolSet = new Set<string>()
+  for (const skill of skills) {
+    for (const target of skill.targets ?? []) {
+      targetToolSet.add(target.tool)
+    }
+  }
 
-  // ── Connection form ──
-  if (!backup) {
+  // ── Loading state ──
+  if (loading && !connected) {
     return (
       <div className="webdav-reader">
         <div className="webdav-reader-header">
           <Cloud size={20} />
           <span>{t('webdavReaderTitle')}</span>
         </div>
-        <div className="webdav-reader-hint">{t('webdavReaderHint')}</div>
+        <div className="settings-helper">{t('webdavConnecting')}</div>
+      </div>
+    )
+  }
+
+  // ── Not connected: show WebDAV fallback ──
+  if (!connected) {
+    return (
+      <div className="webdav-reader">
+        <div className="webdav-reader-header">
+          <Cloud size={20} />
+          <span>{t('webdavReaderTitle')}</span>
+        </div>
+        <div className="webdav-reader-hint">{error ?? t('webdavReaderHint')}</div>
         <div className="webdav-reader-form">
           <label className="settings-field">
             <span>{t('webdavUrl')}</span>
             <input
               type="text"
-              value={url}
+              value={webdavUrl}
               placeholder="https://dav.example.com/remote.php/dav/files/me/skilldo-backup.json"
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+              onChange={(e) => setWebdavUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleWebdavConnect()}
             />
           </label>
           <div className="webdav-reader-auth-row">
             <label className="settings-field">
               <span>{t('webdavUser')}</span>
-              <input type="text" value={user} onChange={(e) => setUser(e.target.value)} />
+              <input type="text" value={webdavUser} onChange={(e) => setWebdavUser(e.target.value)} />
             </label>
             <label className="settings-field">
               <span>{t('webdavPassword')}</span>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <input type="password" value={webdavPassword} onChange={(e) => setWebdavPassword(e.target.value)} />
             </label>
           </div>
-          {error && (
-            <div className="webdav-reader-error">
-              <AlertCircle size={14} />
-              <span>{error}</span>
-            </div>
-          )}
           <div className="settings-tool-dir-actions">
             <button
               className="btn btn-primary btn-sm"
               type="button"
-              disabled={loading || !url.trim()}
-              onClick={handleConnect}
+              disabled={loading || !webdavUrl.trim()}
+              onClick={handleWebdavConnect}
             >
               {loading ? t('webdavConnecting') : t('webdavConnect')}
             </button>
@@ -133,30 +151,25 @@ const WebdavReader = memo(function WebdavReader({ t }: WebdavReaderProps) {
     )
   }
 
-  // ── Backup data display ──
-  const skills = backup.skills ?? []
-  const config = backup.config
-  const targetToolSet = new Set<string>()
-  for (const skill of skills) {
-    for (const target of skill.targets ?? []) {
-      targetToolSet.add(resolveTargetName(target))
-    }
-  }
-
+  // ── Connected: show skills list ──
   return (
     <div className="webdav-reader">
       <div className="webdav-reader-header">
-        <button className="btn btn-ghost btn-sm" type="button" onClick={handleClear}>
-          <ArrowLeft size={16} />
-        </button>
         <Cloud size={20} />
         <span>{t('webdavReaderTitle')}</span>
         <CheckCircle size={16} className="webdav-reader-ok" />
+        <button
+          className="btn btn-ghost btn-sm"
+          type="button"
+          onClick={() => void fetchFromApi()}
+          title={t('webdavRefresh')}
+          style={{ marginLeft: 'auto' }}
+        >
+          <RefreshCw size={14} />
+        </button>
       </div>
 
       {/* Overview */}
-      <div className="settings-section-divider" />
-      <div className="settings-section-title">{t('webdavBackupOverview')}</div>
       <div className="webdav-reader-stats">
         <div className="webdav-reader-stat">
           <span className="webdav-reader-stat-value">{skills.length}</span>
@@ -166,57 +179,15 @@ const WebdavReader = memo(function WebdavReader({ t }: WebdavReaderProps) {
           <span className="webdav-reader-stat-value">{targetToolSet.size}</span>
           <span className="webdav-reader-stat-label">{t('webdavReaderTools')}</span>
         </div>
-        <div className="webdav-reader-stat">
-          <span className="webdav-reader-stat-value">v{backup.backupVersion ?? '?'}</span>
-          <span className="webdav-reader-stat-label">{t('webdavReaderVersion')}</span>
-        </div>
-        <div className="webdav-reader-stat">
-          <span className="webdav-reader-stat-value">
-            {backup.exportedAt ? formatDate(backup.exportedAt) : '—'}
-          </span>
-          <span className="webdav-reader-stat-label">{t('webdavReaderExportedAt')}</span>
-        </div>
-      </div>
-
-      {/* Config */}
-      {config && (
-        <>
-          <div className="settings-section-divider" />
-          <div className="settings-section-title">{t('webdavReaderConfig')}</div>
-          <div className="webdav-reader-config-grid">
-            {config.storagePath && (
-              <div className="webdav-reader-config-item">
-                <span className="webdav-reader-config-key">{t('storagePath')}</span>
-                <span className="mono">{config.storagePath}</span>
-              </div>
-            )}
-            {config.language && (
-              <div className="webdav-reader-config-item">
-                <span className="webdav-reader-config-key">{t('language')}</span>
-                <span>{config.language}</span>
-              </div>
-            )}
-            {config.gitCacheCleanupDays != null && (
-              <div className="webdav-reader-config-item">
-                <span className="webdav-reader-config-key">{t('gitCacheCleanupDays')}</span>
-                <span>{config.gitCacheCleanupDays}</span>
-              </div>
-            )}
-            {config.gitCacheTtlSecs != null && (
-              <div className="webdav-reader-config-item">
-                <span className="webdav-reader-config-key">{t('gitCacheTtlSecs')}</span>
-                <span>{config.gitCacheTtlSecs}s</span>
-              </div>
-            )}
-            {config.exploreSources && config.exploreSources.length > 0 && (
-              <div className="webdav-reader-config-item">
-                <span className="webdav-reader-config-key">{t('webdavReaderSources')}</span>
-                <span>{config.exploreSources.length}</span>
-              </div>
-            )}
+        {config?.storagePath && (
+          <div className="webdav-reader-stat webdav-reader-stat-wide">
+            <span className="webdav-reader-stat-label">{t('storagePath')}</span>
+            <span className="mono webdav-reader-stat-value" style={{ fontSize: 13 }}>
+              {config.storagePath}
+            </span>
           </div>
-        </>
-      )}
+        )}
+      </div>
 
       {/* Skills list */}
       <div className="settings-section-divider" />
@@ -234,11 +205,15 @@ const WebdavReader = memo(function WebdavReader({ t }: WebdavReaderProps) {
                   <span className="mono webdav-reader-skill-ref">{skill.sourceRef}</span>
                 )}
               </div>
+              {skill.description && (
+                <div className="webdav-reader-skill-desc">{skill.description}</div>
+              )}
               {skill.targets && skill.targets.length > 0 && (
                 <div className="webdav-reader-skill-targets">
                   {skill.targets.map((target, i) => (
                     <span className="webdav-reader-skill-target" key={i}>
-                      {resolveTargetName(target)}
+                      {target.tool}
+                      {target.scope && target.scope !== 'global' ? ` (${target.scope})` : ''}
                     </span>
                   ))}
                 </div>

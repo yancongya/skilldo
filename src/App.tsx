@@ -24,7 +24,6 @@ import SharedDirModal from './components/skills/modals/SharedDirModal'
 import NamePromptModal from './components/skills/modals/NamePromptModal'
 import PublishSkillModal, { type PublishParams } from './components/skills/modals/PublishSkillModal'
 import SettingsPage from './components/skills/SettingsPage'
-import WebdavReader from './components/skills/WebdavReader'
 import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
 import type {
   AppConfigDto,
@@ -329,20 +328,38 @@ function App() {
       const result = await invokeTauri<ManagedSkill[]>('get_managed_skills')
       setManagedSkills(result)
       return result
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch {
+      // Browser mode: fetch from local HTTP API
+      if (!isTauri) {
+        try {
+          const resp = await fetch('http://127.0.0.1:15723/api/skills')
+          if (resp.ok) {
+            const data = (await resp.json()) as ManagedSkill[]
+            setManagedSkills(data)
+            return data
+          }
+        } catch { /* API unavailable */ }
+      }
       return []
     }
-  }, [invokeTauri])
+  }, [invokeTauri, isTauri])
 
   const loadTags = useCallback(async () => {
     try {
       const result = await invokeTauri<TagWithCountDto[]>('get_tags')
       setTags(result)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+    } catch {
+      if (!isTauri) {
+        try {
+          const resp = await fetch('http://127.0.0.1:15723/api/tags')
+          if (resp.ok) {
+            const data = (await resp.json()) as TagWithCountDto[]
+            setTags(data)
+          }
+        } catch { /* API unavailable */ }
+      }
     }
-  }, [invokeTauri])
+  }, [invokeTauri, isTauri])
 
   const loadToolDirOverrides = useCallback(async () => {
     if (!isTauri) return
@@ -436,6 +453,10 @@ function App() {
       loadTags()
       loadToolDirOverrides()
       loadCustomScanDirs()
+    } else {
+      // Browser mode: fetch from local HTTP API (if Tauri dev server is running)
+      loadManagedSkills()
+      loadTags()
     }
   }, [isTauri, loadManagedSkills, loadTags, loadToolDirOverrides, loadCustomScanDirs])
 
@@ -3243,9 +3264,7 @@ function App() {
       />
 
       <main className="skills-main">
-        {!isTauri && activeView !== 'settings' && activeView !== 'explore' && activeView !== 'tags' && activeView !== 'detail' ? (
-          <WebdavReader t={t} />
-        ) : activeView === 'detail' && detailSkill ? (
+        {activeView === 'detail' && detailSkill ? (
           <SkillDetailView
             skill={detailSkill}
             onBack={handleBackToList}
