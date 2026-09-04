@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yancongya/skilldo.git",
+    "url": "git+https://github.com/yancongya/skilldo.git",
     "directory": "npm"
   },
   "bin": {
@@ -34,6 +34,7 @@
     "cli"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
