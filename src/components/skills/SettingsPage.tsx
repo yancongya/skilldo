@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, FolderOpen, RotateCcw, ArrowUpFromLine, ArrowDownToLine, Download, RefreshCw } from 'lucide-react'
+import { ArrowLeft, FolderOpen, RotateCcw, Download, RefreshCw } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { Update } from '@tauri-apps/plugin-updater'
 import type {
@@ -49,7 +49,6 @@ type SettingsPageProps = {
   onSaveWebdav: (webdav: WebDavConfigDto) => Promise<void>
   onBackupToFile: () => Promise<void>
   onBackupWebdav: () => Promise<void>
-  onRestoreWebdav: () => Promise<RestoreReportDto>
   onListGithubOwners: () => Promise<GithubOwnerEntry[]>
   onProfileStatus: () => Promise<ProfileSyncReportDto>
   onProfileSync: (applyDeletions: boolean) => Promise<ProfileSyncReportDto>
@@ -94,7 +93,6 @@ const SettingsPage = ({
   onSaveWebdav,
   onBackupToFile,
   onBackupWebdav,
-  onRestoreWebdav,
   onListGithubOwners,
   onProfileStatus,
   onProfileSync,
@@ -349,26 +347,37 @@ const SettingsPage = ({
       setBackupMsg(err instanceof Error ? err.message : String(err))
     }
   }, [isTauri, onSaveWebdav, wdUrl, wdUser, wdPassword, wdRemoteDir, t])
-  const handleBackupWebdav = useCallback(async () => {
+
+  // One-click sync: pull from WebDAV → push to WebDAV
+  const handleSync = useCallback(async () => {
     if (!isTauri) return
+    setDeviceBusy(true)
+    setBackupMsg(null)
     try {
-      await onBackupWebdav()
-      setRestoreReport(null)
-      setBackupMsg(t('backupDone'))
+      // Step 1: Pull (apply remote state to local)
+      setBackupMsg(t('syncPulling'))
+      const pullReport = await onDevicePull()
+      setDeviceReport(pullReport)
+
+      // Step 2: Push (upload local state to remote)
+      setBackupMsg(t('syncPushing'))
+      const pushReport = await onDevicePublish()
+      setDeviceReport(pushReport)
+
+      // Step 3: Backup database snapshot
+      try {
+        await onBackupWebdav()
+        setBackupMsg(t('syncDone'))
+      } catch {
+        setBackupMsg(t('syncDoneNoBackup'))
+      }
     } catch (err) {
       setBackupMsg(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeviceBusy(false)
     }
-  }, [isTauri, onBackupWebdav, t])
-  const handleRestoreWebdav = useCallback(async () => {
-    if (!isTauri) return
-    try {
-      const report = await onRestoreWebdav()
-      setRestoreReport(report)
-      setBackupMsg(t('restoreDone', { summary: report.summary }))
-    } catch (err) {
-      setBackupMsg(err instanceof Error ? err.message : String(err))
-    }
-  }, [isTauri, onRestoreWebdav, t])
+  }, [isTauri, onDevicePull, onDevicePublish, onBackupWebdav, t])
+
   const handleBackupToFile = useCallback(async () => {
     if (!isTauri) return
     try {
@@ -1149,39 +1158,22 @@ const SettingsPage = ({
           </div>
         ) : null}
 
-        {/* 备份 / 恢复操作 */}
+        {/* 同步操作 */}
         <div className="settings-sync-buttons">
           <button
             className="btn btn-primary btn-sm"
             type="button"
             disabled={deviceBusy}
-            onClick={handleBackupWebdav}
+            onClick={handleSync}
           >
-            {deviceBusy ? t('deviceWorking') : <><ArrowUpFromLine size={14} /> {t('syncToWebdav')}</>}
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
-            type="button"
-            disabled={deviceBusy}
-            onClick={handleRestoreWebdav}
-          >
-            {deviceBusy ? t('deviceWorking') : <><ArrowDownToLine size={14} /> {t('restoreFromWebdav')}</>}
+            {deviceBusy ? t('deviceWorking') : <><RefreshCw size={14} /> {t('syncNow')}</>}
           </button>
           <button
             className="btn btn-secondary btn-sm"
             type="button"
             onClick={handleBackupToFile}
           >
-            {<><Download size={14} /> {t('exportToFile')}</>}
-          </button>
-          <button
-            className="btn btn-ghost btn-sm"
-            type="button"
-            disabled={deviceBusy}
-            onClick={() => runDeviceAction('status')}
-            title={t('deviceRefresh')}
-          >
-            <RefreshCw size={14} />
+            <Download size={14} /> {t('exportToFile')}
           </button>
         </div>
 

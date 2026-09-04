@@ -38,7 +38,6 @@ import type {
   OnboardingPlan,
   OriginRules,
   PublishResultDto,
-  RestoreReportDto,
   TagWithCountDto,
   ToolOption,
   ToolStatusDto,
@@ -883,13 +882,6 @@ function App() {
     if (!isTauri) return
     await invokeTauri('backup_webdav')
   }, [isTauri, invokeTauri])
-
-  const handleRestoreWebdav = useCallback(async (): Promise<RestoreReportDto> => {
-    const report = await invokeTauri<RestoreReportDto>('restore_from_webdav')
-    const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
-    if (cfg) setWebdav(cfg.webdav ?? null)
-    return report
-  }, [invokeTauri, setWebdav])
 
   const handleListGithubOwners = useCallback(async () => {
     if (!isTauri) return []
@@ -3317,7 +3309,6 @@ function App() {
             onSaveWebdav={handleSaveWebdav}
             onBackupToFile={handleBackupToFile}
             onBackupWebdav={handleBackupWebdav}
-            onRestoreWebdav={handleRestoreWebdav}
             onListGithubOwners={handleListGithubOwners}
             onProfileStatus={handleProfileStatus}
             onProfileSync={handleProfileSync}
