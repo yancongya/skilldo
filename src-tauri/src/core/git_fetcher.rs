@@ -391,10 +391,7 @@ pub fn clone_local_repo(src: &Path, dst: &Path) -> Result<()> {
         None,
     )?;
     if !out.status.success() {
-        anyhow::bail!(
-            "git clone failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        anyhow::bail!("git clone failed: {}", String::from_utf8_lossy(&out.stderr));
     }
     Ok(())
 }

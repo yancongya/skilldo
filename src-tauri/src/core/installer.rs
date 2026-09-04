@@ -84,9 +84,8 @@ pub fn install_local_skill<R: tauri::Runtime>(
                     "[installer] git clone failed, falling back to file copy: {:#}",
                     err
                 );
-                copy_dir_recursive(source_path, &central_path).with_context(|| {
-                    format!("copy {:?} -> {:?}", source_path, central_path)
-                })?;
+                copy_dir_recursive(source_path, &central_path)
+                    .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
             }
         }
     } else {
@@ -2423,9 +2422,8 @@ pub fn install_local_skill_cli(
                         "[installer:cli] git clone failed, falling back to file copy: {:#}",
                         err
                     );
-                    copy_dir_recursive(source_path, &central_path).with_context(|| {
-                        format!("copy {:?} -> {:?}", source_path, central_path)
-                    })?;
+                    copy_dir_recursive(source_path, &central_path)
+                        .with_context(|| format!("copy {:?} -> {:?}", source_path, central_path))?;
                 }
             }
         } else {
@@ -3016,7 +3014,11 @@ pub fn push_skill_cli(
     }
 
     // Check if there's anything to commit (hardened).
-    let diff = run_git(&central_path, &["diff", "--cached", "--quiet"], "git diff --cached")?;
+    let diff = run_git(
+        &central_path,
+        &["diff", "--cached", "--quiet"],
+        "git diff --cached",
+    )?;
 
     if diff.status.code() == Some(0) {
         // No changes to commit — still try push in case remote is ahead.
