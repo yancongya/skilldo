@@ -171,6 +171,12 @@ const SettingsPage = ({
       .catch(() => {})
   }, [])
 
+  // Auto-load device status on mount
+  useEffect(() => {
+    if (!isTauri) return
+    void runDeviceAction('status')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSelectAuthor = useCallback(async (owner: string) => {
     setSelectedOwner(owner)
     const next: CurrentAuthor = { ...currentAuthor, githubLogin: owner, name: currentAuthor.name || owner }
@@ -1168,7 +1174,61 @@ const SettingsPage = ({
           >
             {t('exportToFile')}
           </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            disabled={deviceBusy}
+            onClick={() => runDeviceAction('status')}
+            title={t('deviceRefresh')}
+          >
+            🔄
+          </button>
         </div>
+
+        {/* 同步状态仪表板 */}
+        {deviceReport ? (
+          <div className="settings-sync-dashboard">
+            <div className="settings-sync-stats">
+              <div className="settings-sync-stat">
+                <span className="settings-sync-stat-value">{deviceReport.state}</span>
+                <span className="settings-sync-stat-label">{t('syncState')}</span>
+              </div>
+              <div className="settings-sync-stat">
+                <span className="settings-sync-stat-value">{deviceReport.pushableRepositories}</span>
+                <span className="settings-sync-stat-label">{t('syncPushable')}</span>
+              </div>
+              <div className="settings-sync-stat">
+                <span className="settings-sync-stat-value">{deviceReport.dirtyRepositories}</span>
+                <span className="settings-sync-stat-label">{t('syncDirty')}</span>
+              </div>
+              <div className="settings-sync-stat">
+                <span className="settings-sync-stat-value">{deviceReport.pullableSkills}</span>
+                <span className="settings-sync-stat-label">{t('syncPullable')}</span>
+              </div>
+              {deviceReport.failures.length > 0 && (
+                <div className="settings-sync-stat settings-sync-stat-err">
+                  <span className="settings-sync-stat-value">{deviceReport.failures.length}</span>
+                  <span className="settings-sync-stat-label">{t('syncFailures')}</span>
+                </div>
+              )}
+            </div>
+            {deviceReport.stages.length > 0 && (
+              <div className="settings-sync-stages">
+                {deviceReport.stages.map((item) => (
+                  <div className="settings-sync-stage" key={item.id}>
+                    <span className={`settings-sync-stage-dot ${item.status}`} />
+                    <span>{item.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {deviceReport.failures.map(([name, error]) => (
+              <div className="settings-update-error" key={`${name}-${error}`}>
+                <span>{name}</span><span>{error}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {backupMsg && (
           <div className="settings-helper" style={{ marginTop: 8 }}>
@@ -1214,43 +1274,6 @@ const SettingsPage = ({
             )}
           </div>
         )}
-
-        {/* ── 跨设备同步 ── */}
-        <div className="settings-section-divider" />
-        <div className="settings-section-title">{t('syncSectionTitle')}</div>
-        <div className="settings-sync-row">
-          <button
-            className="btn btn-secondary btn-sm"
-            type="button"
-            disabled={deviceBusy}
-            onClick={() => runDeviceAction('status')}
-          >
-            {deviceBusy ? t('deviceWorking') : t('deviceRefresh')}
-          </button>
-        </div>
-        {deviceReport ? (
-          <div className="settings-restore-report" style={{ marginTop: 12 }}>
-            <div className="settings-helper">
-              {t('deviceSummary', {
-                state: deviceReport.state,
-                pushable: deviceReport.pushableRepositories,
-                dirty: deviceReport.dirtyRepositories,
-                pullable: deviceReport.pullableSkills,
-                failures: deviceReport.failures.length,
-              })}
-            </div>
-            {deviceReport.stages.map((item) => (
-              <div className="settings-helper" key={item.id}>
-                [{item.status}] {item.message}
-              </div>
-            ))}
-            {deviceReport.failures.map(([name, error]) => (
-              <div className="settings-update-error" key={`${name}-${error}`}>
-                <span>{name}</span><span>{error}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
 
         {/* Profile 高级工具（折叠） */}
         <div

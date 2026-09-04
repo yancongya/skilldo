@@ -2708,10 +2708,73 @@
   flex-wrap: wrap;
 }
 
-.settings-sync-row {
+.settings-sync-dashboard {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.settings-sync-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-sync-stat {
   display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-sync-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.settings-sync-stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.settings-sync-stat-err .settings-sync-stat-value {
+  color: var(--danger-text, #ef4444);
+}
+
+.settings-sync-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-sync-stage {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  margin: 12px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-sync-stage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-success, #22c55e);
+  flex-shrink: 0;
+}
+
+.settings-sync-stage-dot.pending {
+  background: var(--text-tertiary);
+}
+
+.settings-sync-stage-dot.error {
+  background: var(--danger-text, #ef4444);
 }
 
 /* ── Author List ───────────────────────────────────── */
