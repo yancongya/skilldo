@@ -43,14 +43,11 @@ type SettingsPageProps = {
   t: TFunction
   exploreSources: ExploreSourceConfigDto[]
   onSaveExploreSources: (sources: ExploreSourceConfigDto[]) => void
-  onExportConfig: () => Promise<void>
-  onImportConfig: () => Promise<void>
   onValidateGithubToken: (token: string) => Promise<GithubTokenStatusDto>
   toolStatus: ToolStatusDto | null
   webdav: WebDavConfigDto | null
   onSaveWebdav: (webdav: WebDavConfigDto) => Promise<void>
   onBackupToFile: () => Promise<void>
-  onRestoreFromFile: () => Promise<RestoreReportDto>
   onBackupWebdav: () => Promise<void>
   onRestoreWebdav: () => Promise<RestoreReportDto>
   onListGithubOwners: () => Promise<GithubOwnerEntry[]>
@@ -91,14 +88,11 @@ const SettingsPage = ({
   t,
   exploreSources,
   onSaveExploreSources,
-  onExportConfig,
-  onImportConfig,
   onValidateGithubToken,
   toolStatus,
   webdav,
   onSaveWebdav,
   onBackupToFile,
-  onRestoreFromFile,
   onBackupWebdav,
   onRestoreWebdav,
   onListGithubOwners,
@@ -297,29 +291,6 @@ const SettingsPage = ({
 
   // ---- Config backup ----
   const [backupMsg, setBackupMsg] = useState<string | null>(null)
-  const handleExport = useCallback(async () => {
-    if (!isTauri) return
-    try {
-      await onExportConfig()
-      setBackupMsg(t('exportConfigDone'))
-    } catch (err) {
-      setBackupMsg(err instanceof Error ? err.message : String(err))
-    }
-  }, [isTauri, onExportConfig, t])
-  const handleImport = useCallback(async () => {
-    if (!isTauri) return
-    try {
-      if (!window.confirm(t('importConfigConfirm'))) return
-      await onImportConfig()
-      setBackupMsg(t('importConfigDone'))
-    } catch (err) {
-      setBackupMsg(
-        t('importConfigFailed', {
-          message: err instanceof Error ? err.message : String(err),
-        }),
-      )
-    }
-  }, [isTauri, onImportConfig, t])
 
   // ---- WebDAV backup ----
   const [wdUrl, setWdUrl] = useState(webdav?.url ?? '')
@@ -331,6 +302,7 @@ const SettingsPage = ({
   const [deviceReport, setDeviceReport] = useState<DevicePipelineReportDto | null>(null)
   const [deviceBusy, setDeviceBusy] = useState(false)
   const [profileAdvancedOpen, setProfileAdvancedOpen] = useState(false)
+  const [webdavConfigOpen, setWebdavConfigOpen] = useState(false)
 
   const runDeviceAction = useCallback(
     async (mode: 'status' | 'pull' | 'publish') => {
@@ -401,16 +373,6 @@ const SettingsPage = ({
       setBackupMsg(err instanceof Error ? err.message : String(err))
     }
   }, [isTauri, onBackupToFile, t])
-  const handleRestoreFromFile = useCallback(async () => {
-    if (!isTauri) return
-    try {
-      const report = await onRestoreFromFile()
-      setRestoreReport(report)
-      setBackupMsg(t('restoreDone', { summary: report.summary }))
-    } catch (err) {
-      setBackupMsg(err instanceof Error ? err.message : String(err))
-    }
-  }, [isTauri, onRestoreFromFile, t])
 
   const runProfileAction = useCallback(
     async (mode: 'status' | 'sync' | 'sync-delete') => {
@@ -1130,74 +1092,82 @@ const SettingsPage = ({
         <div className="settings-section-divider" />
         <div className="settings-section-title">{t('backupRestoreTitle')}</div>
 
-        <div className="settings-section-subtitle">{t('webdavConfig')}</div>
-        <div className="settings-webdav-grid">
-          <label className="settings-field">
-            <span>{t('webdavUrl')}</span>
-            <input
-              type="text"
-              value={wdUrl}
-              placeholder="https://dav.example.com/remote.php/dav/files/me"
-              onChange={(e) => setWdUrl(e.target.value)}
-            />
-          </label>
-          <label className="settings-field">
-            <span>{t('webdavUser')}</span>
-            <input type="text" value={wdUser} onChange={(e) => setWdUser(e.target.value)} />
-          </label>
-          <label className="settings-field">
-            <span>{t('webdavPassword')}</span>
-            <input
-              type="password"
-              value={wdPassword}
-              onChange={(e) => setWdPassword(e.target.value)}
-            />
-          </label>
-          <label className="settings-field">
-            <span>{t('webdavRemoteDir')}</span>
-            <input
-              type="text"
-              value={wdRemoteDir}
-              placeholder="skilldo"
-              onChange={(e) => setWdRemoteDir(e.target.value)}
-            />
-          </label>
+        {/* WebDAV 连接（折叠） */}
+        <div
+          className="settings-section-subtitle settings-collapsible-header"
+          onClick={() => setWebdavConfigOpen((v) => !v)}
+        >
+          <span className="settings-collapsible-arrow">{webdavConfigOpen ? '▾' : '▸'}</span>
+          {t('webdavConfig')}
+          {wdUrl ? <span className="settings-webdav-connected">{t('webdavConnected')}</span> : null}
         </div>
-        <div className="settings-tool-dir-actions" style={{ marginTop: 12 }}>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={handleSaveWebdav}>
-            {t('saveWebdav')}
-          </button>
-        </div>
+        {webdavConfigOpen ? (
+          <div className="settings-webdav-config">
+            <div className="settings-webdav-grid">
+              <label className="settings-field">
+                <span>{t('webdavUrl')}</span>
+                <input
+                  type="text"
+                  value={wdUrl}
+                  placeholder="https://dav.example.com/remote.php/dav/files/me"
+                  onChange={(e) => setWdUrl(e.target.value)}
+                />
+              </label>
+              <label className="settings-field">
+                <span>{t('webdavUser')}</span>
+                <input type="text" value={wdUser} onChange={(e) => setWdUser(e.target.value)} />
+              </label>
+              <label className="settings-field">
+                <span>{t('webdavPassword')}</span>
+                <input
+                  type="password"
+                  value={wdPassword}
+                  onChange={(e) => setWdPassword(e.target.value)}
+                />
+              </label>
+              <label className="settings-field">
+                <span>{t('webdavRemoteDir')}</span>
+                <input
+                  type="text"
+                  value={wdRemoteDir}
+                  placeholder="skilldo"
+                  onChange={(e) => setWdRemoteDir(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="settings-tool-dir-actions" style={{ marginTop: 12 }}>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={handleSaveWebdav}>
+                {t('saveWebdav')}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
-        <div className="settings-backup-two-col">
-          <div className="settings-backup-col">
-            <div className="settings-section-subtitle">{t('localFile')}</div>
-            <div className="settings-tool-dir-actions">
-              <button className="btn btn-secondary btn-sm" type="button" onClick={handleExport}>
-                {t('exportConfig')}
-              </button>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={handleImport}>
-                {t('importConfig')}
-              </button>
-            </div>
-          </div>
-          <div className="settings-backup-col">
-            <div className="settings-section-subtitle">{t('webdavBackup')}</div>
-            <div className="settings-tool-dir-actions">
-              <button className="btn btn-secondary btn-sm" type="button" onClick={handleBackupToFile}>
-                {t('backupToFile')}
-              </button>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={handleRestoreFromFile}>
-                {t('restoreFromFile')}
-              </button>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={handleBackupWebdav}>
-                {t('backupToWebdav')}
-              </button>
-              <button className="btn btn-secondary btn-sm" type="button" onClick={handleRestoreWebdav}>
-                {t('restoreFromWebdav')}
-              </button>
-            </div>
-          </div>
+        {/* 备份 / 恢复操作 */}
+        <div className="settings-sync-buttons">
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            disabled={deviceBusy}
+            onClick={handleBackupWebdav}
+          >
+            {deviceBusy ? t('deviceWorking') : t('syncToWebdav')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            disabled={deviceBusy}
+            onClick={handleRestoreWebdav}
+          >
+            {deviceBusy ? t('deviceWorking') : t('restoreFromWebdav')}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            onClick={handleBackupToFile}
+          >
+            {t('exportToFile')}
+          </button>
         </div>
 
         {backupMsg && (
@@ -1248,18 +1218,14 @@ const SettingsPage = ({
         {/* ── 跨设备同步 ── */}
         <div className="settings-section-divider" />
         <div className="settings-section-title">{t('syncSectionTitle')}</div>
-        <div className="settings-helper" style={{ marginBottom: 12 }}>
-          {t('profileSyncHint')}
-        </div>
-        <div className="settings-tool-dir-actions">
-          <button className="btn btn-secondary btn-sm" type="button" disabled={deviceBusy} onClick={() => runDeviceAction('status')}>
-            {t('deviceStatus')}
-          </button>
-          <button className="btn btn-primary btn-sm" type="button" disabled={deviceBusy} onClick={() => runDeviceAction('pull')}>
-            {deviceBusy ? t('deviceWorking') : t('devicePull')}
-          </button>
-          <button className="btn btn-primary btn-sm" type="button" disabled={deviceBusy} onClick={() => runDeviceAction('publish')}>
-            {deviceBusy ? t('deviceWorking') : t('devicePublish')}
+        <div className="settings-sync-row">
+          <button
+            className="btn btn-secondary btn-sm"
+            type="button"
+            disabled={deviceBusy}
+            onClick={() => runDeviceAction('status')}
+          >
+            {deviceBusy ? t('deviceWorking') : t('deviceRefresh')}
           </button>
         </div>
         {deviceReport ? (

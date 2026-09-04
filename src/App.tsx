@@ -856,45 +856,6 @@ function App() {
   })
   const [webdav, setWebdav] = useState<WebDavConfigDto | null>(null)
 
-  const handleExportConfig = useCallback(async () => {
-    if (!isTauri) return
-    const json = await invokeTauri<string>('export_config')
-    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
-    const date = new Date().toISOString().slice(0, 10)
-    const path = await dialog.save({
-      defaultPath: `skilldo-config-${date}.json`,
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (path) {
-      await invokeTauri('write_text_file', { path, contents: json })
-    }
-  }, [isTauri, invokeTauri])
-
-  const handleImportConfig = useCallback(async () => {
-    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
-    const selected = await dialog.open({
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      multiple: false,
-    })
-    if (!selected || Array.isArray(selected)) return
-    const json = await invokeTauri<string>('read_text_file', { path: selected })
-    await invokeTauri<AppConfigDto>('import_config', { json })
-    // Refresh all settings state from the newly imported config.
-    const token = await invokeTauri<string>('get_github_token').catch(() => '')
-    setGithubToken(token)
-    const rules = await invokeTauri<OriginRules>('get_origin_rules').catch(() => null)
-    if (rules) setOriginRules(rules)
-    const dirs = await invokeTauri<CustomScanDirEntry[]>('get_custom_scan_dirs').catch(() => null)
-    if (dirs) setCustomScanDirs(dirs)
-    const sources = await invokeTauri<ExploreSourceConfigDto[]>('get_explore_sources').catch(
-      () => null,
-    )
-    if (sources) setExploreSources(sources)
-    setToolStatus(await invokeTauri<ToolStatusDto>('get_tool_status').catch(() => null))
-    const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
-    if (cfg) setWebdav(cfg.webdav ?? null)
-  }, [invokeTauri, setGithubToken, setOriginRules, setCustomScanDirs, setExploreSources, setToolStatus, setWebdav])
-
   const handleSaveWebdav = useCallback(
     async (next: WebDavConfigDto) => {
       if (!isTauri) return
@@ -917,21 +878,6 @@ function App() {
       await invokeTauri('write_text_file', { path, contents: json })
     }
   }, [isTauri, invokeTauri])
-
-  const handleRestoreFromFile = useCallback(async (): Promise<RestoreReportDto> => {
-    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
-    const selected = await dialog.open({
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-      multiple: false,
-    })
-    if (!selected || Array.isArray(selected)) {
-      return { installed: [], skipped: [], failed: [], summary: 'no file selected' }
-    }
-    const report = await invokeTauri<RestoreReportDto>('restore_from_file', { path: selected })
-    const cfg = await invokeTauri<AppConfigDto>('get_app_config').catch(() => null)
-    if (cfg) setWebdav(cfg.webdav ?? null)
-    return report
-  }, [invokeTauri, setWebdav])
 
   const handleBackupWebdav = useCallback(async () => {
     if (!isTauri) return
@@ -3365,14 +3311,11 @@ function App() {
             onRemoveCustomScanDir={handleRemoveCustomScanDir}
             exploreSources={exploreSources}
             onSaveExploreSources={handleSaveExploreSources}
-            onExportConfig={handleExportConfig}
-            onImportConfig={handleImportConfig}
             onValidateGithubToken={handleValidateGithubToken}
             toolStatus={toolStatus}
             webdav={webdav}
             onSaveWebdav={handleSaveWebdav}
             onBackupToFile={handleBackupToFile}
-            onRestoreFromFile={handleRestoreFromFile}
             onBackupWebdav={handleBackupWebdav}
             onRestoreWebdav={handleRestoreWebdav}
             onListGithubOwners={handleListGithubOwners}

@@ -234,6 +234,10 @@ export const resources = {
       sourceKindGitIndex: 'Git index',
 
       backupRestoreTitle: 'Backup & Restore',
+      webdavConnected: '· configured',
+      syncToWebdav: '↑ Sync to WebDAV',
+      exportToFile: '↓ Export to file',
+      deviceRefresh: '🔄 Refresh status',
       currentAuthorTitle: 'Current Author',
       currentAuthorHint: 'Select the author identity used for publishing and origin classification. Choose from owners discovered in your installed skills, or fill in manually.',
       currentAuthorNoAuthors: 'No author information found. Install some Git-based skills to auto-detect authors.',
@@ -858,6 +862,10 @@ export const resources = {
       sourceKindGitIndex: 'Git 索引',
 
       backupRestoreTitle: '备份与恢复',
+      webdavConnected: '· 已配置',
+      syncToWebdav: '↑ 同步到 WebDAV',
+      exportToFile: '↓ 导出到本地',
+      deviceRefresh: '🔄 刷新状态',
       currentAuthorTitle: '当前作者',
       currentAuthorHint: '选择用于发布和来源分类的作者身份。可以从已安装 Skills 中自动发现的仓库作者中选择，也可以手动填写。',
       currentAuthorNoAuthors: '未找到作者信息。安装一些基于 Git 的 Skills 后可自动检测作者。',
