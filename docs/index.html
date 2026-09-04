@@ -917,10 +917,16 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
         <div><div class="ic-title">Install SkillDo</div><div class="ic-sub">macOS · Linux · Windows</div></div>
       </div>
       <p data-i18n="installCardDesc">One command launches an interactive installer. Choose how you want to use SkillDo:</p>
-      <div class="ic-action" style="margin-bottom: 16px;">
-        <button class="ic-btn solid wide" id="copyCurl" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install.sh | bash">
+      <div class="ic-action" style="margin-bottom: 12px;">
+        <button class="ic-btn solid wide" id="copyNpm" data-text="npm install -g skilldo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-          <span data-i18n="installBtn">Copy install command</span>
+          <span>npm install -g skilldo</span>
+        </button>
+      </div>
+      <div class="ic-action" style="margin-bottom: 16px;">
+        <button class="ic-btn wide" id="copyCurl" data-text="curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install.sh | bash">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          <span data-i18n="installBtn">Or copy shell installer</span>
         </button>
       </div>
       <div style="display: flex; gap: 24px; font-size: 13px; color: var(--text-2); flex-wrap: wrap;">
@@ -1327,6 +1333,9 @@ html::-webkit-scrollbar, body::-webkit-scrollbar { width: 0; height: 0; display:
       navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text, done); });
     } else { fallbackCopy(text, done); }
   }
+  document.getElementById("copyNpm").addEventListener("click", function () {
+    copyText(this.getAttribute("data-text"));
+  });
   document.getElementById("copyCurl").addEventListener("click", function () {
     copyText(this.getAttribute("data-text"));
   });
