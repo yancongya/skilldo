@@ -233,6 +233,12 @@ export const resources = {
       sourceKindJsonIndex: 'JSON index',
       sourceKindGitIndex: 'Git index',
 
+      backupRestoreTitle: 'Backup & Restore',
+      webdavConfig: 'WebDAV connection',
+      localFile: 'Local file',
+      webdavBackup: 'WebDAV',
+      syncSectionTitle: 'Cross-device sync',
+      advancedTools: 'Advanced tools',
       configBackup: 'Configuration backup',
       configBackupHint:
         'Export settings to JSON or restore a previous backup. GitHub and WebDAV credentials are excluded; existing matching credentials are retained during restore.',
@@ -829,6 +835,12 @@ export const resources = {
       sourceKindJsonIndex: 'JSON 索引',
       sourceKindGitIndex: 'Git 索引',
 
+      backupRestoreTitle: '备份与恢复',
+      webdavConfig: 'WebDAV 连接信息',
+      localFile: '本地文件',
+      webdavBackup: 'WebDAV',
+      syncSectionTitle: '跨设备同步',
+      advancedTools: '高级工具',
       configBackup: '配置备份',
       configBackupHint: '将设置导出为 JSON，或导入之前的备份。备份不包含 GitHub 与 WebDAV 凭据；恢复时会保留本机匹配的现有凭据。',
       exportConfig: '导出配置',

@@ -42,6 +42,7 @@ src-tauri/target/
 
 # Local agent workspace data
 .workbuddy/
+.agents/
 
 # Local CLI wrapper (generated)
-skilldo
+dev

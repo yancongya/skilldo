@@ -1842,8 +1842,16 @@ fn clone_to_cache<R: tauri::Runtime>(
             if repo_dir.exists() {
                 let _ = std::fs::remove_dir_all(&repo_dir);
             }
-            clone_or_pull(clone_url, &repo_dir, branch, cancel)
-                .with_context(|| format!("{:#}", err))?
+            match clone_or_pull(clone_url, &repo_dir, branch, cancel) {
+                Ok(head) => head,
+                Err(retry_err) => {
+                    // Clean up empty directory on retry failure too
+                    if repo_dir.exists() {
+                        let _ = std::fs::remove_dir_all(&repo_dir);
+                    }
+                    return Err(retry_err).context(format!("{:#}", err));
+                }
+            }
         }
     };
 
@@ -2138,8 +2146,16 @@ fn clone_to_cache_cli(
             if repo_dir.exists() {
                 let _ = std::fs::remove_dir_all(&repo_dir);
             }
-            clone_or_pull(clone_url, &repo_dir, branch, cancel)
-                .with_context(|| format!("{:#}", err))?
+            match clone_or_pull(clone_url, &repo_dir, branch, cancel) {
+                Ok(head) => head,
+                Err(retry_err) => {
+                    // Clean up empty directory on retry failure too
+                    if repo_dir.exists() {
+                        let _ = std::fs::remove_dir_all(&repo_dir);
+                    }
+                    return Err(retry_err).context(format!("{:#}", err));
+                }
+            }
         }
     };
 

@@ -93,6 +93,9 @@ fn cleanup_git_cache_dirs_in(cache_dir: &Path, max_age: Duration) -> Result<usiz
         }
 
         if !path.join(".git").exists() {
+            // Remove empty/corrupted cache directories without .git
+            let _ = std::fs::remove_dir_all(&path);
+            removed += 1;
             continue;
         }
 
