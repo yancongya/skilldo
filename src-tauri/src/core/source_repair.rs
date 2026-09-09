@@ -9,6 +9,7 @@ use git2::Repository;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 
+use super::app_config::get_origin_rules_impl;
 use super::content_hash::hash_dir;
 use super::git_fetcher::{clone_or_pull, clone_or_pull_sparse};
 use super::skill_store::{SkillOriginRecord, SkillRecord, SkillStore};
@@ -135,37 +136,137 @@ pub(crate) fn apply_detected_source(
     detected: &DetectedGitSource,
 ) -> Result<()> {
     let mut patched = skill.clone();
+    let same_source = source_matches(skill, detected);
     patched.source_type = "git".to_string();
     patched.source_ref = Some(detected.remote_url.clone());
     patched.source_subpath = detected.subpath.clone();
-    patched.source_revision = detected.revision.clone();
+    patched.source_revision = detected
+        .revision
+        .clone()
+        .or_else(|| same_source.then(|| skill.source_revision.clone()).flatten());
     store.upsert_skill(&patched)?;
 
+    let origin = detected_origin_record(store, skill, detected)?;
+    store.upsert_skill_origin(&origin)
+}
+
+fn parse_github_owner_repo(remote_url: &str) -> (Option<String>, Option<String>) {
+    let normalized = remote_url
+        .trim()
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .replace("git@github.com:", "github.com/");
+    let Some((_, path)) = normalized.split_once("github.com/") else {
+        return (None, None);
+    };
+    let mut parts = path.split('/');
+    let owner = parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let repo = parts
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    (owner, repo)
+}
+
+fn matches_my_git_rules(
+    owner: Option<&str>,
+    repo: Option<&str>,
+    rules: &super::app_config::OriginRules,
+) -> bool {
+    let owner_matches = owner.is_some_and(|value| {
+        rules
+            .my_git_owners
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(value))
+    });
+    let repo_matches = match (owner, repo) {
+        (Some(owner), Some(repo)) => rules
+            .my_git_repos
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(&format!("{owner}/{repo}"))),
+        _ => false,
+    };
+    owner_matches || repo_matches
+}
+
+fn detected_origin_record(
+    store: &SkillStore,
+    skill: &SkillRecord,
+    detected: &DetectedGitSource,
+) -> Result<SkillOriginRecord> {
     let previous = store.get_skill_origin(&skill.id)?;
-    store.upsert_skill_origin(&SkillOriginRecord {
+    let same_remote = previous.as_ref().is_some_and(|origin| {
+        origin.remote_url.as_deref() == Some(detected.remote_url.as_str())
+            && origin.subpath == detected.subpath
+    });
+    let branch = detected.branch.clone().or_else(|| {
+        same_remote
+            .then(|| previous.as_ref().and_then(|origin| origin.branch.clone()))
+            .flatten()
+    });
+    if previous
+        .as_ref()
+        .is_some_and(|origin| origin.manual_override)
+    {
+        let mut origin = previous.expect("checked above");
+        origin.remote_url = Some(detected.remote_url.clone());
+        origin.branch = branch;
+        origin.subpath = detected.subpath.clone();
+        origin.updated_at = now_ms();
+        return Ok(origin);
+    }
+
+    let rules = get_origin_rules_impl(store)?;
+    let (owner, repo) = parse_github_owner_repo(&detected.remote_url);
+    let is_mine = matches_my_git_rules(owner.as_deref(), repo.as_deref(), &rules);
+    Ok(SkillOriginRecord {
         skill_id: skill.id.clone(),
         origin_kind: "git".to_string(),
-        origin_role: previous
-            .as_ref()
-            .map(|origin| origin.origin_role.clone())
-            .unwrap_or_else(|| "third_party".to_string()),
+        origin_role: if is_mine {
+            "mine".to_string()
+        } else {
+            "repository".to_string()
+        },
         provider: Some("git".to_string()),
         remote_url: Some(detected.remote_url.clone()),
-        owner: previous.as_ref().and_then(|origin| origin.owner.clone()),
-        repo: previous.as_ref().and_then(|origin| origin.repo.clone()),
-        branch: detected.branch.clone(),
+        owner,
+        repo,
+        branch,
         subpath: detected.subpath.clone(),
         update_strategy: "git_pull".to_string(),
-        publish_strategy: previous
-            .as_ref()
-            .map(|origin| origin.publish_strategy.clone())
-            .unwrap_or_else(|| "none".to_string()),
-        manual_override: previous
-            .as_ref()
-            .is_some_and(|origin| origin.manual_override),
-        reason: Some("repaired from local source Git worktree".to_string()),
+        publish_strategy: if is_mine {
+            "git_push".to_string()
+        } else {
+            "none".to_string()
+        },
+        manual_override: false,
+        reason: Some("repaired and classified from Git remote".to_string()),
         updated_at: now_ms(),
     })
+}
+
+fn detected_origin_needs_repair(
+    store: &SkillStore,
+    skill: &SkillRecord,
+    detected: &DetectedGitSource,
+) -> Result<bool> {
+    let expected = detected_origin_record(store, skill, detected)?;
+    let Some(current) = store.get_skill_origin(&skill.id)? else {
+        return Ok(true);
+    };
+    Ok(current.origin_kind != expected.origin_kind
+        || current.origin_role != expected.origin_role
+        || current.remote_url != expected.remote_url
+        || current.owner != expected.owner
+        || current.repo != expected.repo
+        || current.branch != expected.branch
+        || current.subpath != expected.subpath
+        || current.update_strategy != expected.update_strategy
+        || current.publish_strategy != expected.publish_strategy
+        || current.manual_override != expected.manual_override)
 }
 
 fn normalize_git_url(value: &str) -> String {
@@ -182,6 +283,34 @@ fn source_matches(skill: &SkillRecord, detected: &DetectedGitSource) -> bool {
             normalize_git_url(value) == normalize_git_url(&detected.remote_url)
         })
         && skill.source_subpath == detected.subpath
+}
+
+fn is_remote_git_url(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with("https://")
+        || value.starts_with("http://")
+        || value.starts_with("ssh://")
+        || value.starts_with("git@")
+}
+
+fn recorded_git_candidate(skill: &SkillRecord) -> Option<ProvenanceCandidate> {
+    if skill.source_type != "git" {
+        return None;
+    }
+    let remote_url = skill.source_ref.as_deref()?.trim();
+    if !is_remote_git_url(remote_url) {
+        return None;
+    }
+    Some(ProvenanceCandidate {
+        detected: DetectedGitSource {
+            repo_root: PathBuf::new(),
+            remote_url: remote_url.to_string(),
+            branch: None,
+            subpath: skill.source_subpath.clone(),
+            revision: None,
+        },
+        reason: "从现有 Git 来源重新校验归属规则".to_string(),
+    })
 }
 
 fn default_skill_lock_path() -> Option<PathBuf> {
@@ -337,30 +466,37 @@ pub fn repair_skill_sources(store: &SkillStore, apply: bool) -> Result<SourceRep
     let plugin_candidates = load_plugin_candidates(&skills);
     let mut items = Vec::new();
     for skill in &skills {
-        if matches!(skill.source_type.as_str(), "git" | "package") {
+        if skill.source_type == "package" {
             continue;
         }
-        let metadata_candidate = lock_candidates
-            .get(&skill.name)
-            .or_else(|| plugin_candidates.get(&skill.name))
-            .cloned();
-        let path_candidate = if metadata_candidate.is_none() {
-            skill
-                .source_ref
-                .as_deref()
-                .map(Path::new)
-                .map(detect_git_source)
-                .transpose()?
-                .flatten()
-                .map(|detected| ProvenanceCandidate {
-                    detected,
-                    reason: "sourceRef 位于带 origin 的 Git 工作树中".to_string(),
-                })
+        let candidate = if let Some(candidate) = recorded_git_candidate(skill) {
+            Some(candidate)
         } else {
-            None
+            let metadata_candidate = lock_candidates
+                .get(&skill.name)
+                .or_else(|| plugin_candidates.get(&skill.name))
+                .cloned();
+            let path_candidate = if metadata_candidate.is_none() {
+                skill
+                    .source_ref
+                    .as_deref()
+                    .map(Path::new)
+                    .map(detect_git_source)
+                    .transpose()?
+                    .flatten()
+                    .map(|detected| ProvenanceCandidate {
+                        detected,
+                        reason: "sourceRef 位于带 origin 的 Git 工作树中".to_string(),
+                    })
+            } else {
+                None
+            };
+            metadata_candidate.or(path_candidate)
         };
-        if let Some(candidate) = metadata_candidate.or(path_candidate) {
-            if source_matches(skill, &candidate.detected) {
+        if let Some(candidate) = candidate {
+            let origin_needs_repair =
+                detected_origin_needs_repair(store, skill, &candidate.detected)?;
+            if source_matches(skill, &candidate.detected) && !origin_needs_repair {
                 continue;
             }
             if apply {
@@ -378,9 +514,11 @@ pub fn repair_skill_sources(store: &SkillStore, apply: bool) -> Result<SourceRep
                 subpath: candidate.detected.subpath,
                 applied: apply,
             });
-        } else if !matches!(skill.source_type.as_str(), "git" | "package") {
+        } else {
             let source_path = skill.source_ref.as_deref().map(Path::new);
-            let reason = if source_path.is_some_and(Path::is_symlink) {
+            let reason = if skill.source_type == "git" {
+                "Git Skill 缺少可验证的远程来源"
+            } else if source_path.is_some_and(Path::is_symlink) {
                 "sourceRef 是指向中央副本的符号链接，副本不包含 .git"
             } else if source_path.is_some_and(Path::exists) {
                 "sourceRef 不在带 origin 的 Git 工作树中"
@@ -439,12 +577,16 @@ pub fn repair_skill_source(
             .map(str::to_string),
         revision: None,
     };
-    verify_explicit_source(&skill, &detected)?;
     let matches = source_matches(&skill, &detected);
-    if apply && !matches {
+    if !matches {
+        verify_explicit_source(&skill, &detected)?;
+    }
+    let origin_needs_repair = detected_origin_needs_repair(store, &skill, &detected)?;
+    let needs_repair = !matches || origin_needs_repair;
+    if apply && needs_repair {
         apply_detected_source(store, &skill, &detected)?;
     }
-    let items = if matches {
+    let items = if !needs_repair {
         Vec::new()
     } else {
         vec![SourceRepairItem {
@@ -464,7 +606,7 @@ pub fn repair_skill_source(
         dry_run: !apply,
         scanned: 1,
         repairable: items.len(),
-        applied: usize::from(apply && !matches),
+        applied: usize::from(apply && needs_repair),
         unresolved: 0,
         already_portable: usize::from(matches),
         items,
@@ -616,6 +758,69 @@ mod tests {
             repaired.source_ref.as_deref(),
             Some("https://github.com/example/skills.git")
         );
+    }
+
+    #[test]
+    fn repair_reclassifies_existing_git_record_when_owner_rules_change() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        store
+            .set_setting(
+                super::super::app_config::ORIGIN_RULES_KEY,
+                r#"{"myGitOwners":["yancongya"]}"#,
+            )
+            .unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "cli-anything".to_string(),
+                name: "cli-anything".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/yancongya/cli-anything.git".to_string()),
+                source_subpath: None,
+                source_revision: Some("kept-revision".to_string()),
+                central_path: db_dir
+                    .path()
+                    .join("central/cli-anything")
+                    .to_string_lossy()
+                    .to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+        store
+            .upsert_skill_origin(&SkillOriginRecord {
+                skill_id: "cli-anything".to_string(),
+                origin_kind: "git".to_string(),
+                origin_role: "mine".to_string(),
+                provider: Some("git".to_string()),
+                remote_url: Some("https://github.com/yancongya/cli-anything.git".to_string()),
+                owner: None,
+                repo: None,
+                branch: Some("main".to_string()),
+                subpath: None,
+                update_strategy: "git_pull".to_string(),
+                publish_strategy: "none".to_string(),
+                manual_override: false,
+                reason: None,
+                updated_at: 1,
+            })
+            .unwrap();
+
+        let report = repair_skill_sources(&store, true).unwrap();
+        assert_eq!(report.repairable, 1);
+        let repaired = store.get_skill_by_id("cli-anything").unwrap().unwrap();
+        assert_eq!(repaired.source_revision.as_deref(), Some("kept-revision"));
+        let origin = store.get_skill_origin("cli-anything").unwrap().unwrap();
+        assert_eq!(origin.origin_role, "mine");
+        assert_eq!(origin.owner.as_deref(), Some("yancongya"));
+        assert_eq!(origin.repo.as_deref(), Some("cli-anything"));
+        assert_eq!(origin.publish_strategy, "git_push");
     }
 
     #[test]

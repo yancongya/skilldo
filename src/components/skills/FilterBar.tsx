@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpDown, Check, ChevronDown, LayoutGrid, LayoutList, RefreshCw, Search, Tags } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronDown, LayoutGrid, LayoutList, RefreshCw, Search, SlidersHorizontal } from 'lucide-react'
 import type { TFunction } from 'i18next'
 import type { TagWithCountDto } from './types'
 
@@ -54,9 +54,9 @@ const FilterBar = ({
   onManageTags,
   t,
 }: FilterBarProps) => {
-  const [tagMenuOpen, setTagMenuOpen] = useState(false)
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [tagQuery, setTagQuery] = useState('')
-  const tagMenuRef = useRef<HTMLDivElement | null>(null)
+  const filterMenuRef = useRef<HTMLDivElement | null>(null)
   const scopeOptions: { value: 'all' | 'global' | 'project'; label: string }[] = [
     { value: 'all', label: t('scope.all') },
     { value: 'global', label: t('scope.global') },
@@ -69,6 +69,7 @@ const FilterBar = ({
   ]
   const selectedTagSet = useMemo(() => new Set(selectedTagIds), [selectedTagIds])
   const selectedCount = selectedTagIds.length + (includeUntagged ? 1 : 0)
+  const activeFilterCount = selectedCount + Number(scopeFilter !== 'all') + Number(sourceFilter !== 'all')
   const filteredTags = useMemo(() => {
     const query = tagQuery.trim().toLowerCase()
     if (!query) return tags
@@ -76,15 +77,15 @@ const FilterBar = ({
   }, [tagQuery, tags])
 
   useEffect(() => {
-    if (!tagMenuOpen) return
+    if (!filterMenuOpen) return
     const handlePointerDown = (event: MouseEvent) => {
-      if (!tagMenuRef.current?.contains(event.target as Node)) {
-        setTagMenuOpen(false)
+      if (!filterMenuRef.current?.contains(event.target as Node)) {
+        setFilterMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
-  }, [tagMenuOpen])
+  }, [filterMenuOpen])
 
   return (
     <div className="filter-bar">
@@ -106,66 +107,39 @@ const FilterBar = ({
               ? t('skillsUpdatesFound', { count: pendingUpdateCount })
               : t('checkSkillUpdates')}
         </button>
-        <button className="btn btn-secondary sort-btn" type="button">
-          {scopeOptions.find((option) => option.value === scopeFilter)?.label ?? t('scope.all')}
-          <ChevronDown size={12} />
-          <select
-            aria-label={t('scope.filterLabel')}
-            value={scopeFilter}
-            onChange={(event) =>
-              onScopeFilterChange(event.target.value as 'all' | 'global' | 'project')
-            }
-          >
-            {scopeOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </button>
-        <button className="btn btn-secondary sort-btn" type="button">
-          {sourceOptions.find((option) => option.value === sourceFilter)?.label ?? t('filterAll')}
-          <ChevronDown size={12} />
-          <select
-            aria-label={t('source.filterLabel')}
-            value={sourceFilter}
-            onChange={(event) =>
-              onSourceFilterChange(event.target.value as 'all' | 'syncable' | 'local')
-            }
-          >
-            {sourceOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </button>
-        <button className="btn btn-secondary sort-btn" type="button">
-          {sortBy === 'updated' ? t('sortUpdated') : t('sortName')}
-          <ArrowUpDown size={12} />
-          <select
-            aria-label={t('filterSort')}
-            value={sortBy}
-            onChange={(event) => onSortChange(event.target.value as 'updated' | 'name')}
-          >
-            <option value="updated">{t('sortUpdated')}</option>
-            <option value="name">{t('sortName')}</option>
-          </select>
-        </button>
-        <div className="tag-filter-wrap" ref={tagMenuRef}>
+        <div className="tag-filter-wrap" ref={filterMenuRef}>
           <button
-            className={`btn btn-secondary tag-filter-btn${selectedCount > 0 ? ' active' : ''}`}
+            className={`btn btn-secondary tag-filter-btn${activeFilterCount > 0 ? ' active' : ''}`}
             type="button"
-            onClick={() => setTagMenuOpen((open) => !open)}
+            onClick={() => setFilterMenuOpen((open) => !open)}
+            aria-expanded={filterMenuOpen}
           >
-            <Tags size={14} />
-            {selectedCount > 0
-              ? t('tagsSelected', { count: selectedCount })
-              : t('tags')}
+            <SlidersHorizontal size={14} />
+            {activeFilterCount > 0 ? t('filtersActive', { count: activeFilterCount }) : t('filters')}
             <ChevronDown size={12} />
           </button>
-          {tagMenuOpen ? (
-            <div className="tag-filter-menu">
+          {filterMenuOpen ? (
+            <div className="tag-filter-menu combined-filter-menu">
+              <div className="combined-filter-section">
+                <label htmlFor="skills-scope-filter">{t('scope.filterLabel')}</label>
+                <select
+                  id="skills-scope-filter"
+                  value={scopeFilter}
+                  onChange={(event) => onScopeFilterChange(event.target.value as 'all' | 'global' | 'project')}
+                >
+                  {scopeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
+              <div className="combined-filter-section">
+                <label htmlFor="skills-source-filter">{t('source.filterLabel')}</label>
+                <select
+                  id="skills-source-filter"
+                  value={sourceFilter}
+                  onChange={(event) => onSourceFilterChange(event.target.value as 'all' | 'syncable' | 'local')}
+                >
+                  {sourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
               <div className="tag-filter-head">
                 <span>{t('tags')}</span>
                 <span>{t('matchAny')}</span>
@@ -179,42 +153,37 @@ const FilterBar = ({
                 />
               </div>
               <div className="tag-filter-options">
-                <button
-                  className={`tag-filter-option${includeUntagged ? ' selected' : ''}`}
-                  type="button"
-                  onClick={onToggleUntagged}
-                >
+                <button className={`tag-filter-option${includeUntagged ? ' selected' : ''}`} type="button" onClick={onToggleUntagged}>
                   <span className="tag-check">{includeUntagged ? <Check size={14} /> : null}</span>
-                  <span>{t('untagged')}</span>
-                  <span className="tag-count">{untaggedCount}</span>
+                  <span>{t('untagged')}</span><span className="tag-count">{untaggedCount}</span>
                 </button>
                 {filteredTags.map((tag) => {
                   const selected = selectedTagSet.has(tag.id)
-                  return (
-                    <button
-                      key={tag.id}
-                      className={`tag-filter-option${selected ? ' selected' : ''}`}
-                      type="button"
-                      onClick={() => onToggleTag(tag.id)}
-                    >
-                      <span className="tag-check">{selected ? <Check size={14} /> : null}</span>
-                      <span>{tag.name}</span>
-                      <span className="tag-count">{tag.skill_count}</span>
-                    </button>
-                  )
+                  return <button key={tag.id} className={`tag-filter-option${selected ? ' selected' : ''}`} type="button" onClick={() => onToggleTag(tag.id)}>
+                    <span className="tag-check">{selected ? <Check size={14} /> : null}</span>
+                    <span>{tag.name}</span><span className="tag-count">{tag.skill_count}</span>
+                  </button>
                 })}
               </div>
               <div className="tag-filter-footer">
-                <button type="button" onClick={onClearTags} disabled={selectedCount === 0}>
-                  {t('clearAll')}
-                </button>
-                <button type="button" onClick={onManageTags}>
-                  {t('manageTags')}
-                </button>
+                <button type="button" onClick={onClearTags} disabled={selectedCount === 0}>{t('clearAll')}</button>
+                <button type="button" onClick={onManageTags}>{t('manageTags')}</button>
               </div>
             </div>
           ) : null}
         </div>
+        <button className="btn btn-secondary sort-btn" type="button">
+          {sortBy === 'updated' ? t('sortUpdated') : t('sortName')}
+          <ArrowUpDown size={12} />
+          <select
+            aria-label={t('filterSort')}
+            value={sortBy}
+            onChange={(event) => onSortChange(event.target.value as 'updated' | 'name')}
+          >
+            <option value="updated">{t('sortUpdated')}</option>
+            <option value="name">{t('sortName')}</option>
+          </select>
+        </button>
         <div className="filter-view-toggle">
           <button
             className={`icon-btn${viewMode === 'list' ? ' active' : ''}`}

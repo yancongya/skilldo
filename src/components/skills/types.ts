@@ -246,22 +246,6 @@ export type GithubTokenStatusDto = {
   error?: string | null
 }
 
-/// One skipped / failed skill in a restore report.
-export type RestoreItemDto = {
-  name: string
-  reason: string
-}
-
-/// Structured result of a backup restore.
-export type RestoreReportDto = {
-  backupVersion?: number
-  databaseRestored?: boolean
-  installed: string[]
-  skipped: RestoreItemDto[]
-  failed: RestoreItemDto[]
-  summary: string
-}
-
 export type ProfileConflictDto = {
   path: string
   reason: string

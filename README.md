@@ -17,13 +17,13 @@
 </p>
 
 <p align="center">
-  <b>Install once, sync everywhere.</b> The agent-native skill manager for 45 AI coding tools.
+  <b>Install once, sync everywhere.</b> The agent-native skill manager for 47 AI coding tools.
   <br />
   <a href="docs/README.zh.md"><strong>简体中文</strong></a>
 </p>
 
 > [!NOTE]
-> This README and the Chinese version (`docs/README.zh.md`) are kept structurally mirrored — same section outline, same tool count (45), same terminology. Use `readme-please`'s `check_bilingual_headings.py` to verify.
+> This README and the Chinese version (`docs/README.zh.md`) are kept structurally mirrored — same section outline, same tool count (47), same terminology. Use `readme-please`'s `check_bilingual_headings.py` to verify.
 
 ---
 
@@ -57,7 +57,7 @@ SkillDo manages AI Agent Skills from a single source of truth (the Central Repo)
 
 **Why SkillDo:**
 - *One source of truth* — install a skill once in the Central Repo, sync everywhere (symlink → junction → copy triple fallback).
-- *45 AI tools, one workflow* — Claude Code, Codex, Cursor, Windsurf, WorkBuddy, and 40 more, with per-tool global/project-level targets.
+- *47 AI tools, one workflow* — Claude Code, Codex, Cursor, Windsurf, WorkBuddy, MiMo Desktop, MiMoCode, and 40 more, with per-tool global/project-level targets.
 - *Agent-native* — every command speaks `--json`; agents discover `skilldo` via `SKILL.md` in their skill directories.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -70,7 +70,7 @@ SkillDo manages AI Agent Skills from a single source of truth (the Central Repo)
 - **Global / project-level sync**: sync to the global directory (all projects) or scope to a single project.
 - **Sync scope control**: switch a skill between global and project scope, manage project directories, filter by scope.
 - **Skill detail**: click a skill to view full file content with tree browser, Markdown rendering, and 40+ language syntax highlighting.
-- **Unified view**: see total Hub-hosted skills, scope badges, and per-tool生效 status.
+- **Unified view**: see total Hub-hosted skills, scope badges, and per-tool status.
 - **Migration takeover**: scan tools' existing skills, import them into the Central Repo, and sync in one click.
 - **Multi-source import**: local directory / Git URL (with searchable multi-skill candidate selection and `.claude/skills/` support).
 - **Update**: pull from source into the Central Repo and back-fill copy-mode targets.
@@ -174,7 +174,7 @@ All commands support `--json` for agent-friendly structured output and `--yes` t
 | Command | Description |
 |---------|-------------|
 | `skilldo list [--json]` | List managed skills and sync targets |
-| `skilldo status [--json]` | Show which of 45 AI tools are installed |
+| `skilldo status [--json]` | Show which of 47 AI tools are installed |
 | `skilldo device status\|pull\|publish [--yes] [--json]` | Inspect, retrieve, or publish complete cross-device state |
 | `skilldo author status\|detect\|set [--json]` | Detect or configure the current environment author without exposing the `gh` token |
 | `skilldo project skills [--path <project>] [--json]` | Discover project-local Skills with parent Git repository, revision, and repository-relative paths |
@@ -262,7 +262,7 @@ The separate `skilldo-backup.json` v2 format embeds a consistent SQLite image as
 
 ## Supported Tools
 
-SkillDo supports **45** AI coding tools. Project-level skill directories are relative to the selected project root. Tools marked "not supported" have no confirmed project-level skill directory and only support global sync.
+SkillDo supports **47** AI coding tools. Project-level skill directories are relative to the selected project root. Tools marked "not supported" have no confirmed project-level skill directory and only support global sync.
 
 | tool key | Tool | Global skills directory (relative to ~) | Project-level skills directory (relative to project root) | Detected if present (relative to ~) |
 | --- | --- | --- | --- | --- |
@@ -311,6 +311,8 @@ SkillDo supports **45** AI coding tools. Project-level skill directories are rel
 | `moltbot` | MoltBot | `.moltbot/skills` | `.moltbot/skills` | `.moltbot` |
 | `hermes_agent` | Hermes Agent | `.hermes/skills` | not supported | `.hermes` |
 | `workbuddy` | WorkBuddy | `.workbuddy/skills` | `.workbuddy/skills` | `.workbuddy` |
+| `mimo_desktop` | MiMo Desktop | `.claude/skills` | `.claude/skills` | `Library/Application Support/Xiaomi MiMo` |
+| `mimocode` | MiMoCode | `.claude/skills` | `.mimocode/skills` | `.config/mimocode` |
 
 > Tool count is generated from source via `readme-please`'s `gen_tool_table.py` — keep it in sync, do not hand-edit.
 

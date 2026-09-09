@@ -17,13 +17,13 @@
 </p>
 
 <p align="center">
-  <b>一次安装，处处同步。</b>面向 45 个 AI 编程工具的 agent-native 技能管理器。
+  <b>一次安装，处处同步。</b>面向 47 个 AI 编程工具的 agent-native 技能管理器。
   <br />
   <a href="../README.md"><strong>English</strong></a>
 </p>
 
 > [!NOTE]
-> 本中文版与英文版（`../README.md`）保持结构镜像——相同章节大纲、相同工具数（45）、相同术语。可用 `readme-please` 的 `check_bilingual_headings.py` 校验。
+> 本中文版与英文版（`../README.md`）保持结构镜像——相同章节大纲、相同工具数（47）、相同术语。可用 `readme-please` 的 `check_bilingual_headings.py` 校验。
 
 ---
 
@@ -57,7 +57,7 @@ SkillDo 是一个跨平台桌面应用（Tauri + React），用于统一管理 A
 
 **为什么需要 SkillDo：**
 - *单一可信源* —— 技能在中心仓库安装一次，处处同步（symlink → junction → copy 三重回退）。
-- *45 个 AI 工具，一套流程* —— Claude Code、Codex、Cursor、Windsurf、WorkBuddy 等，统一全局/项目级同步目标。
+- *47 个 AI 工具，一套流程* —— Claude Code、Codex、Cursor、Windsurf、WorkBuddy、MiMo Desktop、MiMoCode 等，统一全局/项目级同步目标。
 - *Agent-native* —— 每个命令都支持 `--json`；agent 通过技能目录中的 `SKILL.md` 自动发现 `skilldo`。
 
 <p align="right">(<a href="#readme-top">回到顶部</a>)</p>
@@ -178,7 +178,7 @@ npm run dev                # 仅 Web 预览（无后端）
 | 命令 | 说明 |
 |---------|-------------|
 | `skilldo list [--json]` | 列出已托管技能与同步目标 |
-| `skilldo status [--json]` | 显示 45 个 AI 工具中哪些已安装 |
+| `skilldo status [--json]` | 显示 47 个 AI 工具中哪些已安装 |
 | `skilldo device status\|pull\|publish [--yes] [--json]` | 检查、拉取或发布完整的跨设备状态 |
 | `skilldo author status\|detect\|set [--json]` | 检测或配置当前环境作者（不暴露 `gh` token） |
 | `skilldo project skills [--path <project>] [--json]` | 发现项目本地 Skill 的父 Git 仓库、revision 与仓库内相对路径 |
@@ -272,7 +272,7 @@ skilldo device publish --yes --json
 
 ## 支持的 AI 编程工具
 
-SkillDo 支持 **45** 个 AI 编程工具。项目级 skills 目录相对所选项目根目录。标记为“不支持”的工具尚未确认项目级 skills 目录，仅支持全局同步。
+SkillDo 支持 **47** 个 AI 编程工具。项目级 skills 目录相对所选项目根目录。标记为“不支持”的工具尚未确认项目级 skills 目录，仅支持全局同步。
 
 | tool key | 工具 | 全局 skills 目录（相对 `~`） | 项目级 skills 目录（相对项目根目录） | 存在即视为已安装（相对 `~`） |
 | --- | --- | --- | --- | --- |
@@ -321,6 +321,8 @@ SkillDo 支持 **45** 个 AI 编程工具。项目级 skills 目录相对所选�
 | `moltbot` | MoltBot | `.moltbot/skills` | `.moltbot/skills` | `.moltbot` |
 | `hermes_agent` | Hermes Agent | `.hermes/skills` | 不支持 | `.hermes` |
 | `workbuddy` | WorkBuddy | `.workbuddy/skills` | `.workbuddy/skills` | `.workbuddy` |
+| `mimo_desktop` | MiMo Desktop | `.claude/skills` | `.claude/skills` | `Library/Application Support/Xiaomi MiMo` |
+| `mimocode` | MiMoCode | `.claude/skills` | `.mimocode/skills` | `.config/mimocode` |
 
 > 工具数由 `readme-please` 的 `gen_tool_table.py` 从源码自动生成——请保持同步，不要手抄维护。
 

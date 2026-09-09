@@ -20,6 +20,8 @@ fn adapter_by_key_finds_new_tools() {
     assert!(adapter_by_key("command_code").is_some());
     assert!(adapter_by_key("qwen_code").is_some());
     assert!(adapter_by_key("hermes_agent").is_some());
+    assert!(adapter_by_key("mimo_desktop").is_some());
+    assert!(adapter_by_key("mimocode").is_some());
 }
 
 #[test]
@@ -54,6 +56,12 @@ fn project_relative_skills_dir_maps_supported_agents() {
 
     let claude = adapter_by_key("claude_code").unwrap();
     assert_eq!(project_relative_skills_dir(&claude), ".claude/skills");
+
+    let mimo_desktop = adapter_by_key("mimo_desktop").unwrap();
+    assert_eq!(project_relative_skills_dir(&mimo_desktop), ".claude/skills");
+
+    let mimocode = adapter_by_key("mimocode").unwrap();
+    assert_eq!(project_relative_skills_dir(&mimocode), ".mimocode/skills");
 
     let openclaw = adapter_by_key("openclaw").unwrap();
     assert_eq!(project_relative_skills_dir(&openclaw), "skills");

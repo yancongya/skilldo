@@ -2862,6 +2862,7 @@ pub fn sync_skill_target_cli(
         synced_at: Some(now_ms()),
     };
     store.upsert_skill_target(&target_record)?;
+    store.mark_skill_synced(skill_id)?;
 
     Ok(outcome)
 }

@@ -25,6 +25,7 @@ import NamePromptModal from './components/skills/modals/NamePromptModal'
 import PublishSkillModal, { type PublishParams } from './components/skills/modals/PublishSkillModal'
 import SettingsPage from './components/skills/SettingsPage'
 import SkillUpdatesPanel from './components/skills/SkillUpdatesPanel'
+import { LOCAL_API_BASE } from './components/skills/api'
 import type {
   AppConfigDto,
   ExploreSkillDto,
@@ -47,7 +48,6 @@ import type {
   UpdateResultDto,
   WebDavConfigDto,
   GithubOwnerEntry,
-  ProfileSyncReportDto,
   DevicePipelineReportDto,
 } from './components/skills/types'
 
@@ -58,22 +58,6 @@ type SkillScopeState = Record<
     projects: string[]
   }
 >
-
-// The shipped type rollup for `@tauri-apps/plugin-dialog` under `bundler`
-// resolution doesn't expose `save`/`filters`, so we declare the minimal
-// surface we use and cast the dynamic import to it at the call sites.
-interface DialogModule {
-  open(opts?: {
-    filters?: { name: string; extensions: string[] }[]
-    multiple?: boolean
-    directory?: boolean
-    title?: string
-  }): Promise<string | string[] | null>
-  save(opts?: {
-    defaultPath?: string
-    filters?: { name: string; extensions: string[] }[]
-  }): Promise<string | null>
-}
 
 function App() {
   const { t, i18n } = useTranslation()
@@ -331,7 +315,7 @@ function App() {
       // Browser mode: fetch from local HTTP API
       if (!isTauri) {
         try {
-          const resp = await fetch('http://127.0.0.1:15723/api/skills')
+          const resp = await fetch(`${LOCAL_API_BASE}/api/skills`)
           if (resp.ok) {
             const data = (await resp.json()) as ManagedSkill[]
             setManagedSkills(data)
@@ -350,7 +334,7 @@ function App() {
     } catch {
       if (!isTauri) {
         try {
-          const resp = await fetch('http://127.0.0.1:15723/api/tags')
+          const resp = await fetch(`${LOCAL_API_BASE}/api/tags`)
           if (resp.ok) {
             const data = (await resp.json()) as TagWithCountDto[]
             setTags(data)
@@ -864,20 +848,6 @@ function App() {
     [invokeTauri, isTauri],
   )
 
-  const handleBackupToFile = useCallback(async () => {
-    if (!isTauri) return
-    const json = await invokeTauri<string>('export_full_backup_json')
-    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
-    const date = new Date().toISOString().slice(0, 10)
-    const path = await dialog.save({
-      defaultPath: `skilldo-backup-${date}.json`,
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (path) {
-      await invokeTauri('write_text_file', { path, contents: json })
-    }
-  }, [isTauri, invokeTauri])
-
   const handleBackupWebdav = useCallback(async () => {
     if (!isTauri) return
     await invokeTauri('backup_webdav')
@@ -888,75 +858,26 @@ function App() {
     return await invokeTauri<GithubOwnerEntry[]>('list_github_owners')
   }, [isTauri, invokeTauri])
 
-  const handleProfileStatus = useCallback(async () => {
-    if (!isTauri) throw new Error(t('errors.notTauri'))
-    return await invokeTauri<ProfileSyncReportDto>('get_profile_sync_status')
-  }, [isTauri, invokeTauri, t])
-
-  const handleProfileSync = useCallback(
-    async (applyDeletions: boolean) => {
-      if (!isTauri) throw new Error(t('errors.notTauri'))
-      const report = await invokeTauri<ProfileSyncReportDto>('sync_profile', {
-        applyDeletions,
-      })
-      await loadManagedSkills()
-      return report
-    },
-    [isTauri, invokeTauri, loadManagedSkills, t],
-  )
-
-  const handleProfileExport = useCallback(async () => {
-    if (!isTauri) return
-    const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
-    const date = new Date().toISOString().slice(0, 10)
-    const path = await dialog.save({
-      defaultPath: `skilldo-profile-${date}.json`,
-      filters: [{ name: 'JSON', extensions: ['json'] }],
-    })
-    if (path) await invokeTauri('export_profile_to_file', { path })
-  }, [invokeTauri, isTauri])
-
-  const handleProfileImport = useCallback(
-    async (strategy: 'abort' | 'local' | 'remote') => {
-      const dialog = (await import('@tauri-apps/plugin-dialog')) as unknown as DialogModule
-      const selected = await dialog.open({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        multiple: false,
-      })
-      if (!selected || Array.isArray(selected)) return null
-      const report = await invokeTauri<ProfileSyncReportDto>('import_profile_from_file', {
-        path: selected,
-        strategy,
-        applyDeletions: false,
-      })
-      await loadManagedSkills()
-      return report
-    },
-    [invokeTauri, loadManagedSkills],
-  )
-
-  const handleProfileResolve = useCallback(
-    async (strategy: 'local' | 'remote') => {
-      const report = await invokeTauri<ProfileSyncReportDto>('resolve_profile_conflicts', {
-        strategy,
-        applyDeletions: false,
-      })
-      await loadManagedSkills()
-      return report
-    },
-    [invokeTauri, loadManagedSkills],
-  )
-
-  const handleDeviceStatus = useCallback(async () => {
-    return await invokeTauri<DevicePipelineReportDto>('get_device_sync_status')
-  }, [invokeTauri])
-
   const handleDevicePull = useCallback(async () => {
     const report = await invokeTauri<DevicePipelineReportDto>('pull_device_state', {
       applyDeletions: false,
     })
     await loadManagedSkills()
     return report
+  }, [invokeTauri, loadManagedSkills])
+
+  const handleDeviceStatus = useCallback(async () => {
+    return await invokeTauri<DevicePipelineReportDto>('get_device_sync_status')
+  }, [invokeTauri])
+
+  const handleUpdateSkillsForSync = useCallback(async () => {
+    const results = await invokeTauri<UpdateCheckResultDto[]>('check_all_managed_skill_updates_cmd')
+    const pending = results.filter((item) => item.has_update && !item.has_local_changes)
+    for (const item of pending) {
+      await invokeTauri<UpdateResultDto>('update_managed_skill', { skillId: item.skill_id })
+    }
+    if (pending.length > 0) await loadManagedSkills()
+    return pending.length
   }, [invokeTauri, loadManagedSkills])
 
   const handleDevicePublish = useCallback(async () => {
@@ -3307,17 +3228,12 @@ function App() {
             toolStatus={toolStatus}
             webdav={webdav}
             onSaveWebdav={handleSaveWebdav}
-            onBackupToFile={handleBackupToFile}
             onBackupWebdav={handleBackupWebdav}
             onListGithubOwners={handleListGithubOwners}
-            onProfileStatus={handleProfileStatus}
-            onProfileSync={handleProfileSync}
-            onProfileExport={handleProfileExport}
-            onProfileImport={handleProfileImport}
-            onProfileResolve={handleProfileResolve}
-            onDeviceStatus={handleDeviceStatus}
             onDevicePull={handleDevicePull}
             onDevicePublish={handleDevicePublish}
+            onDeviceStatus={handleDeviceStatus}
+            onUpdateSkills={handleUpdateSkillsForSync}
             t={t}
           />
         ) : (

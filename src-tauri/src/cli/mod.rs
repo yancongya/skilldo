@@ -125,7 +125,7 @@ enum Commands {
     Update {
         /// Skill ID or name to update.
         #[arg(long)]
-        skill: String,
+        skill: Option<String>,
         /// Update all skills (overrides --skill).
         #[arg(long, default_value_t = false)]
         all: bool,
@@ -166,9 +166,9 @@ enum Commands {
         /// Owner/org for the new repository (defaults to the authenticated user).
         #[arg(long)]
         owner: Option<String>,
-        /// Create a private repository.
+        /// Create a public repository. Repositories are private by default.
         #[arg(long, default_value_t = false)]
-        private: bool,
+        public: bool,
         /// Commit message.
         #[arg(short, long)]
         message: Option<String>,
@@ -189,7 +189,7 @@ enum Commands {
     /// Detect and configure the current environment author.
     Author {
         #[command(subcommand)]
-        action: AuthorAction,
+        action: Option<AuthorAction>,
     },
     /// Inspect project-local Skill directories supported by installed tools.
     Project {
@@ -559,7 +559,7 @@ fn execute(cli: Cli) -> Result<()> {
                 cmd_github_token_validate(&store, token.as_deref(), cli.json)
             }
         },
-        Commands::Author { action } => match action {
+        Commands::Author { action } => match action.unwrap_or(AuthorAction::Status) {
             AuthorAction::Status => cmd_author_status(&store, cli.json),
             AuthorAction::Detect { apply } => cmd_author_detect(&store, apply, cli.json),
             AuthorAction::Set {
@@ -635,7 +635,9 @@ fn execute(cli: Cli) -> Result<()> {
             project_path.as_deref(),
             cli.json,
         ),
-        Commands::Update { skill, all, yes } => cmd_update(&store, &skill, all, yes, cli.json),
+        Commands::Update { skill, all, yes } => {
+            cmd_update(&store, skill.as_deref(), all, yes, cli.json)
+        }
         Commands::Delete { skill, yes } => cmd_delete(&store, &skill, yes, cli.json),
         Commands::Push {
             skill,
@@ -646,7 +648,7 @@ fn execute(cli: Cli) -> Result<()> {
             skill,
             repo_name,
             owner,
-            private,
+            public,
             message,
             yes,
         } => cmd_publish_repoify(
@@ -654,7 +656,7 @@ fn execute(cli: Cli) -> Result<()> {
             &skill,
             repo_name.as_deref(),
             owner.as_deref(),
-            private,
+            !public,
             message.as_deref(),
             yes,
             cli.json,
@@ -2010,7 +2012,7 @@ fn cmd_unsync(
 
 fn cmd_update(
     store: &SkillStore,
-    skill_name: &str,
+    skill_name: Option<&str>,
     all: bool,
     yes: bool,
     json: bool,
@@ -2076,6 +2078,8 @@ fn cmd_update(
             println!("\n{}/{} skill(s) updated.", ok, results.len());
         }
     } else {
+        let skill_name = skill_name
+            .ok_or_else(|| anyhow::anyhow!("--skill is required unless --all is provided"))?;
         let skill_id = resolve_skill_id(store, skill_name)?;
         let record = store
             .get_skill_by_id(&skill_id)?
@@ -2418,7 +2422,7 @@ mod tests {
         assert!(matches!(
             author.command,
             Commands::Author {
-                action: AuthorAction::Detect { apply: true }
+                action: Some(AuthorAction::Detect { apply: true })
             }
         ));
 

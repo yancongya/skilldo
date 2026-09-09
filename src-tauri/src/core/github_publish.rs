@@ -21,6 +21,7 @@ use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
 use crate::core::config::PRODUCT_NAME;
+use crate::core::content_hash::hash_dir;
 use crate::core::skill_store::{SkillOriginRecord, SkillStore};
 
 #[derive(Debug, Serialize)]
@@ -331,7 +332,13 @@ pub fn repoify_skill(
         reason: None,
         updated_at: now_ms(),
     })?;
-    store.update_skill_source(&record.id, "git", &clone_url)?;
+    store.update_skill_git_baseline(
+        &record.id,
+        "git",
+        &clone_url,
+        commit.as_deref(),
+        hash_dir(central_path).ok().as_deref(),
+    )?;
 
     Ok(RepoifyResult {
         skill_id: record.id,

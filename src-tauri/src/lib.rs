@@ -74,7 +74,7 @@ pub fn run() {
                             .with_header(
                                 tiny_http::Header::from_bytes(
                                     &b"Access-Control-Allow-Methods"[..],
-                                    &b"GET, OPTIONS"[..],
+                                    &b"GET, POST, OPTIONS"[..],
                                 )
                                 .unwrap(),
                             )

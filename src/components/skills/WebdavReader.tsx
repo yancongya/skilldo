@@ -1,8 +1,7 @@
 import { memo, useCallback, useEffect, useState } from 'react'
 import { Cloud, CheckCircle, RefreshCw } from 'lucide-react'
 import type { TFunction } from 'i18next'
-
-const API_BASE = 'http://127.0.0.1:15723'
+import { LOCAL_API_BASE } from './api'
 
 type ApiSkill = {
   id: string
@@ -42,8 +41,8 @@ const WebdavReader = memo(function WebdavReader({ t }: WebdavReaderProps) {
     setError(null)
     try {
       const [skillsResp, configResp] = await Promise.all([
-        fetch(`${API_BASE}/api/skills`),
-        fetch(`${API_BASE}/api/config`),
+        fetch(`${LOCAL_API_BASE}/api/skills`),
+        fetch(`${LOCAL_API_BASE}/api/config`),
       ])
       if (!skillsResp.ok) throw new Error(`API ${skillsResp.status}`)
       const skillsData = await skillsResp.json()

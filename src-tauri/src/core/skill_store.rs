@@ -580,6 +580,35 @@ impl SkillStore {
         })
     }
 
+    /// Persist the Git baseline created by repo-ification. Without this, the
+    /// first published skill appears unpinned until a later pull/update.
+    pub fn update_skill_git_baseline(
+        &self,
+        skill_id: &str,
+        source_type: &str,
+        source_ref: &str,
+        source_revision: Option<&str>,
+        content_hash: Option<&str>,
+    ) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE skills SET source_type = ?1, source_ref = ?2, source_revision = ?3, content_hash = ?4, updated_at = ?5 WHERE id = ?6",
+                params![source_type, source_ref, source_revision, content_hash, now_ms(), skill_id],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn mark_skill_synced(&self, skill_id: &str) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute(
+                "UPDATE skills SET last_sync_at = ?1, updated_at = ?1 WHERE id = ?2",
+                params![now_ms(), skill_id],
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn delete_skill(&self, skill_id: &str) -> Result<()> {
         self.with_conn(|conn| {
             conn.execute("DELETE FROM skills WHERE id = ?1", params![skill_id])?;

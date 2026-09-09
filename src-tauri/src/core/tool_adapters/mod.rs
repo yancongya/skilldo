@@ -49,6 +49,8 @@ pub enum ToolId {
     Moltbot,
     HermesAgent,
     WorkBuddy,
+    MimoDesktop,
+    MimoCode,
     Custom,
 }
 
@@ -100,6 +102,8 @@ impl ToolId {
             ToolId::Moltbot => "moltbot",
             ToolId::HermesAgent => "hermes_agent",
             ToolId::WorkBuddy => "workbuddy",
+            ToolId::MimoDesktop => "mimo_desktop",
+            ToolId::MimoCode => "mimocode",
             ToolId::Custom => "custom",
         }
     }
@@ -439,6 +443,20 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
             relative_skills_dir: ".workbuddy/skills",
             relative_detect_dir: ".workbuddy",
         },
+        ToolAdapter {
+            id: ToolId::MimoDesktop,
+            display_name: "MiMo Desktop",
+            // MiMo Desktop plugin-page skills root shares ~/.claude/skills with Claude Code.
+            relative_skills_dir: ".claude/skills",
+            relative_detect_dir: "Library/Application Support/Xiaomi MiMo",
+        },
+        ToolAdapter {
+            id: ToolId::MimoCode,
+            display_name: "MiMoCode",
+            // MiMoCode (mimo CLI) inherits ~/.claude/skills by default; project skills live under .mimocode/skills.
+            relative_skills_dir: ".claude/skills",
+            relative_detect_dir: ".config/mimocode",
+        },
     ]
 }
 
@@ -483,7 +501,8 @@ pub fn project_relative_skills_dir(adapter: &ToolAdapter) -> &'static str {
         ToolId::Amp | ToolId::KimiCli => ".agents/skills",
         ToolId::Antigravity => ".agents/skills",
         ToolId::Augment => ".augment/skills",
-        ToolId::ClaudeCode => ".claude/skills",
+        ToolId::ClaudeCode | ToolId::MimoDesktop => ".claude/skills",
+        ToolId::MimoCode => ".mimocode/skills",
         ToolId::OpenClaw => "skills",
         ToolId::Cline => ".agents/skills",
         ToolId::CodeBuddy => ".codebuddy/skills",

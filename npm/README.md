@@ -1,6 +1,6 @@
 # SkillDo
 
-> The agent-native skill manager for 45 AI coding tools — install once, sync everywhere.
+> The agent-native skill manager for 47 AI coding tools — install once, sync everywhere.
 
 ## Install
 
