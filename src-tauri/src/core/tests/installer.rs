@@ -993,3 +993,107 @@ fn sync_skill_target_cli_restores_project_scope() {
     );
     assert!(Path::new(&targets[0].target_path).exists());
 }
+
+/// Regression: the CLI update path used to re-materialise *every* target with
+/// `sync_dir_copy_with_overwrite`, silently replacing healthy symlinks with full
+/// copies of the skill — while leaving the stored `mode` as `symlink`, so
+/// `skilldo list` kept reporting a link that was no longer there.
+#[cfg(unix)]
+#[test]
+fn cli_update_keeps_symlink_targets_linked() {
+    use std::os::unix::fs::symlink;
+
+    let (dir, store) = make_store();
+
+    let source = dir.path().join("source/demo");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    fs::write(source.join("a.txt"), b"v1").unwrap();
+
+    let central_path = dir.path().join("central/demo");
+    fs::create_dir_all(&central_path).unwrap();
+    fs::write(central_path.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+
+    store
+        .upsert_skill(&SkillRecord {
+            id: "cli-update".to_string(),
+            name: "demo".to_string(),
+            description: None,
+            source_type: "local".to_string(),
+            source_ref: Some(source.to_string_lossy().to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: central_path.to_string_lossy().to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        })
+        .unwrap();
+
+    // Both branches in one pass: a healthy symlink target and a copy target.
+    let link_target = dir.path().join("tools/linked/demo");
+    fs::create_dir_all(link_target.parent().unwrap()).unwrap();
+    symlink(&central_path, &link_target).unwrap();
+
+    let copy_target = dir.path().join("tools/copied/demo");
+    fs::create_dir_all(&copy_target).unwrap();
+    fs::write(copy_target.join("a.txt"), b"stale").unwrap();
+
+    for (id, tool, mode, path) in [
+        ("t-link", "linked_tool", "symlink", &link_target),
+        ("t-copy", "copied_tool", "copy", &copy_target),
+    ] {
+        store
+            .upsert_skill_target(&SkillTargetRecord {
+                id: id.to_string(),
+                skill_id: "cli-update".to_string(),
+                tool: tool.to_string(),
+                scope: "global".to_string(),
+                project_path: None,
+                target_path: path.to_string_lossy().to_string(),
+                mode: mode.to_string(),
+                status: "ok".to_string(),
+                last_error: None,
+                synced_at: None,
+            })
+            .unwrap();
+    }
+
+    let out = super::update_managed_skill_from_source_cli(&store, "cli-update").unwrap();
+
+    // The link survived the update and still resolves to the (swapped) central
+    // directory, so it picks up the new content for free.
+    let meta = fs::symlink_metadata(&link_target).unwrap();
+    assert!(meta.file_type().is_symlink(), "symlink target was materialised");
+    assert_eq!(fs::read_link(&link_target).unwrap(), central_path);
+    assert_eq!(fs::read_to_string(link_target.join("a.txt")).unwrap(), "v1");
+    assert!(
+        !out.updated_targets.contains(&"linked_tool".to_string()),
+        "a healthy link needs no re-sync"
+    );
+
+    // Copy targets keep the old behaviour: overwritten in place, not a link.
+    assert!(out.updated_targets.contains(&"copied_tool".to_string()));
+    assert!(!fs::symlink_metadata(&copy_target)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read_to_string(copy_target.join("a.txt")).unwrap(), "v1");
+
+    // Self-healing: a target that an older CLI update had already materialised
+    // into a real directory is rebuilt as a link on the next pass.
+    fs::remove_dir_all(&link_target).unwrap();
+    fs::create_dir_all(&link_target).unwrap();
+    fs::write(link_target.join("a.txt"), b"materialised").unwrap();
+
+    let healed = super::update_managed_skill_from_source_cli(&store, "cli-update").unwrap();
+    assert!(healed.updated_targets.contains(&"linked_tool".to_string()));
+    assert!(fs::symlink_metadata(&link_target)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(fs::read_link(&link_target).unwrap(), central_path);
+}

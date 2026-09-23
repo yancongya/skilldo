@@ -155,7 +155,7 @@ fn remove_path_any(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn is_same_link(link_path: &Path, target: &Path) -> bool {
+pub(crate) fn is_same_link(link_path: &Path, target: &Path) -> bool {
     if let Ok(existing) = std::fs::read_link(link_path) {
         return existing == target;
     }

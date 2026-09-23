@@ -18,7 +18,9 @@ use super::git_fetcher::{
 use super::github_download::{download_github_directory, parse_github_api_params};
 use super::skill_store::{SkillRecord, SkillStore};
 use super::sync_engine::copy_dir_recursive;
+use super::sync_engine::is_same_link;
 use super::sync_engine::sync_dir_copy_with_overwrite;
+use super::sync_engine::sync_dir_hybrid_with_overwrite;
 use super::tool_adapters::is_tool_installed;
 use super::tool_adapters::{adapter_by_key, resolve_project_path, supports_project_scope};
 
@@ -2750,15 +2752,37 @@ pub fn update_managed_skill_from_source_cli(
     }
     store.upsert_skill(&patched)?;
 
-    // Re-sync all existing targets.
+    // Re-sync existing targets so they track the refreshed central directory.
+    //
+    // A target that is already a correct symlink follows the central path on
+    // its own, so re-materialising it would silently replace the link with a
+    // full duplicate of the skill — which is what this CLI path used to do on
+    // every update, without even correcting the stored `mode`. Symlink targets
+    // are therefore left alone when healthy and only repaired when missing or
+    // pointing elsewhere; copy targets (and Cursor, which cannot use symlinks)
+    // are still copied over as before. Mirrors the GUI path's semantics.
     let targets = store.list_skill_targets(&patched.id)?;
     let mut updated_targets = Vec::new();
     for target in &targets {
         let target_path = std::path::PathBuf::from(&target.target_path);
+        // The filesystem is the source of truth here, not the stored `mode`:
+        // a target recorded as `symlink` can actually be a materialised copy
+        // (this CLI path used to create exactly that). A healthy link is always
+        // left as-is, because replacing it with a copy is a pure regression —
+        // wasted space plus a target that stops tracking the central directory.
+        if is_same_link(&target_path, &central_path) {
+            continue;
+        }
         if let Some(parent) = target_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if sync_dir_copy_with_overwrite(&central_path, &target_path, true).is_ok() {
+        let force_copy = target.mode == "copy" || target.tool == "cursor";
+        let res = if force_copy {
+            sync_dir_copy_with_overwrite(&central_path, &target_path, true)
+        } else {
+            sync_dir_hybrid_with_overwrite(&central_path, &target_path, true)
+        };
+        if res.is_ok() {
             updated_targets.push(target.tool.clone());
         }
     }
