@@ -29,9 +29,10 @@ pub const GITHUB_REPO_PATH: &str = "yancongya/skilldo";
 
 /// macOS app bundle identifier / Tauri app identifier.
 /// Also used to resolve the SQLite database path on disk.
-/// WARNING: changing this will cause existing users to lose their data
-/// unless a migration is implemented.
-pub const APP_IDENTIFIER: &str = "com.qufei1993.skillshub";
+/// WARNING: changing this requires a migration entry in
+/// `LEGACY_APP_IDENTIFIERS` (`core/skill_store.rs`); the previous value
+/// `com.qufei1993.skillshub` is registered there so existing data migrates.
+pub const APP_IDENTIFIER: &str = "com.yancongya.skilldo";
 
 /// Directory name for the central skill repository (`~/.skillshub`).
 pub const CENTRAL_DIR_NAME: &str = ".skillshub";
@@ -53,7 +54,7 @@ mod tests {
 
     #[test]
     fn constants_are_consistent() {
-        assert!(APP_IDENTIFIER.contains("skillshub"));
+        assert!(APP_IDENTIFIER.contains("skilldo"));
         assert!(CENTRAL_DIR_NAME.starts_with('.'));
         assert!(GIT_CACHE_DIR_NAME.contains("skilldo"));
         assert_eq!(PRODUCT_NAME, "SkillDo");

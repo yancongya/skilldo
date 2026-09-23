@@ -5,7 +5,11 @@ use rusqlite::{backup::Backup, params, Connection};
 use tauri::Manager;
 
 const DB_FILE_NAME: &str = "skills_hub.db";
-const LEGACY_APP_IDENTIFIERS: &[&str] = &["com.tauri.dev", "com.tauri.dev.skillshub"];
+const LEGACY_APP_IDENTIFIERS: &[&str] = &[
+    "com.qufei1993.skillshub",
+    "com.tauri.dev.skillshub",
+    "com.tauri.dev",
+];
 
 // Schema versioning: bump when making changes and add a migration step.
 pub(crate) const SCHEMA_VERSION: i32 = 6;

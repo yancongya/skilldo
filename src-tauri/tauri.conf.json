@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "SkillDo",
   "version": "0.7.6",
-  "identifier": "com.qufei1993.skillshub",
+  "identifier": "com.yancongya.skilldo",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
