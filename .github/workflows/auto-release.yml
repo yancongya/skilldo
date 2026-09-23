@@ -22,15 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout verified main commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       - name: Determine whether a release is needed

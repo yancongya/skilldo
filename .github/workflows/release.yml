@@ -39,12 +39,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Setup Rust
@@ -369,7 +369,7 @@ jobs:
         run: ls -la release-assets || true
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release-assets-${{ matrix.arch }}
           path: release-assets/*
@@ -383,10 +383,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download workflow artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: dl
           pattern: release-assets-*
@@ -494,7 +494,7 @@ jobs:
           mv "$tmp_json" updater.json
 
       - name: Create/Update GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: SkillDo ${{ github.ref_name }} 正式版
