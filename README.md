@@ -327,11 +327,14 @@ Full path rules and detection logic are in [`src-tauri/src/core/tool_adapters/mo
 ./scripts/build.sh universal  # Universal DMG (Intel + Apple Silicon)
 ./scripts/build.sh cli        # CLI binary only
 ./scripts/build.sh release    # Build + install CLI to ~/.local/bin
+./scripts/build.sh cli-cross  # Cross-compile CLI (macOS + Linux x64/arm64)
 ./scripts/build.sh win        # Windows NSIS installer
 ./scripts/build.sh linux      # Linux AppImage + deb
+./scripts/build.sh clean      # Full clean: target/ + dist/ + output/ (next build recompiles from scratch)
+./scripts/build.sh slim       # Trim cache: drop debug/ + packaging leftovers, keep release/ incremental
 ```
 
-Build artifacts are collected to `out/` with intermediates cleaned up.
+Build artifacts are collected to `out/` with intermediates cleaned up. A packaged build (`release` / `universal` / `cli-cross`) trims the build cache automatically afterwards — `cargo`'s `target/` only ever grows, and `debug/` is never used by a release bundle. Set `KEEP_BUILD_CACHE=1` to keep the full cache.
 
 Pushes to `main` are released automatically after CI succeeds when changes affect application or CLI code. The automation increments the patch version, promotes the Unreleased changelog into a Chinese version section, creates the tag, and dispatches the existing signed macOS/Windows release workflow. Documentation-only changes, the generated featured catalog, commits containing `[skip release]`, and failed CI runs do not publish a release.
 

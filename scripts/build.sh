@@ -11,7 +11,12 @@
 #   ./scripts/build.sh cli-cross    # 交叉编译全平台 CLI（macOS + Linux x64/arm64）
 #
 # 清理：
-#   ./scripts/build.sh clean        # 删除编译缓存和输出目录（target/ + dist/ + output/）
+#   ./scripts/build.sh clean        # 全清：target/ + dist/ + output/（下次构建从头编译）
+#   ./scripts/build.sh slim         # 瘦身：清 debug/ + 打包残留，保留 release/ 增量缓存
+#
+# 缓存策略：
+#   打包完成后默认自动瘦身（清 debug/，因为 release 打包用不到它）。
+#   需要保留完整缓存时设 KEEP_BUILD_CACHE=1。
 
 set -euo pipefail
 
@@ -26,6 +31,36 @@ if [[ "$TARGET" == "clean" ]]; then
   echo "▶ Cleaning build artifacts..."
   rm -rf "$PROJECT_ROOT/dist" "$PROJECT_ROOT/src-tauri/target" "$PROJECT_ROOT/output"
   echo "✓ Cleaned: dist/, src-tauri/target/, output/"
+  exit 0
+fi
+
+# ─── slim_cache（内部函数）────────────────────────────────
+# 背景：cargo 的 target/ 只增不减。改 Cargo.toml、换 feature 组合、升 rustc
+# 都会生成新 hash 的产物，旧的永不删除，于是同一 crate 会堆积十几份副本
+# （实测 getrandom 10 份、phf 9 份），target/ 单向膨胀到 10G。
+# release 打包完全用不到 debug/，故每次打包后丢弃它。
+slim_cache() {
+  local tt="$PROJECT_ROOT/src-tauri/target"
+  [ -d "$tt" ] || return 0
+  local before after
+  before=$(du -sk "$tt" 2>/dev/null | cut -f1)
+  before=${before:-0}
+
+  rm -rf "$tt/debug"                  # debug 编译缓存（tauri dev 会按需重建）
+  rm -rf "$tt/release/bundle"         # 打包中间态（产物已复制进 output/）
+  rm -rf "$PROJECT_ROOT/dist"         # 前端临时产物
+  # dmg 打包中断残留：rw.<pid>.xxx.dmg，正常产物应在 bundle/dmg/ 下
+  find "$tt" -maxdepth 4 -name "rw.*.dmg" -exec rm -rf {} + 2>/dev/null || true
+
+  after=$(du -sk "$tt" 2>/dev/null | cut -f1)
+  after=${after:-0}
+  echo "✓ 瘦身: target/ $((before/1024))MB → $((after/1024))MB（省 $(( (before-after)/1024 ))MB）"
+}
+
+# ─── slim（手动瘦身，保留 release/ 增量缓存）───────────────
+if [[ "$TARGET" == "slim" ]]; then
+  echo "▶ Slimming build cache (keeps release/ incremental cache)..."
+  slim_cache
   exit 0
 fi
 
@@ -103,18 +138,25 @@ case "$TARGET" in
     )
 
     cd src-tauri
+    build_log="$(mktemp)"
     for triple in "${!TARGETS[@]}"; do
       name="${TARGETS[$triple]}"
       echo "  → $triple ($name)..."
-      cargo build --release --target "$triple" --bin skilldo 2>/dev/null && {
+      if cargo build --release --target "$triple" --bin skilldo > "$build_log" 2>&1; then
         bin="target/$triple/release/skilldo"
         if [ -f "$bin" ]; then
           tar -czf "$OUT_DIR/$name.tar.gz" -C "target/$triple/release" skilldo
           shasum -a 256 "$OUT_DIR/$name.tar.gz" > "$OUT_DIR/$name.tar.gz.sha256"
           echo "    ✓ $name.tar.gz"
         fi
-      } || echo "    ⚠ $triple 交叉编译失败（可能缺少工具链），跳过"
+      else
+        # 失败会留下半个依赖树（target/<triple>/），不清会持续膨胀
+        echo "    ⚠ $triple 交叉编译失败，清理残骸"
+        tail -5 "$build_log" | sed 's/^/      │ /'
+        rm -rf "target/$triple"
+      fi
     done
+    rm -f "$build_log"
     cd "$PROJECT_ROOT"
 
     echo ""
@@ -179,8 +221,15 @@ done
 APP_BUNDLE="$BUNDLE_DIR/macos/SkillDo.app/Contents/MacOS"
 rm -f "$APP_BUNDLE/skilldo" 2>/dev/null && echo "→ cleaned extra CLI binary from .app"
 
-# 清理不需要的衍生物：dist/（前端临时产物）+ bundle/（打包中间产物）
-# 保留 src-tauri/target/ 让下次增量编译不用从头
-rm -rf "$PROJECT_ROOT/dist" "$BUNDLE_DIR"
+# 衍生物清理：dist/（前端临时）+ bundle/（打包中间态）+ debug/（release 打包用不到）
+# 保留 src-tauri/target/release/{deps,build}，让下次打包仍走增量编译。
+if [[ "${KEEP_BUILD_CACHE:-0}" == "1" ]]; then
+  echo ""
+  echo "⏭ KEEP_BUILD_CACHE=1，跳过瘦身（保留 debug/ 与 bundle/）"
+  rm -rf "$PROJECT_ROOT/dist"
+else
+  echo ""
+  slim_cache
+fi
 
 print_summary

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 更新
+- **破坏性变更｜应用标识符改名**：`APP_IDENTIFIER` 由 `com.qufei1993.skillshub` 改为 `com.yancongya.skilldo`（`tauri.conf.json` 的 `identifier` 同步，`config.rs` 的一致性断言一并更新）。旧标识已加入 `LEGACY_APP_IDENTIFIERS`，首次启动会自动迁移既有数据库，无需手工搬家；但 macOS 会按新 Bundle ID 安装，旧版 `.app` 需自行删除。
+- fix(cli): `skilldo update` 不再把所有软链目标物化成实目录副本。CLI 路径原先无条件拷贝，会把「一份物理副本 + N 个软链」的目标全部重建为真目录，而 DB 里的 `mode` 仍是 `symlink`（`skilldo list` 自检看不出来）。现改为以文件系统实际状态为准：目标已是正确软链则跳过，`mode=="copy"` 或 cursor 才拷贝，其余走自愈同步；新增回归测试覆盖「软链保持 / copy 覆盖 / 实目录自愈」三条路径。
+- feat(build): `build.sh` 新增 `slim` 子命令，并让打包（`release` / `universal` / `cli-cross`）完成后自动瘦身——清 `debug/` 编译缓存、`release/bundle` 打包中间态、dmg 中断残留（`rw.*.dmg`）与前端 `dist`，保留 `release/` 增量缓存；设 `KEEP_BUILD_CACHE=1` 可保留完整缓存。
+- fix(build): 交叉编译失败时清理 `target/<triple>/` 残骸（半个依赖树会持续膨胀），并把失败日志尾部 5 行回显出来，不再静默跳过。
+- docs(readme): 构建脚本章节补 `cli-cross` / `clean` / `slim` 说明与缓存策略，中英双语同步。
+
 ## [0.7.6] - 2026-09-04
 
 ### 更新

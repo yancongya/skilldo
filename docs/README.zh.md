@@ -334,14 +334,17 @@ SkillDo 支持 **47** 个 AI 编程工具。项目级 skills 目录相对所选�
 
 ```bash
 ./scripts/build.sh            # macOS DMG
-./scripts/build.sh universal  # Universal DMG (Intel + Apple Silicon)
+./scripts/build.sh universal  # Universal DMG（Intel + Apple Silicon）
 ./scripts/build.sh cli        # 仅 CLI 二进制
 ./scripts/build.sh release    # 构建并安装 CLI 到 ~/.local/bin
+./scripts/build.sh cli-cross  # 交叉编译全平台 CLI（macOS + Linux x64/arm64）
 ./scripts/build.sh win        # Windows NSIS 安装包
 ./scripts/build.sh linux      # Linux AppImage + deb
+./scripts/build.sh clean      # 全清：target/ + dist/ + output/（下次构建从头编译）
+./scripts/build.sh slim       # 瘦身：清 debug/ 与打包残留，保留 release/ 增量缓存
 ```
 
-构建产物收集到 `out/`，中间文件会被清理。
+构建产物收集到 `out/`，中间文件会被清理。打包类命令（`release` / `universal` / `cli-cross`）完成后会自动瘦身——`cargo` 的 `target/` 只增不减，而 `debug/` 是 release 打包完全用不到的。设 `KEEP_BUILD_CACHE=1` 可保留完整缓存。
 
 推送到 `main` 且 CI 通过后，若改动涉及应用或 CLI 代码，会自动发布：递增补丁版本、把 Unreleased 整理为中文版本记录、创建标签并触发已有的 macOS/Windows 签名发布流水线。仅修改文档、自动生成的精选 Skill 列表、含 `[skip release]` 的提交或 CI 失败都不会发布。
 
