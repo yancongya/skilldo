@@ -1067,7 +1067,10 @@ fn cli_update_keeps_symlink_targets_linked() {
     // The link survived the update and still resolves to the (swapped) central
     // directory, so it picks up the new content for free.
     let meta = fs::symlink_metadata(&link_target).unwrap();
-    assert!(meta.file_type().is_symlink(), "symlink target was materialised");
+    assert!(
+        meta.file_type().is_symlink(),
+        "symlink target was materialised"
+    );
     assert_eq!(fs::read_link(&link_target).unwrap(), central_path);
     assert_eq!(fs::read_to_string(link_target.join("a.txt")).unwrap(), "v1");
     assert!(
