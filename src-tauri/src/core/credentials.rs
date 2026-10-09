@@ -19,6 +19,8 @@ const SAFE_ERROR: &str = "credential provider could not retrieve the requested c
 pub trait CredentialProvider: Send + Sync {
     fn get_secret(&self, alias: &str) -> Result<String, CredentialError>;
 
+    fn alias_exists(&self, alias: &str) -> Result<bool, CredentialError>;
+
     /// Stores a secret under a stable alias. The secret is passed only through
     /// the command's stdin and must never be included in arguments or logs.
     fn set_secret(
@@ -45,29 +47,48 @@ impl std::error::Error for CredentialError {}
 /// Small fake provider for consumers' unit tests.
 #[derive(Debug, Clone, Default)]
 pub struct MockCredentialProvider {
-    credentials: std::collections::HashMap<String, String>,
+    credentials: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
 impl MockCredentialProvider {
     pub fn new(credentials: impl IntoIterator<Item = (String, String)>) -> Self {
         Self {
-            credentials: credentials.into_iter().collect(),
+            credentials: std::sync::Arc::new(std::sync::Mutex::new(
+                credentials.into_iter().collect(),
+            )),
         }
     }
 }
 
 impl CredentialProvider for MockCredentialProvider {
     fn get_secret(&self, alias: &str) -> Result<String, CredentialError> {
-        self.credentials.get(alias).cloned().ok_or(CredentialError)
+        self.credentials
+            .lock()
+            .map_err(|_| CredentialError)?
+            .get(alias)
+            .cloned()
+            .ok_or(CredentialError)
+    }
+
+    fn alias_exists(&self, alias: &str) -> Result<bool, CredentialError> {
+        Ok(self
+            .credentials
+            .lock()
+            .map_err(|_| CredentialError)?
+            .contains_key(alias))
     }
 
     fn set_secret(
         &self,
-        _alias: &str,
-        _secret: &str,
+        alias: &str,
+        secret: &str,
         _username: Option<&str>,
     ) -> Result<(), CredentialError> {
-        Err(CredentialError)
+        self.credentials
+            .lock()
+            .map_err(|_| CredentialError)?
+            .insert(alias.to_owned(), secret.to_owned());
+        Ok(())
     }
 }
 
@@ -177,6 +198,31 @@ impl<R: CommandRunner> CredentialProvider for BwVaultCredentialProvider<R> {
             .ok_or(CredentialError)?;
 
         Ok(secret.to_owned())
+    }
+
+    fn alias_exists(&self, alias: &str) -> Result<bool, CredentialError> {
+        let output = self
+            .runner
+            .run(BWVAULT_COMMAND, &["credential", "list", "--json"], None)
+            .map_err(|_| CredentialError)?;
+        if !output.success {
+            return Err(CredentialError);
+        }
+
+        let parsed: Value = serde_json::from_slice(&output.stdout).map_err(|_| CredentialError)?;
+        let items = parsed
+            .get("items")
+            .and_then(Value::as_array)
+            .ok_or(CredentialError)?;
+        let aliases = items
+            .iter()
+            .map(|item| {
+                item.get("alias")
+                    .and_then(Value::as_str)
+                    .ok_or(CredentialError)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(aliases.into_iter().any(|item_alias| item_alias == alias))
     }
 
     fn set_secret(
@@ -305,6 +351,49 @@ mod tests {
             MockCredentialProvider::new([("test.alias".to_owned(), "secret".to_owned())]);
         assert_eq!(provider.get_secret("test.alias").unwrap(), "secret");
         assert!(provider.get_secret("missing.alias").is_err());
+        assert!(provider.alias_exists("test.alias").unwrap());
+        assert!(!provider.alias_exists("missing.alias").unwrap());
+        provider
+            .set_secret("missing.alias", "created-secret", None)
+            .unwrap();
+        assert!(provider.alias_exists("missing.alias").unwrap());
+        assert_eq!(
+            provider.get_secret("missing.alias").unwrap(),
+            "created-secret"
+        );
+    }
+
+    #[test]
+    fn alias_exists_lists_and_matches_aliases_without_revealing_secrets() {
+        let runner = FakeRunner::returning(output(
+            true,
+            r#"{"items":[{"alias":"first.alias"},{"alias":"target.alias"}]}"#,
+        ));
+        let provider = BwVaultCredentialProvider::new(runner.clone());
+
+        assert!(provider.alias_exists("target.alias").unwrap());
+        assert!(!provider.alias_exists("absent.alias").unwrap());
+        let calls = runner.calls.lock().unwrap();
+        assert_eq!(calls[0].0, "bwvault");
+        assert_eq!(calls[0].1, ["credential", "list", "--json"]);
+        assert_eq!(calls[0].2, None);
+    }
+
+    #[test]
+    fn alias_exists_fails_closed_on_command_and_json_errors() {
+        let failures = [
+            Err(CommandRunError::Start),
+            output(false, r#"{"items":[{"alias":"private.alias"}]}"#),
+            output(true, "not json"),
+            output(true, r#"{"items":null}"#),
+            output(true, r#"{"items":[{"name":"private.alias"}]}"#),
+        ];
+        for response in failures {
+            let provider = BwVaultCredentialProvider::new(FakeRunner::returning(response));
+            let error = provider.alias_exists("private.alias").unwrap_err();
+            assert_eq!(error.to_string(), SAFE_ERROR);
+            assert!(!error.to_string().contains("private.alias"));
+        }
     }
 
     #[test]
