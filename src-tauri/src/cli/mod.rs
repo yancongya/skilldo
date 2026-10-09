@@ -35,7 +35,9 @@ use crate::core::profile_sync::{
 };
 use crate::core::project_skills::{inspect_project, remember_project_path};
 use crate::core::skill_store::{default_db_path_cli, SkillOriginRecord, SkillStore};
-use crate::core::source_repair::{repair_skill_source, repair_skill_sources};
+use crate::core::source_repair::{
+    migrate_git_origin_override, repair_skill_source, repair_skill_sources,
+};
 use crate::core::tool_adapters;
 use crate::core::webdav::{download_backup, upload_backup};
 
@@ -479,6 +481,25 @@ enum RepairAction {
         #[arg(long, default_value_t = false)]
         apply: bool,
     },
+    /// Migrate a verified Git Skill from local-copy override to Git updates.
+    /// Make a private full-state backup with `skilldo backup file <path>` before applying.
+    Origin {
+        /// Skill ID or name.
+        #[arg(long)]
+        skill: String,
+        /// Git repository URL already recorded for this Skill.
+        #[arg(long)]
+        url: String,
+        /// Skill directory inside the repository.
+        #[arg(long)]
+        subpath: Option<String>,
+        /// Preview the verified migration without changing the database.
+        #[arg(long, default_value_t = false, conflicts_with = "apply")]
+        dry_run: bool,
+        /// Apply after remote verification. Create a private full-state backup first.
+        #[arg(long, default_value_t = false, conflicts_with = "dry_run")]
+        apply: bool,
+    },
 }
 
 /// Entry point invoked from the `skilldo` binary.
@@ -632,6 +653,18 @@ fn execute(cli: Cli) -> Result<()> {
                 subpath,
                 apply,
             } => cmd_repair_source(&store, &skill, &url, subpath.as_deref(), apply, cli.json),
+            RepairAction::Origin {
+                skill,
+                url,
+                subpath,
+                dry_run,
+                apply,
+            } => {
+                if dry_run == apply {
+                    anyhow::bail!("请明确指定 --dry-run 或 --apply");
+                }
+                cmd_repair_origin(&store, &skill, &url, subpath.as_deref(), apply, cli.json)
+            }
         },
         Commands::Install { url, name, yes } => cmd_install(&store, &url, name, yes, cli.json),
         Commands::TrackLocal { skill, path, yes } => {
@@ -1900,6 +1933,46 @@ fn cmd_repair_source(
     }
 }
 
+fn cmd_repair_origin(
+    store: &SkillStore,
+    skill: &str,
+    url: &str,
+    subpath: Option<&str>,
+    apply: bool,
+    json: bool,
+) -> Result<()> {
+    let report = migrate_git_origin_override(store, skill, url, subpath, apply)?;
+    if json {
+        print_json(&report)
+    } else {
+        println!(
+            "{} Git 来源迁移：{} ({})，验证 revision {}，保留 {} 个目标。",
+            if report.applied {
+                "已完成"
+            } else {
+                "预览"
+            },
+            report.name,
+            report.skill_id,
+            report.verified_revision,
+            report.target_count
+        );
+        println!(
+            "{} / {} / manualOverride={} → {} / {} / manualOverride={}",
+            report.previous_origin_kind,
+            report.previous_update_strategy,
+            report.previous_manual_override,
+            report.next_origin_kind,
+            report.next_update_strategy,
+            report.next_manual_override
+        );
+        if !report.applied {
+            println!("复核预览后添加 --apply 执行迁移。迁移前请先创建 SkillDo 完整备份。");
+        }
+        Ok(())
+    }
+}
+
 /// Resolve a skill name or ID to a skill ID. If the input looks like a UUID,
 /// try it directly; otherwise search by name.
 fn resolve_skill_id(store: &SkillStore, name_or_id: &str) -> Result<String> {
@@ -2944,6 +3017,58 @@ mod tests {
             one.command,
             Commands::Repair {
                 action: RepairAction::Source { apply: true, .. }
+            }
+        ));
+
+        let origin = Cli::try_parse_from([
+            "skilldo",
+            "repair",
+            "origin",
+            "--skill",
+            "demo",
+            "--url",
+            "https://github.com/example/repo.git",
+            "--subpath",
+            "skills/demo",
+            "--dry-run",
+            "--json",
+        ])
+        .expect("parse Git origin migration preview");
+        assert!(origin.json);
+        assert!(matches!(
+            origin.command,
+            Commands::Repair {
+                action: RepairAction::Origin {
+                    dry_run: true,
+                    apply: false,
+                    ..
+                }
+            }
+        ));
+
+        let origin_apply = Cli::try_parse_from([
+            "skilldo",
+            "repair",
+            "origin",
+            "--skill",
+            "demo",
+            "--url",
+            "https://github.com/example/repo.git",
+            "--subpath",
+            "skills/demo",
+            "--apply",
+            "--json",
+        ])
+        .expect("parse Git origin migration apply");
+        assert!(origin_apply.json);
+        assert!(matches!(
+            origin_apply.command,
+            Commands::Repair {
+                action: RepairAction::Origin {
+                    dry_run: false,
+                    apply: true,
+                    ..
+                }
             }
         ));
     }

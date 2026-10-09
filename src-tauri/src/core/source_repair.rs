@@ -57,6 +57,25 @@ pub struct SourceRepairReport {
     pub items: Vec<SourceRepairItem>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitOriginMigrationReport {
+    pub dry_run: bool,
+    pub applied: bool,
+    pub skill_id: String,
+    pub name: String,
+    pub remote_url: String,
+    pub subpath: Option<String>,
+    pub verified_revision: String,
+    pub previous_origin_kind: String,
+    pub previous_update_strategy: String,
+    pub previous_manual_override: bool,
+    pub next_origin_kind: String,
+    pub next_update_strategy: String,
+    pub next_manual_override: bool,
+    pub target_count: usize,
+}
+
 #[derive(Debug, Deserialize)]
 struct SkillLock {
     #[serde(default)]
@@ -362,6 +381,7 @@ fn is_remote_git_url(value: &str) -> bool {
         || value.starts_with("http://")
         || value.starts_with("ssh://")
         || value.starts_with("git@")
+        || value.starts_with("file://")
 }
 
 fn recorded_git_candidate(skill: &SkillRecord) -> Option<ProvenanceCandidate> {
@@ -709,6 +729,181 @@ pub fn repair_skill_source(
     })
 }
 
+/// Migrate a Git-backed Skill whose update behavior was manually overridden
+/// to local-copy mode. The remote is cloned and its selected Skill directory
+/// verified before any database write. Only the origin row is changed.
+pub fn migrate_git_origin_override(
+    store: &SkillStore,
+    skill_name_or_id: &str,
+    remote_url: &str,
+    subpath: Option<&str>,
+    apply: bool,
+) -> Result<GitOriginMigrationReport> {
+    let skill = store
+        .list_skills()?
+        .into_iter()
+        .find(|skill| {
+            skill.id == skill_name_or_id || skill.name.eq_ignore_ascii_case(skill_name_or_id)
+        })
+        .with_context(|| format!("Skill 不存在: {skill_name_or_id}"))?;
+    if skill.source_type != "git" {
+        anyhow::bail!(
+            "仅支持迁移 Git 来源 Skill，当前来源类型为 {}",
+            skill.source_type
+        );
+    }
+
+    let remote_url = remote_url.trim();
+    if !is_remote_git_url(remote_url) {
+        anyhow::bail!("必须提供已登记的 Git 远端 URL");
+    }
+    if remote_url.starts_with("https://") || remote_url.starts_with("http://") {
+        let authority = remote_url
+            .split_once("://")
+            .map(|(_, rest)| rest.split('/').next().unwrap_or_default())
+            .unwrap_or_default();
+        if authority.contains('@') {
+            anyhow::bail!("Git URL 不得嵌入用户名或凭据");
+        }
+    }
+    let clean_subpath = normalize_requested_subpath(subpath)?;
+    if skill.source_ref.as_deref().map_or(true, |saved| {
+        normalize_git_url(saved) != normalize_git_url(remote_url)
+    }) {
+        anyhow::bail!("指定远端与 Skill 已登记的 Git 来源不一致");
+    }
+    if skill.source_subpath != clean_subpath {
+        anyhow::bail!("指定子目录与 Skill 已登记的来源子目录不一致");
+    }
+
+    let previous = store
+        .get_skill_origin(&skill.id)?
+        .with_context(|| format!("Skill '{}' 缺少来源元数据", skill.name))?;
+    if previous.origin_kind != "local"
+        || !previous.manual_override
+        || previous.update_strategy != "local_copy"
+    {
+        anyhow::bail!(
+            "来源状态不是可迁移的 local_copy 手动覆盖（kind={}, strategy={}, override={}）",
+            previous.origin_kind,
+            previous.update_strategy,
+            previous.manual_override
+        );
+    }
+    if previous
+        .remote_url
+        .as_deref()
+        .is_some_and(|saved| normalize_git_url(saved) != normalize_git_url(remote_url))
+        || previous.subpath != clean_subpath
+    {
+        anyhow::bail!("指定远端或子目录与现存来源元数据不一致");
+    }
+
+    let verified_revision =
+        verify_migration_source(remote_url, clean_subpath.as_deref(), &skill.name)?;
+    let (remote_owner, remote_repo) = parse_github_owner_repo(remote_url);
+    let mut next = previous.clone();
+    next.origin_kind = "git".to_string();
+    next.provider = Some("git".to_string());
+    next.remote_url = Some(remote_url.to_string());
+    next.owner = remote_owner.or(next.owner);
+    next.repo = remote_repo.or(next.repo);
+    next.subpath = clean_subpath.clone();
+    next.update_strategy = "git_pull".to_string();
+    next.manual_override = false;
+    next.reason =
+        Some("Git remote and Skill subpath verified; migrated to Git updates".to_string());
+    next.updated_at = now_ms();
+
+    let target_count = store.list_skill_targets(&skill.id)?.len();
+    if apply {
+        store.migrate_skill_origin_to_git_tracked(&skill, &previous, &next)?;
+    }
+
+    Ok(GitOriginMigrationReport {
+        dry_run: !apply,
+        applied: apply,
+        skill_id: skill.id,
+        name: skill.name,
+        remote_url: remote_url.to_string(),
+        subpath: clean_subpath,
+        verified_revision,
+        previous_origin_kind: previous.origin_kind,
+        previous_update_strategy: previous.update_strategy,
+        previous_manual_override: previous.manual_override,
+        next_origin_kind: next.origin_kind,
+        next_update_strategy: next.update_strategy,
+        next_manual_override: next.manual_override,
+        target_count,
+    })
+}
+
+fn normalize_requested_subpath(subpath: Option<&str>) -> Result<Option<String>> {
+    let Some(value) = subpath
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != ".")
+    else {
+        return Ok(None);
+    };
+    let normalized = value.replace('\\', "/");
+    let path = Path::new(&normalized);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        anyhow::bail!("Skill 子目录必须是仓库内的相对路径");
+    }
+    Ok(Some(normalized.trim_matches('/').to_string()))
+}
+
+fn verify_migration_source(
+    remote_url: &str,
+    subpath: Option<&str>,
+    skill_name: &str,
+) -> Result<String> {
+    let checkout =
+        std::env::temp_dir().join(format!("skilldo-origin-migrate-{}", uuid::Uuid::new_v4()));
+    let result = (|| -> Result<String> {
+        let revision = clone_or_pull(remote_url, &checkout, None, None)
+            .with_context(|| format!("无法验证 Git 远端: {remote_url}"))?;
+        let repository = Repository::open(&checkout).context("打开验证用 Git checkout 失败")?;
+        let actual_remote = repository
+            .find_remote("origin")?
+            .url()
+            .context("验证用 checkout 缺少 origin URL")?
+            .to_string();
+        if normalize_git_url(&actual_remote) != normalize_git_url(remote_url) {
+            anyhow::bail!("clone 后的 origin 与请求的 Git 远端不一致");
+        }
+        let candidate = subpath
+            .map(|path| checkout.join(path))
+            .unwrap_or_else(|| checkout.clone());
+        let canonical_checkout = checkout.canonicalize()?;
+        let canonical_candidate = candidate
+            .canonicalize()
+            .context("Git 远端中找不到指定 Skill 子目录")?;
+        if !canonical_candidate.starts_with(&canonical_checkout) || !canonical_candidate.is_dir() {
+            anyhow::bail!("指定 Skill 子目录不在 Git 仓库内");
+        }
+        let skill_md = canonical_candidate.join("SKILL.md");
+        if skill_md.is_symlink() || !skill_md.is_file() {
+            anyhow::bail!("Git 远端指定子目录必须包含普通文件 SKILL.md");
+        }
+        let matches = canonical_candidate
+            .file_name()
+            .is_some_and(|folder| folder.to_string_lossy().eq_ignore_ascii_case(skill_name))
+            || frontmatter_name(&skill_md)
+                .is_some_and(|name| name.eq_ignore_ascii_case(skill_name));
+        if !matches {
+            anyhow::bail!("Git 远端子目录中的 Skill 名称与 '{}' 不匹配", skill_name);
+        }
+        Ok(revision)
+    })();
+    let _ = std::fs::remove_dir_all(&checkout);
+    result
+}
+
 fn verify_explicit_source(skill: &SkillRecord, detected: &DetectedGitSource) -> Result<()> {
     let checkout =
         std::env::temp_dir().join(format!("skilldo-source-verify-{}", uuid::Uuid::new_v4()));
@@ -772,7 +967,7 @@ fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::skill_store::SkillStore;
+    use crate::core::skill_store::{SkillOriginRecord, SkillStore, SkillTargetRecord};
 
     fn git_skill_fixture() -> (tempfile::TempDir, PathBuf) {
         let directory = tempfile::tempdir().unwrap();
@@ -793,6 +988,250 @@ mod tests {
             .commit(Some("HEAD"), &signature, &signature, "init", &tree, &[])
             .unwrap();
         (directory, skill)
+    }
+
+    fn bare_remote_fixture() -> (tempfile::TempDir, String, String) {
+        let directory = tempfile::tempdir().unwrap();
+        let bare_path = directory.path().join("remote.git");
+        let bare = Repository::init_bare(&bare_path).unwrap();
+        let work_path = directory.path().join("work");
+        let work = Repository::init(&work_path).unwrap();
+        work.set_head("refs/heads/main").unwrap();
+        let skill = work_path.join("skills/demo");
+        std::fs::create_dir_all(&skill).unwrap();
+        std::fs::write(
+            skill.join("SKILL.md"),
+            "---\nname: demo\ndescription: test\n---\n# Demo\n",
+        )
+        .unwrap();
+        let mut index = work.index().unwrap();
+        index.add_path(Path::new("skills/demo/SKILL.md")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = work.find_tree(tree_id).unwrap();
+        let signature = git2::Signature::now("SkillDo", "test@example.com").unwrap();
+        work.commit(
+            Some("refs/heads/main"),
+            &signature,
+            &signature,
+            "add demo skill",
+            &tree,
+            &[],
+        )
+        .unwrap();
+        work.remote("origin", bare_path.to_str().unwrap()).unwrap();
+        let mut remote = work.find_remote("origin").unwrap();
+        remote
+            .push(&["refs/heads/main:refs/heads/main"], None)
+            .unwrap();
+        bare.set_head("refs/heads/main").unwrap();
+        let url = format!("file://{}", bare_path.display());
+        let revision = work.head().unwrap().target().unwrap().to_string();
+        (directory, url, revision)
+    }
+
+    fn seed_overridden_git_skill(
+        store: &SkillStore,
+        remote_url: &str,
+    ) -> (SkillRecord, SkillOriginRecord, SkillTargetRecord) {
+        let skill = SkillRecord {
+            id: "stable-skill-id".to_string(),
+            name: "demo".to_string(),
+            description: Some("keep this description".to_string()),
+            source_type: "git".to_string(),
+            source_ref: Some(remote_url.to_string()),
+            source_subpath: Some("skills/demo".to_string()),
+            source_revision: Some("old-revision".to_string()),
+            central_path: "/central/demo".to_string(),
+            content_hash: Some("stable-hash".to_string()),
+            created_at: 10,
+            updated_at: 20,
+            last_sync_at: Some(25),
+            last_seen_at: 30,
+            status: "ok".to_string(),
+        };
+        let origin = SkillOriginRecord {
+            skill_id: skill.id.clone(),
+            origin_kind: "local".to_string(),
+            origin_role: "mine".to_string(),
+            provider: Some("local".to_string()),
+            remote_url: Some(remote_url.to_string()),
+            owner: Some("example".to_string()),
+            repo: Some("demo".to_string()),
+            branch: Some("main".to_string()),
+            subpath: skill.source_subpath.clone(),
+            update_strategy: "local_copy".to_string(),
+            publish_strategy: "none".to_string(),
+            manual_override: true,
+            reason: Some("explicit local source".to_string()),
+            updated_at: 35,
+        };
+        let target = SkillTargetRecord {
+            id: "stable-target-id".to_string(),
+            skill_id: skill.id.clone(),
+            tool: "codex".to_string(),
+            scope: "global".to_string(),
+            project_path: None,
+            target_path: "/agent/skills/demo".to_string(),
+            mode: "symlink".to_string(),
+            status: "ok".to_string(),
+            last_error: None,
+            synced_at: Some(40),
+        };
+        store.upsert_skill(&skill).unwrap();
+        store.upsert_skill_origin(&origin).unwrap();
+        store.upsert_skill_target(&target).unwrap();
+        (skill, origin, target)
+    }
+
+    fn assert_skill_fields_equal(actual: &SkillRecord, expected: &SkillRecord) {
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.name, expected.name);
+        assert_eq!(actual.description, expected.description);
+        assert_eq!(actual.source_type, expected.source_type);
+        assert_eq!(actual.source_ref, expected.source_ref);
+        assert_eq!(actual.source_subpath, expected.source_subpath);
+        assert_eq!(actual.source_revision, expected.source_revision);
+        assert_eq!(actual.central_path, expected.central_path);
+        assert_eq!(actual.content_hash, expected.content_hash);
+        assert_eq!(actual.created_at, expected.created_at);
+        assert_eq!(actual.updated_at, expected.updated_at);
+        assert_eq!(actual.last_sync_at, expected.last_sync_at);
+        assert_eq!(actual.last_seen_at, expected.last_seen_at);
+        assert_eq!(actual.status, expected.status);
+    }
+
+    #[test]
+    fn git_origin_migration_dry_run_and_apply_preserve_skill_and_targets() {
+        let (remote_dir, remote_url, revision) = bare_remote_fixture();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        let (original_skill, original_origin, original_target) =
+            seed_overridden_git_skill(&store, &remote_url);
+
+        let preview =
+            migrate_git_origin_override(&store, "demo", &remote_url, Some("skills/demo"), false)
+                .unwrap();
+        assert!(preview.dry_run);
+        assert!(!preview.applied);
+        assert_eq!(preview.verified_revision, revision);
+        assert_eq!(preview.target_count, 1);
+        assert_skill_fields_equal(
+            &store.get_skill_by_id(&original_skill.id).unwrap().unwrap(),
+            &original_skill,
+        );
+        assert_eq!(
+            store.get_skill_origin(&original_skill.id).unwrap(),
+            Some(original_origin.clone())
+        );
+        assert_eq!(
+            store.list_skill_targets(&original_skill.id).unwrap()[0].id,
+            original_target.id
+        );
+
+        let applied = migrate_git_origin_override(
+            &store,
+            &original_skill.id,
+            &remote_url,
+            Some("skills/demo"),
+            true,
+        )
+        .unwrap();
+        assert!(applied.applied);
+        assert_skill_fields_equal(
+            &store.get_skill_by_id(&original_skill.id).unwrap().unwrap(),
+            &original_skill,
+        );
+        assert_eq!(
+            store.list_skill_targets(&original_skill.id).unwrap(),
+            vec![original_target]
+        );
+        let migrated = store.get_skill_origin(&original_skill.id).unwrap().unwrap();
+        assert_eq!(migrated.skill_id, original_origin.skill_id);
+        assert_eq!(migrated.origin_kind, "git");
+        assert_eq!(migrated.provider.as_deref(), Some("git"));
+        assert_eq!(migrated.remote_url.as_deref(), Some(remote_url.as_str()));
+        assert_eq!(migrated.update_strategy, "git_pull");
+        assert!(!migrated.manual_override);
+        assert_eq!(migrated.origin_role, original_origin.origin_role);
+        assert_eq!(migrated.publish_strategy, original_origin.publish_strategy);
+        assert_eq!(migrated.owner, original_origin.owner);
+        assert_eq!(migrated.repo, original_origin.repo);
+        assert_eq!(migrated.branch, original_origin.branch);
+        assert_eq!(migrated.subpath, original_origin.subpath);
+        drop(remote_dir);
+    }
+
+    #[test]
+    fn git_origin_migration_remote_mismatch_does_not_change_database() {
+        let (_remote_dir, remote_url, _) = bare_remote_fixture();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        let (skill, origin, target) = seed_overridden_git_skill(&store, &remote_url);
+        let embedded_credentials = migrate_git_origin_override(
+            &store,
+            "demo",
+            "https://user:secret@github.com/example/repo.git",
+            Some("skills/demo"),
+            true,
+        )
+        .unwrap_err();
+        assert!(embedded_credentials.to_string().contains("凭据"));
+        let error = migrate_git_origin_override(
+            &store,
+            "demo",
+            "https://github.com/other/repo.git",
+            Some("skills/demo"),
+            true,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("不一致"));
+        assert_skill_fields_equal(&store.get_skill_by_id(&skill.id).unwrap().unwrap(), &skill);
+        assert_eq!(store.get_skill_origin(&skill.id).unwrap(), Some(origin));
+        assert_eq!(
+            store.list_skill_targets(&skill.id).unwrap()[0].id,
+            target.id
+        );
+    }
+
+    #[test]
+    fn git_origin_migration_rejects_subpath_traversal() {
+        assert!(normalize_requested_subpath(Some("../skills/demo")).is_err());
+        assert!(normalize_requested_subpath(Some("skills/../../outside")).is_err());
+    }
+
+    #[test]
+    fn git_origin_migration_database_failure_rolls_back_origin_row() {
+        let (_remote_dir, remote_url, _) = bare_remote_fixture();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        let (skill, origin, target) = seed_overridden_git_skill(&store, &remote_url);
+        let connection = rusqlite::Connection::open(store.db_path()).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TRIGGER fail_origin_migration BEFORE UPDATE ON skill_origins
+                 BEGIN SELECT RAISE(ABORT, 'test migration failure'); END;",
+            )
+            .unwrap();
+        drop(connection);
+
+        assert!(migrate_git_origin_override(
+            &store,
+            "demo",
+            &remote_url,
+            Some("skills/demo"),
+            true
+        )
+        .is_err());
+        assert_skill_fields_equal(&store.get_skill_by_id(&skill.id).unwrap().unwrap(), &skill);
+        assert_eq!(store.get_skill_origin(&skill.id).unwrap(), Some(origin));
+        assert_eq!(
+            store.list_skill_targets(&skill.id).unwrap()[0].id,
+            target.id
+        );
     }
 
     #[test]

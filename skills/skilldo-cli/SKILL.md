@@ -62,6 +62,7 @@ The installers select the current architecture, verify the release SHA-256, plac
 | `skilldo profile sync [--yes] [--update-skills] [--json]` | Apply the profile; upstream Git Skills update only with `--update-skills`; `--yes` confirms pending deletions |
 | `skilldo repair sources [--apply] [--json]` | Audit or promote local records with a verified Git origin |
 | `skilldo repair source --skill <name> --url <repo> [--subpath <path>] [--apply] [--json]` | Validate and reconnect one confirmed Git source |
+| `skilldo repair origin --skill <name> --url <repo> [--subpath <path>] (--dry-run\|--apply) [--json]` | Migrate a verified Git Skill from a manual local-copy override to Git updates |
 
 | `skilldo profile export <path> [--json]` | Export an offline portable Profile |
 | `skilldo profile import <path> [--strategy abort\|local\|remote] [--json]` | Import and merge an offline Profile |
@@ -73,6 +74,8 @@ WebDAV authentication uses HTTP Basic Auth, so remote URLs must use HTTPS. Skill
 When WebDAV is unavailable, `profile export <path>` creates a local portable desired-state checkpoint without contacting a server. The portable Profile excludes credentials, device paths, custom scan directories, per-tool path overrides, project targets, and local-only Skills; it is not a lossless database backup and does not synchronize automatically. Review it before moving it to another device, then use `profile import <path> --json` there; import merges desired state and syncs targets without refreshing upstream Skills. `profile sync` and `device pull` also leave upstream versions unchanged by default; pass `--update-skills` only after reviewing upstream changes. Use `device status` to inspect pending Git changes before `pull` or `publish`.
 
 For project-owned Skills, `track-local` points SkillDo at the canonical Skill-only directory inside the local Git checkout. It validates `SKILL.md`, rejects project roots containing unrelated files, and records the Git origin as provenance. Then `update --skill` copies that directory into the SkillDo central copy and keeps the registered symlinks. Git fetch/pull remains a separate user-controlled repository operation; `update --all` continues to update remote Git-managed Skills only.
+
+Use `repair origin` only when a Git Skill already has the same registered remote and subpath but an older manual override changed it to `local_copy`. Preview with `--dry-run`, then make a private full-state backup with `skilldo backup file <private-path> --json` before applying. The backup includes stored credentials: keep it private and never share it. The migration re-clones and verifies the remote and Skill directory, then atomically updates only origin metadata; Skill IDs, names, source rows, tags, and target links stay intact.
 
 `repair sources` only promotes a local Skill to Git provenance when its source subpath contains tracked files and has no uncommitted or untracked changes. A dirty or newly added project Skill remains a local source and is reported as unresolved until the repository work is committed and the upstream path is verified. This prevents project metadata or lockfiles from overriding active local work.
 
@@ -127,6 +130,7 @@ skilldo profile sync --update-skills --json
 skilldo repair sources --json
 skilldo repair sources --apply --json
 skilldo repair source --skill drawio --url https://github.com/bahayonghang/drawio-skills.git --subpath skills/drawio --json
+skilldo repair origin --skill my-skill --url https://github.com/owner/repo.git --subpath skills/my-skill --dry-run --json
 
 # Read-only filesystem truth check; converge only after reviewing the dry-run report
 python3 ~/.skillshub/skilldo-cli/scripts/skilldo_doctor.py --json

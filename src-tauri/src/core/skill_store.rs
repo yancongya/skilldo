@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use rusqlite::{backup::Backup, params, Connection};
+use rusqlite::{backup::Backup, params, Connection, OptionalExtension};
 use tauri::Manager;
 
 const DB_FILE_NAME: &str = "skills_hub.db";
@@ -107,7 +107,7 @@ pub struct SkillStore {
     db_path: PathBuf,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkillRecord {
     pub id: String,
     pub name: String,
@@ -125,7 +125,7 @@ pub struct SkillRecord {
     pub status: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkillTargetRecord {
     pub id: String,
     pub skill_id: String,
@@ -577,37 +577,89 @@ impl SkillStore {
     }
 
     pub fn get_skill_origin(&self, skill_id: &str) -> Result<Option<SkillOriginRecord>> {
-        self.with_conn(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT skill_id, origin_kind, origin_role, provider, remote_url, owner, repo,
-                        branch, subpath, update_strategy, publish_strategy, manual_override,
-                        reason, updated_at
-                 FROM skill_origins
-                 WHERE skill_id = ?1
-                 LIMIT 1",
-            )?;
-            let mut rows = stmt.query(params![skill_id])?;
-            if let Some(row) = rows.next()? {
-                Ok(Some(SkillOriginRecord {
-                    skill_id: row.get(0)?,
-                    origin_kind: row.get(1)?,
-                    origin_role: row.get(2)?,
-                    provider: row.get(3)?,
-                    remote_url: row.get(4)?,
-                    owner: row.get(5)?,
-                    repo: row.get(6)?,
-                    branch: row.get(7)?,
-                    subpath: row.get(8)?,
-                    update_strategy: row.get(9)?,
-                    publish_strategy: row.get(10)?,
-                    manual_override: row.get::<_, i64>(11)? != 0,
-                    reason: row.get(12)?,
-                    updated_at: row.get(13)?,
-                }))
-            } else {
-                Ok(None)
-            }
-        })
+        self.with_conn(|conn| read_skill_origin(conn, skill_id))
+    }
+
+    /// Atomically migrate an explicitly verified Git origin while preserving
+    /// the Skill row and all associated metadata. The caller must provide the
+    /// exact preflight snapshot so concurrent changes abort instead of being
+    /// overwritten.
+    pub fn migrate_skill_origin_to_git_tracked(
+        &self,
+        expected_skill: &SkillRecord,
+        expected_origin: &SkillOriginRecord,
+        migrated_origin: &SkillOriginRecord,
+    ) -> Result<()> {
+        if expected_skill.id != expected_origin.skill_id
+            || expected_origin.skill_id != migrated_origin.skill_id
+        {
+            anyhow::bail!("迁移记录的 Skill ID 不一致");
+        }
+        if migrated_origin.origin_kind != "git"
+            || migrated_origin.provider.as_deref() != Some("git")
+            || migrated_origin.update_strategy != "git_pull"
+            || migrated_origin.manual_override
+        {
+            anyhow::bail!("目标来源必须是无手动覆盖的 Git 拉取来源");
+        }
+
+        let mut conn = Connection::open(&self.db_path)
+            .with_context(|| format!("failed to open db at {:?}", self.db_path))?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+        let current_skill: Option<(String, Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT source_type, source_ref, source_subpath FROM skills WHERE id = ?1",
+                params![expected_skill.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        let Some((source_type, source_ref, source_subpath)) = current_skill else {
+            anyhow::bail!("迁移目标 Skill 已不存在");
+        };
+        if source_type != expected_skill.source_type
+            || source_ref != expected_skill.source_ref
+            || source_subpath != expected_skill.source_subpath
+        {
+            anyhow::bail!("Skill 来源在迁移期间已变化，请重新预览");
+        }
+
+        let current_origin = read_skill_origin(&tx, &expected_skill.id)?;
+        if current_origin.as_ref() != Some(expected_origin) {
+            anyhow::bail!("来源元数据在迁移期间已变化，请重新预览");
+        }
+
+        let changed = tx.execute(
+            "UPDATE skill_origins
+             SET origin_kind = ?2, provider = ?3, remote_url = ?4, owner = ?5, repo = ?6,
+                 branch = ?7, subpath = ?8, update_strategy = ?9, manual_override = ?10,
+                 reason = ?11, updated_at = ?12
+             WHERE skill_id = ?1",
+            params![
+                migrated_origin.skill_id,
+                migrated_origin.origin_kind,
+                migrated_origin.provider,
+                migrated_origin.remote_url,
+                migrated_origin.owner,
+                migrated_origin.repo,
+                migrated_origin.branch,
+                migrated_origin.subpath,
+                migrated_origin.update_strategy,
+                if migrated_origin.manual_override {
+                    1
+                } else {
+                    0
+                },
+                migrated_origin.reason,
+                migrated_origin.updated_at,
+            ],
+        )?;
+        if changed != 1 {
+            anyhow::bail!("来源元数据未能唯一更新");
+        }
+        tx.commit()?;
+        Ok(())
     }
 
     pub fn list_skills(&self) -> Result<Vec<SkillRecord>> {
@@ -1040,6 +1092,36 @@ impl SkillStore {
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         f(&conn)
     }
+}
+
+fn read_skill_origin(conn: &Connection, skill_id: &str) -> Result<Option<SkillOriginRecord>> {
+    Ok(conn
+        .query_row(
+            "SELECT skill_id, origin_kind, origin_role, provider, remote_url, owner, repo,
+                    branch, subpath, update_strategy, publish_strategy, manual_override,
+                    reason, updated_at
+             FROM skill_origins WHERE skill_id = ?1 LIMIT 1",
+            params![skill_id],
+            |row| {
+                Ok(SkillOriginRecord {
+                    skill_id: row.get(0)?,
+                    origin_kind: row.get(1)?,
+                    origin_role: row.get(2)?,
+                    provider: row.get(3)?,
+                    remote_url: row.get(4)?,
+                    owner: row.get(5)?,
+                    repo: row.get(6)?,
+                    branch: row.get(7)?,
+                    subpath: row.get(8)?,
+                    update_strategy: row.get(9)?,
+                    publish_strategy: row.get(10)?,
+                    manual_override: row.get::<_, i64>(11)? != 0,
+                    reason: row.get(12)?,
+                    updated_at: row.get(13)?,
+                })
+            },
+        )
+        .optional()?)
 }
 
 fn migrate_skill_targets_to_v4(conn: &Connection) -> Result<()> {
