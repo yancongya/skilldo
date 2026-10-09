@@ -24,6 +24,8 @@ const PROFILE_ID_KEY: &str = "profile_sync_profile_id_v1";
 const PROFILE_DEVICE_ID_KEY: &str = "profile_sync_device_id_v1";
 const PROFILE_BASE_KEY: &str = "profile_sync_base_v1";
 const PROFILE_ETAG_KEY: &str = "profile_sync_etag_v1";
+const PREVIEW_PROFILE_ID: &str = "preview-only-profile";
+const PREVIEW_DEVICE_ID: &str = "preview-only-device";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1056,13 +1058,26 @@ pub fn synchronize_profile(
     let remote_document = remote_loaded.as_ref().map(|(document, _)| document);
     let remote_etag = remote_loaded.as_ref().and_then(|(_, etag)| etag.as_deref());
     let base = load_document_setting(store, PROFILE_BASE_KEY)?;
-    let device_id = get_or_create_setting(store, PROFILE_DEVICE_ID_KEY)?;
+    let device_id = if dry_run {
+        store
+            .get_setting(PROFILE_DEVICE_ID_KEY)?
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| PREVIEW_DEVICE_ID.to_string())
+    } else {
+        get_or_create_setting(store, PROFILE_DEVICE_ID_KEY)?
+    };
     let stored_profile_id = store.get_setting(PROFILE_ID_KEY)?;
     let profile_id = remote_document
         .map(|document| document.profile_id.clone())
         .or_else(|| base.as_ref().map(|document| document.profile_id.clone()))
         .or(stored_profile_id)
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+        .unwrap_or_else(|| {
+            if dry_run {
+                PREVIEW_PROFILE_ID.to_string()
+            } else {
+                Uuid::new_v4().to_string()
+            }
+        });
     if let Some(remote) = remote_document {
         if remote.profile_id != profile_id {
             anyhow::bail!("远端 Profile ID 与本机绑定不一致");
@@ -1186,6 +1201,9 @@ pub fn import_profile_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::app_config::WEBDAV_CONFIG_KEY;
+    use crate::core::device_sync::device_status;
+    use crate::core::skill_store::SkillStore;
 
     fn config() -> PortableProfileConfig {
         PortableProfileConfig {
@@ -1195,6 +1213,50 @@ mod tests {
             origin_rules: OriginRules::default(),
             explore_sources: Vec::new(),
         }
+    }
+
+    #[test]
+    fn device_status_does_not_initialize_profile_ids_in_the_database() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(temp.path().join("skills.db"));
+        store.ensure_schema().unwrap();
+
+        let mut server = mockito::Server::new();
+        let remote = server
+            .mock("GET", "/skilldo-profile.json")
+            .with_status(404)
+            .expect(2)
+            .create();
+        let webdav = super::super::app_config::WebDavConfig {
+            url: server.url(),
+            user: String::new(),
+            password: String::new(),
+            remote_dir: String::new(),
+        };
+        store
+            .set_setting(WEBDAV_CONFIG_KEY, &serde_json::to_string(&webdav).unwrap())
+            .unwrap();
+
+        let first = device_status(&store).unwrap();
+        let second = device_status(&store).unwrap();
+
+        remote.assert();
+        assert_eq!(first.profile.as_ref().unwrap().device_id, PREVIEW_DEVICE_ID);
+        assert_eq!(
+            second.profile.as_ref().unwrap().device_id,
+            PREVIEW_DEVICE_ID
+        );
+        assert_eq!(
+            first.profile.as_ref().unwrap().profile_id,
+            PREVIEW_PROFILE_ID
+        );
+        assert_eq!(
+            second.profile.as_ref().unwrap().profile_id,
+            PREVIEW_PROFILE_ID
+        );
+        assert_eq!(store.get_setting(PROFILE_DEVICE_ID_KEY).unwrap(), None);
+        assert_eq!(store.get_setting(PROFILE_ID_KEY).unwrap(), None);
+        assert_eq!(store.get_setting(PROFILE_BASE_KEY).unwrap(), None);
     }
 
     fn skill(key: &str, name: &str, by: &str) -> ProfileSkill {
