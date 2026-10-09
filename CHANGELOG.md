@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-10-09
+
+### 更新
+- feat: harden SkillDo source and profile workflows
+
 ## [0.7.8] - 2026-10-09
 
 ### 更新
