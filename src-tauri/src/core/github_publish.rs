@@ -18,6 +18,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use git2::{Cred, CredentialType, PushOptions, RemoteCallbacks};
 use serde::Serialize;
 
 use crate::core::config::PRODUCT_NAME;
@@ -108,6 +109,35 @@ fn git(args: &[&str], dir: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
+fn push_with_token(dir: &Path, branch: &str, token: &str) -> Result<()> {
+    let repo = git2::Repository::open(dir).context("open repository for authenticated push")?;
+    let mut remote = repo.find_remote("origin").context("find origin remote")?;
+    let mut callbacks = RemoteCallbacks::new();
+    callbacks.credentials(move |_url, _username, allowed| {
+        if allowed.contains(CredentialType::USER_PASS_PLAINTEXT) {
+            Cred::userpass_plaintext("x-access-token", token)
+        } else {
+            Err(git2::Error::from_str(
+                "remote did not allow HTTPS token authentication",
+            ))
+        }
+    });
+    let mut options = PushOptions::new();
+    options.remote_callbacks(callbacks);
+    let refspec = format!("HEAD:refs/heads/{branch}");
+    remote
+        .push(&[refspec.as_str()], Some(&mut options))
+        .context("push to origin failed")?;
+
+    let mut config = repo.config().context("open repository config")?;
+    config.set_str(&format!("branch.{branch}.remote"), "origin")?;
+    config.set_str(
+        &format!("branch.{branch}.merge"),
+        &format!("refs/heads/{branch}"),
+    )?;
+    Ok(())
+}
+
 /// Resolve the GitHub token used for API calls and publishing.
 ///
 /// Preference order:
@@ -137,7 +167,7 @@ fn resolve_github_token(store: &SkillStore, explicit: Option<&str>) -> Result<St
         }
     }
     bail!(
-        "GitHub token not found. Set one with `skilldo github token-set <token>` \
+        "GitHub token not found. Set one with `skilldo github token-set --stdin` \
          or authenticate the `gh` CLI with `gh auth login`"
     );
 }
@@ -260,16 +290,13 @@ pub fn repoify_skill(
 
     // 2. create the remote repository
     let clone_url = create_repo(&token, &effective_owner, &name, private)?;
-    // Embed the resolved token so `git push` can authenticate over HTTPS without
-    // relying on a system credential helper (SkillDo supplies auth itself).
-    let auth_url = clone_url.replacen("https://", &format!("https://{}@", token.trim()), 1);
-
-    // 3. configure the `origin` remote
+    // 3. Configure only the clean remote URL. libgit2 receives the token via an
+    // in-memory credentials callback during push, never through argv or config.
     let remotes = git(&["remote"], central_path).unwrap_or_default();
     if remotes.split_whitespace().any(|r| r == "origin") {
-        git(&["remote", "set-url", "origin", &auth_url], central_path)?;
+        git(&["remote", "set-url", "origin", &clone_url], central_path)?;
     } else {
-        git(&["remote", "add", "origin", &auth_url], central_path)?;
+        git(&["remote", "add", "origin", &clone_url], central_path)?;
     }
 
     // 4. stage + commit (if there is anything to commit)
@@ -303,16 +330,8 @@ pub fn repoify_skill(
         bail!("could not determine current branch after commit");
     }
 
-    // 5. push and set upstream
-    git(
-        &["push", "-u", "origin", &format!("HEAD:{}", branch)],
-        central_path,
-    )
-    .context("push to origin failed")?;
-
-    // Drop the embedded token from the stored remote URL; later pushes reuse the
-    // resolved token via the same path instead of persisting it on disk.
-    git(&["remote", "set-url", "origin", &clone_url], central_path)?;
+    // 5. Push using an in-memory credentials callback.
+    push_with_token(central_path, &branch, &token)?;
 
     // 6. record the origin + flip the skill's source type so future
     //    `publish_managed_skill` calls take the git-update path.
@@ -347,4 +366,77 @@ pub fn repoify_skill(
         commit,
         pushed: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::Signature;
+
+    fn repository_with_commit(path: &Path) -> (git2::Repository, String) {
+        let repo = git2::Repository::init(path).unwrap();
+        std::fs::write(path.join("README.md"), "test\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("README.md")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let signature = Signature::now("SkillDo Test", "skilldo-test@example.invalid").unwrap();
+        repo.commit(Some("HEAD"), &signature, &signature, "test", &tree, &[])
+            .unwrap();
+        drop(tree);
+        let branch = repo.head().unwrap().shorthand().unwrap().to_string();
+        (repo, branch)
+    }
+
+    #[test]
+    fn authenticated_push_keeps_token_out_of_remote_and_branch_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let remote_path = temp.path().join("remote.git");
+        git2::Repository::init_bare(&remote_path).unwrap();
+        let (repo, branch) = repository_with_commit(&source);
+        repo.remote("origin", remote_path.to_str().unwrap())
+            .unwrap();
+
+        push_with_token(&source, &branch, "test-token").unwrap();
+
+        let remote = repo.find_remote("origin").unwrap();
+        assert_eq!(remote.url(), Some(remote_path.to_str().unwrap()));
+        let config = repo.config().unwrap();
+        assert_eq!(
+            config
+                .get_string(&format!("branch.{branch}.remote"))
+                .unwrap(),
+            "origin"
+        );
+        assert_eq!(
+            config
+                .get_string(&format!("branch.{branch}.merge"))
+                .unwrap(),
+            format!("refs/heads/{branch}")
+        );
+        let pushed = git2::Repository::open_bare(remote_path).unwrap();
+        assert!(pushed
+            .find_reference(&format!("refs/heads/{branch}"))
+            .is_ok());
+    }
+
+    #[test]
+    fn failed_authenticated_push_keeps_token_out_of_remote_config_and_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        let missing_remote = temp.path().join("missing.git");
+        let (repo, branch) = repository_with_commit(&source);
+        repo.remote("origin", missing_remote.to_str().unwrap())
+            .unwrap();
+
+        let error = push_with_token(&source, &branch, "test-token").unwrap_err();
+
+        assert!(!format!("{error:#}").contains("test-token"));
+        assert_eq!(
+            repo.find_remote("origin").unwrap().url(),
+            Some(missing_remote.to_str().unwrap())
+        );
+    }
 }

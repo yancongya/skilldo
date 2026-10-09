@@ -1666,10 +1666,15 @@ pub async fn search_github(
 }
 
 #[tauri::command]
-pub async fn get_github_token(store: State<'_, SkillStore>) -> Result<String, String> {
+pub async fn github_token_is_configured(store: State<'_, SkillStore>) -> Result<bool, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        Ok::<_, anyhow::Error>(store.get_setting("github_token")?.unwrap_or_default())
+        Ok::<_, anyhow::Error>(
+            !store
+                .get_setting("github_token")?
+                .unwrap_or_default()
+                .is_empty(),
+        )
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1720,10 +1725,12 @@ pub fn set_origin_rules(
 #[tauri::command]
 pub async fn get_app_config(store: State<'_, SkillStore>) -> Result<AppConfig, String> {
     let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || load_app_config(&store))
-        .await
-        .map_err(|err| err.to_string())?
-        .map_err(format_anyhow_error)
+    tauri::async_runtime::spawn_blocking(move || {
+        load_app_config(&store).map(|config| config.sanitized_for_export())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
 }
 
 #[tauri::command]
@@ -1732,10 +1739,15 @@ pub async fn save_app_config(
     config: AppConfig,
 ) -> Result<(), String> {
     let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || save_app_config_impl(&store, &config))
-        .await
-        .map_err(|err| err.to_string())?
-        .map_err(format_anyhow_error)
+    tauri::async_runtime::spawn_blocking(move || {
+        let current = load_app_config(&store)?;
+        let mut config = config;
+        config.preserve_missing_secrets_from(&current);
+        save_app_config_impl(&store, &config)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
 }
 
 #[tauri::command]
@@ -1764,7 +1776,7 @@ pub async fn import_config(
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<AppConfig> {
         let mut cfg = parse_config_json(&json)?;
         let current = load_app_config(&store)?;
-        cfg.preserve_missing_secrets_from(&current);
+        cfg.retain_device_local_credentials(&current);
         save_app_config_impl(&store, &cfg)?;
         Ok(cfg)
     })
@@ -1956,6 +1968,14 @@ pub async fn set_webdav_config(
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
         let mut cfg = load_app_config(&store)?;
+        let mut webdav = webdav;
+        if webdav.password.is_empty() {
+            if let Some(current) = &cfg.webdav {
+                if current.url == webdav.url && current.user == webdav.user {
+                    webdav.password = current.password.clone();
+                }
+            }
+        }
         cfg.webdav = Some(webdav);
         save_app_config_impl(&store, &cfg)
     })

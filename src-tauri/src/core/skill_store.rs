@@ -11,6 +11,48 @@ const LEGACY_APP_IDENTIFIERS: &[&str] = &[
     "com.tauri.dev",
 ];
 
+fn clear_auth_credentials(connection: &Connection) -> Result<()> {
+    let has_settings: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_settings {
+        return Ok(());
+    }
+    connection.pragma_update(None, "secure_delete", "ON")?;
+    connection.execute(
+        "UPDATE settings SET value = '' WHERE key = 'github_token'",
+        [],
+    )?;
+    let webdav_config: Option<String> = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'webdav_config'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(raw) = webdav_config {
+        let mut value = serde_json::from_str::<serde_json::Value>(&raw)
+            .context("WebDAV 配置无法安全脱敏，已中止数据库快照")?;
+        let object = value
+            .as_object_mut()
+            .context("WebDAV 配置格式无法安全脱敏，已中止数据库快照")?;
+        if object.contains_key("password") {
+            object.insert(
+                "password".to_string(),
+                serde_json::Value::String(String::new()),
+            );
+        }
+        connection.execute(
+            "UPDATE settings SET value = ?1 WHERE key = 'webdav_config'",
+            [serde_json::to_string(&value)?],
+        )?;
+    }
+    connection.execute_batch("VACUUM")?;
+    Ok(())
+}
+
 // Schema versioning: bump when making changes and add a migration step.
 pub(crate) const SCHEMA_VERSION: i32 = 6;
 
@@ -281,9 +323,37 @@ impl SkillStore {
         result
     }
 
+    /// Produce an in-memory SQLite image suitable for portable backups by
+    /// clearing device-local authentication credentials from the snapshot.
+    pub fn export_backup_database_snapshot(&self) -> Result<Vec<u8>> {
+        let source = Connection::open(&self.db_path)
+            .with_context(|| format!("failed to open db at {:?}", self.db_path))?;
+        let mut snapshot = Connection::open_in_memory().context("创建备份快照失败")?;
+        Backup::new(&source, &mut snapshot)?.run_to_completion(
+            64,
+            std::time::Duration::from_millis(10),
+            None,
+        )?;
+
+        clear_auth_credentials(&snapshot)?;
+
+        let serialized = snapshot.serialize(rusqlite::DatabaseName::Main)?;
+        Ok(serialized.to_vec())
+    }
+
     /// Replace all database contents from a validated SQLite image. The live
     /// database file remains in place, so desktop and CLI paths stay stable.
     pub fn import_database_snapshot(&self, bytes: &[u8]) -> Result<()> {
+        self.import_database_snapshot_impl(bytes, false)
+    }
+
+    /// Import a portable backup after removing credentials from the staged
+    /// copy. This also protects restores of older backups that contain them.
+    pub fn import_backup_database_snapshot(&self, bytes: &[u8]) -> Result<()> {
+        self.import_database_snapshot_impl(bytes, true)
+    }
+
+    fn import_database_snapshot_impl(&self, bytes: &[u8], redact_credentials: bool) -> Result<()> {
         let snapshot_path = self
             .db_path
             .with_extension(format!("restore-{}.db", uuid::Uuid::new_v4()));
@@ -305,6 +375,11 @@ impl SkillStore {
                 anyhow::bail!("快照数据库版本 {version} 高于当前支持版本 {SCHEMA_VERSION}");
             }
             drop(source);
+
+            if redact_credentials {
+                let staged = Connection::open(&snapshot_path).context("打开待恢复快照失败")?;
+                clear_auth_credentials(&staged)?;
+            }
 
             // Run all compatible migrations against the temporary copy first.
             // Never let a structurally invalid but SQLite-readable file replace

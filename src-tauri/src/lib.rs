@@ -267,7 +267,7 @@ pub fn run() {
             commands::publish_managed_skill,
             commands::repoify_skill,
             commands::search_github,
-            commands::get_github_token,
+            commands::github_token_is_configured,
             commands::set_github_token,
             commands::get_origin_rules,
             commands::set_origin_rules,

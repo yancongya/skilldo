@@ -361,16 +361,14 @@ enum ProjectAction {
 enum GithubAction {
     /// Store the GitHub token.
     TokenSet {
-        /// Personal access token.
-        token: String,
+        /// Read the token from stdin instead of exposing it in argv.
+        #[arg(long)]
+        stdin: bool,
     },
-    /// Print the stored GitHub token.
+    /// Report whether a GitHub token is configured without revealing it.
     TokenGet,
-    /// Validate the stored (or provided) token against GitHub.
-    TokenValidate {
-        /// Optional token to validate; defaults to the stored one.
-        token: Option<String>,
-    },
+    /// Validate the stored token against GitHub.
+    TokenValidate,
 }
 
 #[derive(Subcommand)]
@@ -594,11 +592,18 @@ fn execute(cli: Cli) -> Result<()> {
             ConfigAction::Import { path } => cmd_config_import(&store, &path, cli.json),
         },
         Commands::Github { action } => match action {
-            GithubAction::TokenSet { token } => cmd_github_token_set(&store, &token, cli.json),
-            GithubAction::TokenGet => cmd_github_token_get(&store, cli.json),
-            GithubAction::TokenValidate { token } => {
-                cmd_github_token_validate(&store, token.as_deref(), cli.json)
+            GithubAction::TokenSet { stdin } => {
+                if !stdin {
+                    anyhow::bail!(
+                        "请使用 `skilldo github token-set --stdin`，避免令牌出现在命令参数中"
+                    );
+                }
+                let mut token = String::new();
+                std::io::stdin().read_to_string(&mut token)?;
+                cmd_github_token_set(&store, token.trim_end_matches(['\r', '\n']), cli.json)
             }
+            GithubAction::TokenGet => cmd_github_token_get(&store, cli.json),
+            GithubAction::TokenValidate => cmd_github_token_validate(&store, None, cli.json),
         },
         Commands::Author { action } => match action.unwrap_or(AuthorAction::Status) {
             AuthorAction::Status => cmd_author_status(&store, cli.json),
@@ -1251,11 +1256,11 @@ fn cmd_config_set(
     let mut cfg = load_app_config(store)?;
     config_set_value(&mut cfg, key, value)?;
     save_app_config_impl(store, &cfg)?;
+    let canonical_key = canonical_config_key(key);
+    let sensitive = matches!(canonical_key.as_str(), "githubToken" | "webdav.password");
     if json {
-        print_json(
-            &serde_json::json!({"ok": true, "key": key, "sensitive": matches!(key, "github_token" | "webdav.password")}),
-        )?;
-    } else if matches!(key, "github_token" | "webdav.password") {
+        print_json(&serde_json::json!({"ok": true, "key": key, "sensitive": sensitive}))?;
+    } else if sensitive {
         println!("已更新配置: {key} = [已隐藏]");
     } else {
         println!("已更新配置: {key} = {value}");
@@ -1284,7 +1289,7 @@ fn cmd_config_import(store: &SkillStore, path: &str, json: bool) -> Result<()> {
     let raw = std::fs::read_to_string(path).with_context(|| format!("读取文件失败: {path}"))?;
     let mut cfg = parse_config_json(&raw)?;
     let current = load_app_config(store)?;
-    cfg.preserve_missing_secrets_from(&current);
+    cfg.retain_device_local_credentials(&current);
     save_app_config_impl(store, &cfg)?;
     if json {
         print_json(&serde_json::json!({"ok": true, "path": path}))?;
@@ -1530,14 +1535,11 @@ fn cmd_github_token_set(store: &SkillStore, token: &str, json: bool) -> Result<(
 fn cmd_github_token_get(store: &SkillStore, json: bool) -> Result<()> {
     let cfg = load_app_config(store)?;
     if json {
-        print_json(&serde_json::json!({
-            "configured": !cfg.github_token.is_empty(),
-            "token": cfg.github_token
-        }))?;
+        print_json(&serde_json::json!({"configured": !cfg.github_token.is_empty()}))?;
     } else if cfg.github_token.is_empty() {
         println!("(未配置 GitHub token)");
     } else {
-        println!("{}", cfg.github_token);
+        println!("GitHub token 已配置");
     }
     Ok(())
 }
@@ -3123,6 +3125,22 @@ mod tests {
                 }
             }
         ));
+
+        let token_set = Cli::try_parse_from(["skilldo", "github", "token-set", "--stdin"])
+            .expect("parse stdin GitHub token setter");
+        assert!(matches!(
+            token_set.command,
+            Commands::Github {
+                action: GithubAction::TokenSet { stdin: true }
+            }
+        ));
+        assert!(Cli::try_parse_from([
+            "skilldo",
+            "github",
+            "token-set",
+            "do-not-put-secrets-in-argv",
+        ])
+        .is_err());
     }
 
     #[test]

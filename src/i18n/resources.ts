@@ -210,6 +210,8 @@ export const resources = {
       githubTokenPlaceholder: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       githubTokenHint:
         'Optional. Set a GitHub personal access token to increase API rate limits from 60/hr to 5,000/hr.',
+      githubTokenStoredHint:
+        'A token is saved. Enter a new token to replace it; the saved value is never sent to the interface.',
       githubTokenValidate: 'Validate',
       githubTokenValidating: 'Validating…',
       githubTokenValid: 'Token valid',
@@ -298,10 +300,11 @@ export const resources = {
 
       webdav: 'WebDAV backup',
       webdavHint:
-        'Creates a lossless database snapshot on WebDAV. The file includes GitHub and WebDAV credentials; protect access to the remote directory.',
+        'Creates a complete database snapshot on WebDAV with GitHub and WebDAV passwords removed. Credentials remain local to this device.',
       webdavUrl: 'Server URL',
       webdavUser: 'Username',
       webdavPassword: 'Password',
+      webdavPasswordPlaceholder: 'Leave blank to keep the saved password',
       webdavRemoteDir: 'Remote directory',
       saveWebdav: 'Save WebDAV',
       profileSync: 'Cross-device profile',
@@ -866,6 +869,7 @@ export const resources = {
       githubTokenPlaceholder: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       githubTokenHint:
         '可选。设置 GitHub 个人访问令牌，可将 API 速率限制从 60 次/小时提升到 5,000 次/小时。',
+      githubTokenStoredHint: '已保存 GitHub Token。输入新 Token 可替换；已保存的值不会返回到界面。',
       githubTokenValidate: '校验',
       githubTokenValidating: '校验中…',
       githubTokenValid: 'Token 有效',
@@ -951,10 +955,11 @@ export const resources = {
       importConfigConfirm: '导入将覆盖当前所有设置，确定继续吗？',
 
       webdav: 'WebDAV 备份',
-      webdavHint: '在 WebDAV 上创建无损数据库快照。文件包含 GitHub 和 WebDAV 凭据，请严格保护远程目录访问权限。',
+      webdavHint: '在 WebDAV 上创建完整数据库快照，但会移除 GitHub Token 与 WebDAV 密码。凭据仅保存在本机。',
       webdavUrl: '服务器地址',
       webdavUser: '用户名',
       webdavPassword: '密码',
+      webdavPasswordPlaceholder: '留空则保留已保存的密码',
       webdavRemoteDir: '远程目录',
       saveWebdav: '保存 WebDAV',
       profileSync: '跨设备 Profile',

@@ -115,7 +115,7 @@ impl RestoreReport {
 /// Build the combined backup blob (pretty JSON) from the current store.
 pub fn export_full_backup(store: &SkillStore) -> Result<String> {
     let config = load_app_config(store)?;
-    let database_bytes = store.export_database_snapshot()?;
+    let database_bytes = store.export_backup_database_snapshot()?;
     let database = DatabaseSnapshot {
         encoding: "base64".to_string(),
         sha256: hex::encode(Sha256::digest(&database_bytes)),
@@ -150,7 +150,7 @@ pub fn export_full_backup(store: &SkillStore) -> Result<String> {
         .unwrap_or(0);
     let backup = FullBackup {
         backup_version: 2,
-        config,
+        config: config.sanitized_for_export(),
         skills,
         database: Some(database),
         exported_at: secs.to_string(),
@@ -189,7 +189,14 @@ pub fn restore_full_backup(store: &SkillStore, raw: &str) -> Result<RestoreRepor
         if checksum != database.sha256 {
             anyhow::bail!("数据库快照 SHA256 校验失败");
         }
-        store.import_database_snapshot(&bytes)?;
+        let current_config = load_app_config(store)?;
+        store.import_backup_database_snapshot(&bytes)?;
+        let mut restored_config = load_app_config(store)?;
+        // Credentials are device-local. Never trust credential values from a
+        // backup (including historical v2 snapshots); retain only this
+        // device's current credential configuration.
+        restored_config.retain_device_local_credentials(&current_config);
+        save_app_config_impl(store, &restored_config)?;
         return Ok(RestoreReport {
             backup_version: backup.backup_version,
             database_restored: true,
@@ -197,7 +204,9 @@ pub fn restore_full_backup(store: &SkillStore, raw: &str) -> Result<RestoreRepor
         });
     }
     let current_config = load_app_config(store)?;
-    backup.config.preserve_missing_secrets_from(&current_config);
+    backup
+        .config
+        .retain_device_local_credentials(&current_config);
     save_app_config_impl(store, &backup.config)?;
 
     let existing: HashMap<String, String> = store
@@ -377,11 +386,17 @@ mod tests {
     }
 
     #[test]
-    fn v2_backup_restores_exact_database_settings() {
+    fn v2_backup_redacts_credentials_and_restore_keeps_local_credentials() {
         let source_dir = tempfile::tempdir().unwrap();
         let source = SkillStore::new(source_dir.path().join("source.db"));
         source.ensure_schema().unwrap();
-        source.set_setting("github_token", "secret-token").unwrap();
+        source.set_setting("github_token", "source-token").unwrap();
+        source
+            .set_setting(
+                "webdav_config",
+                r#"{"url":"https://dav.example.test","user":"backup-user","password":"source-password","remoteDir":"skilldo"}"#,
+            )
+            .unwrap();
         source
             .set_setting("custom_future_setting", "preserved")
             .unwrap();
@@ -390,19 +405,40 @@ mod tests {
         let parsed = parse_full_backup(&raw).unwrap();
         assert_eq!(parsed.backup_version, 2);
         assert!(parsed.database.is_some());
-        assert!(raw.contains("secret-token"));
+        assert!(!raw.contains("source-token"));
+        assert!(!raw.contains("source-password"));
+        let snapshot = BASE64
+            .decode(&parsed.database.as_ref().unwrap().bytes)
+            .unwrap();
+        assert!(!snapshot
+            .windows(b"source-token".len())
+            .any(|window| window == b"source-token"));
+        assert!(!snapshot
+            .windows(b"source-password".len())
+            .any(|window| window == b"source-password"));
 
         let target_dir = tempfile::tempdir().unwrap();
         let target = SkillStore::new(target_dir.path().join("target.db"));
         target.ensure_schema().unwrap();
+        target.set_setting("github_token", "local-token").unwrap();
+        target
+            .set_setting(
+                "webdav_config",
+                r#"{"url":"https://local.example.test","user":"local-user","password":"local-password","remoteDir":"local"}"#,
+            )
+            .unwrap();
         let report = restore_full_backup(&target, &raw).unwrap();
 
         assert!(report.database_restored);
         assert_eq!(report.backup_version, 2);
         assert_eq!(
             target.get_setting("github_token").unwrap().as_deref(),
-            Some("secret-token")
+            Some("local-token")
         );
+        let webdav: serde_json::Value =
+            serde_json::from_str(&target.get_setting("webdav_config").unwrap().unwrap()).unwrap();
+        assert_eq!(webdav["password"], "local-password");
+        assert_eq!(webdav["url"], "https://local.example.test");
         assert_eq!(
             target
                 .get_setting("custom_future_setting")
@@ -410,5 +446,76 @@ mod tests {
                 .as_deref(),
             Some("preserved")
         );
+    }
+
+    #[test]
+    fn v2_backup_restore_does_not_import_credentials_when_local_is_unconfigured() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = SkillStore::new(source_dir.path().join("source.db"));
+        source.ensure_schema().unwrap();
+        source.set_setting("github_token", "source-token").unwrap();
+        source
+            .set_setting(
+                "webdav_config",
+                r#"{"url":"https://dav.example.test","user":"user","password":"source-password","remoteDir":"skilldo"}"#,
+            )
+            .unwrap();
+        let raw = export_full_backup(&source).unwrap();
+
+        let target_dir = tempfile::tempdir().unwrap();
+        let target = SkillStore::new(target_dir.path().join("target.db"));
+        target.ensure_schema().unwrap();
+        restore_full_backup(&target, &raw).unwrap();
+
+        assert_eq!(
+            target.get_setting("github_token").unwrap().as_deref(),
+            Some("")
+        );
+        let webdav: serde_json::Value =
+            serde_json::from_str(&target.get_setting("webdav_config").unwrap().unwrap()).unwrap();
+        assert_eq!(webdav["password"], "");
+    }
+
+    #[test]
+    fn restore_redacts_credentials_from_a_legacy_v2_snapshot() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = SkillStore::new(source_dir.path().join("source.db"));
+        source.ensure_schema().unwrap();
+        source.set_setting("github_token", "legacy-token").unwrap();
+        source
+            .set_setting(
+                "webdav_config",
+                r#"{"url":"https://dav.example.test","user":"user","password":"legacy-password","remoteDir":"skilldo"}"#,
+            )
+            .unwrap();
+
+        // Build the exact shape written by the older v2 implementation.
+        let database_bytes = source.export_database_snapshot().unwrap();
+        let mut legacy = FullBackup {
+            backup_version: 2,
+            config: load_app_config(&source).unwrap(),
+            skills: Vec::new(),
+            database: Some(DatabaseSnapshot {
+                encoding: "base64".to_string(),
+                sha256: hex::encode(Sha256::digest(&database_bytes)),
+                bytes: BASE64.encode(database_bytes),
+            }),
+            exported_at: "0".to_string(),
+        };
+        legacy.config.github_token = "legacy-token".to_string();
+        let raw = serde_json::to_string(&legacy).unwrap();
+
+        let target_dir = tempfile::tempdir().unwrap();
+        let target = SkillStore::new(target_dir.path().join("target.db"));
+        target.ensure_schema().unwrap();
+        restore_full_backup(&target, &raw).unwrap();
+
+        assert_eq!(
+            target.get_setting("github_token").unwrap().as_deref(),
+            Some("")
+        );
+        let webdav: serde_json::Value =
+            serde_json::from_str(&target.get_setting("webdav_config").unwrap().unwrap()).unwrap();
+        assert_eq!(webdav["password"], "");
     }
 }

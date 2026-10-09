@@ -192,8 +192,8 @@ npm run dev                # 仅 Web 预览（无后端）
 | `skilldo delete --skill <name> [--yes]` | 删除技能及其所有目标 |
 | `skilldo push --skill <name> [-m "msg"]` | 提交并推送 git 管理的技能 |
 | `skilldo sources list [--json]` | 列出探索来源 |
-| `skilldo backup file [path] [--json]` | 将无损 SQLite 快照导出为单个 JSON 文件 |
-| `skilldo backup webdav [--json]` | 上传无损快照（含已配置凭据） |
+| `skilldo backup file [path] [--json]` | 导出不含本机凭据的完整 SQLite 快照 |
+| `skilldo backup webdav [--json]` | 上传不含本机凭据的完整快照 |
 | `skilldo restore file <path> [--json]` | 校验并恢复本地快照 |
 | `skilldo restore webdav [--json]` | 校验并恢复 WebDAV 快照 |
 | `skilldo profile status [--json]` | 预览 WebDAV profile 合并（不写入） |
@@ -269,9 +269,9 @@ HTTPS 地址中的 DNS 主机名必须与服务器证书的 Subject Alternative 
 
 若旧导入被错误记录为本地，先运行 `skilldo repair sources --json`。审计会读取标准 `.agents/.skill-lock.json` 溯源、内容匹配的 Codex 插件清单与真实 Git worktree。审阅结构化报告后，使用 `skilldo repair sources --apply --json`。存在歧义的中心副本保持未解决。对缺少本地元数据的已确认来源，使用 `repair source`；SkillDo 会 clone 远程并验证所选目录含有匹配的 `SKILL.md` 后再写入。来源修复会保留已有的 `publish_strategy=none`，不会仅因仓库所有者匹配就静默开启 Git 推送。
 
-如果旧版手动覆盖把 Git Skill 固定为 `local_copy`，先预览 `skilldo repair origin --skill <名称> --url <已登记仓库> --subpath <已登记目录> --dry-run --json`。应用前先用 `skilldo backup file <私有路径> --json` 创建完整状态备份；备份包含已保存的凭据，必须保存在私有位置且不要分享。确认预览后再加 `--apply`。迁移会验证登记的 Git 远端和 Skill 子目录，并在一个事务中只更新来源记录，保留 Skill 行和所有目标配置。
+如果旧版手动覆盖把 Git Skill 固定为 `local_copy`，先预览 `skilldo repair origin --skill <名称> --url <已登记仓库> --subpath <已登记目录> --dry-run --json`。应用前先用 `skilldo backup file <路径> --json` 创建完整状态备份；新备份不包含 GitHub 与 WebDAV 凭据，恢复时保留当前设备的凭据。确认预览后再加 `--apply`。迁移会验证登记的 Git 远端和 Skill 子目录，并在一个事务中只更新来源记录，保留 Skill 行和所有目标配置。
 
-独立的 `skilldo-backup.json` v2 格式将一致的 SQLite 镜像以 Base64 + SHA-256 校验和嵌入。它保留每个数据库表、ID、时间戳、设置、标签、来源记录、目标、发现行、索引与序列。应要求它也会包含 GitHub 与 WebDAV 凭据，因此备份位置必须私有。仓库工作树与本地独有技能文件是文件系统内容而非数据库数据；请用 Profile/Git 流程在其他电脑上重建仓库技能。
+独立的 `skilldo-backup.json` v2 格式将一致的 SQLite 镜像以 Base64 + SHA-256 校验和嵌入。它保留数据库数据，同时清除 GitHub 与 WebDAV 密码。恢复会保留当前设备的凭据，旧版 v2 备份中的凭据也不会导入。仓库工作树与本地独有技能文件是文件系统内容而非数据库数据；请用 Profile/Git 流程在其他电脑上重建仓库技能。
 
 <p align="right">(<a href="#readme-top">回到顶部</a>)</p>
 

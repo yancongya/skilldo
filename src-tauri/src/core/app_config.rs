@@ -173,6 +173,17 @@ impl AppConfig {
             }
         }
     }
+
+    /// Keep authentication credentials exclusively from this device when
+    /// restoring a backup or importing an external configuration.
+    pub fn retain_device_local_credentials(&mut self, current: &Self) {
+        self.github_token = current.github_token.clone();
+        if current.webdav.is_some() {
+            self.webdav = current.webdav.clone();
+        } else if let Some(webdav) = &mut self.webdav {
+            webdav.password.clear();
+        }
+    }
 }
 
 /// Serialize a config to a pretty JSON string for backup export.
@@ -445,6 +456,33 @@ mod tests {
         let mut imported = current.sanitized_for_export();
         imported.webdav.as_mut().unwrap().url = "https://other.example.test".to_string();
         imported.preserve_missing_secrets_from(&current);
+        assert_eq!(imported.webdav.unwrap().password, "");
+    }
+
+    #[test]
+    fn external_config_import_never_replaces_device_credentials() {
+        let current = config_with_secrets();
+        let mut imported = current.clone();
+        imported.github_token = "imported-token".to_string();
+        imported.webdav.as_mut().unwrap().password = "imported-password".to_string();
+        imported.webdav.as_mut().unwrap().url = "https://other.example.test".to_string();
+
+        imported.retain_device_local_credentials(&current);
+
+        assert_eq!(imported.github_token, "github-secret");
+        let webdav = imported.webdav.unwrap();
+        assert_eq!(webdav.password, "webdav-secret");
+        assert_eq!(webdav.url, "https://dav.example.test");
+    }
+
+    #[test]
+    fn external_config_import_clears_credentials_when_device_has_none() {
+        let current = AppConfig::default();
+        let mut imported = config_with_secrets();
+
+        imported.retain_device_local_credentials(&current);
+
+        assert!(imported.github_token.is_empty());
         assert_eq!(imported.webdav.unwrap().password, "");
     }
 }

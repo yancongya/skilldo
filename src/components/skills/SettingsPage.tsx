@@ -33,6 +33,7 @@ type SettingsPageProps = {
   gitCacheCleanupDays: number
   gitCacheTtlSecs: number
   githubToken: string
+  githubTokenConfigured: boolean
   originRules: OriginRules
   toolDirOverrides: ToolDirOverride[]
   onPickStoragePath: () => void
@@ -70,6 +71,7 @@ const SettingsPage = ({
   gitCacheCleanupDays,
   gitCacheTtlSecs,
   githubToken,
+  githubTokenConfigured,
   originRules,
   toolDirOverrides,
   onPickStoragePath,
@@ -133,6 +135,7 @@ const SettingsPage = ({
         <GithubTokenSection
           isTauri={isTauri}
           githubToken={githubToken}
+          githubTokenConfigured={githubTokenConfigured}
           onGithubTokenChange={onGithubTokenChange}
           onValidateGithubToken={onValidateGithubToken}
           t={t}

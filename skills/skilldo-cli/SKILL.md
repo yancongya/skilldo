@@ -27,7 +27,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-The installers select the current architecture, verify the release SHA-256, place `skilldo` on a user-local path, and run `skilldo --version`. On a new device, configure WebDAV before calling `device status` or `device pull`; pass the password through `config set webdav.password --stdin` and never print it.
+The installers select the current architecture, verify the release SHA-256, place `skilldo` on a user-local path, and run `skilldo --version`. On a new device, configure WebDAV before calling `device status` or `device pull`; pass the password through `config set webdav.password --stdin` and never print it. Store GitHub tokens with `skilldo github token-set --stdin`; never pass a token as a positional argument. `github token-get` reports only whether a token is configured, and `github token-validate` checks the stored token without revealing it.
 
 ## When to use
 
@@ -53,8 +53,8 @@ The installers select the current architecture, verify the release SHA-256, plac
 | `skilldo update --all [--yes]` | Update all git-managed skills |
 | `skilldo delete --skill <name> [--yes]` | Delete a skill and remove all sync targets |
 | `skilldo push --skill <name> [-m "msg"]` | Commit and push changes for a git-managed skill |
-| `skilldo backup file [path] [--json]` | Write a lossless database snapshot JSON |
-| `skilldo backup webdav [--json]` | Upload the snapshot, including stored credentials |
+| `skilldo backup file [path] [--json]` | Write a full database snapshot without local authentication credentials |
+| `skilldo backup webdav [--json]` | Upload the full snapshot without local authentication credentials |
 | `skilldo restore file <path> [--json]` | Restore a validated local snapshot |
 | `skilldo restore webdav [--json]` | Restore the validated WebDAV snapshot |
 | `skilldo profile check [--json]` | Read-only GET to verify saved WebDAV access; 404 means reachable but no Profile exists |
@@ -75,7 +75,7 @@ When WebDAV is unavailable, `profile export <path>` creates a local portable des
 
 For project-owned Skills, `track-local` points SkillDo at the canonical Skill-only directory inside the local Git checkout. It validates `SKILL.md`, rejects project roots containing unrelated files, and records the Git origin as provenance. Then `update --skill` copies that directory into the SkillDo central copy and keeps the registered symlinks. Git fetch/pull remains a separate user-controlled repository operation; `update --all` continues to update remote Git-managed Skills only.
 
-Use `repair origin` only when a Git Skill already has the same registered remote and subpath but an older manual override changed it to `local_copy`. Preview with `--dry-run`, then make a private full-state backup with `skilldo backup file <private-path> --json` before applying. The backup includes stored credentials: keep it private and never share it. The migration re-clones and verifies the remote and Skill directory, then atomically updates only origin metadata; Skill IDs, names, source rows, tags, and target links stay intact.
+Use `repair origin` only when a Git Skill already has the same registered remote and subpath but an older manual override changed it to `local_copy`. Preview with `--dry-run`, then make a full-state backup with `skilldo backup file <path> --json` before applying. New backups exclude stored GitHub and WebDAV credentials; restore keeps credentials configured on the current device. The migration re-clones and verifies the remote and Skill directory, then atomically updates only origin metadata; Skill IDs, names, source rows, tags, and target links stay intact.
 
 `repair sources` only promotes a local Skill to Git provenance when its source subpath contains tracked files and has no uncommitted or untracked changes. A dirty or newly added project Skill remains a local source and is reported as unresolved until the repository work is committed and the upstream path is verified. This prevents project metadata or lockfiles from overriding active local work.
 

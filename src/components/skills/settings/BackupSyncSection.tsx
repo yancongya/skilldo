@@ -139,6 +139,7 @@ const BackupSyncSection = memo(function BackupSyncSection({
               <input
                 type="password"
                 value={wdPassword}
+                placeholder={t('webdavPasswordPlaceholder')}
                 onChange={(e) => setWdPassword(e.target.value)}
               />
             </label>

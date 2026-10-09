@@ -5,6 +5,7 @@ import type { GithubTokenStatusDto } from '../types'
 type GithubTokenSectionProps = {
   isTauri: boolean
   githubToken: string
+  githubTokenConfigured: boolean
   onGithubTokenChange: (token: string) => void
   onValidateGithubToken: (token: string) => Promise<GithubTokenStatusDto>
   t: TFunction
@@ -13,6 +14,7 @@ type GithubTokenSectionProps = {
 const GithubTokenSection = memo(function GithubTokenSection({
   isTauri,
   githubToken,
+  githubTokenConfigured,
   onGithubTokenChange,
   onValidateGithubToken,
   t,
@@ -57,7 +59,7 @@ const GithubTokenSection = memo(function GithubTokenSection({
           value={localToken}
           onChange={(e) => setLocalToken(e.target.value)}
           onBlur={() => {
-            if (localToken !== githubToken) {
+            if (localToken.trim() && localToken !== githubToken) {
               onGithubTokenChange(localToken)
             }
           }}
@@ -71,7 +73,9 @@ const GithubTokenSection = memo(function GithubTokenSection({
           {validating ? t('githubTokenValidating') : t('githubTokenValidate')}
         </button>
       </div>
-      <div className="settings-helper">{t('githubTokenHint')}</div>
+      <div className="settings-helper">
+        {githubTokenConfigured ? t('githubTokenStoredHint') : t('githubTokenHint')}
+      </div>
       {tokenStatus && (
         <div
           className={`settings-token-status ${tokenStatus.valid ? 'ok' : 'err'}`}

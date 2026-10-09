@@ -553,8 +553,8 @@ function App() {
 
   useEffect(() => {
     if (!isTauri) return
-    invokeTauri<string>('get_github_token')
-      .then((token) => setGithubToken(token))
+    invokeTauri<boolean>('github_token_is_configured')
+      .then((configured) => setGithubTokenConfigured(configured))
       .catch(() => {})
   }, [isTauri, invokeTauri])
 
@@ -832,6 +832,7 @@ function App() {
   const [gitCacheCleanupDays, setGitCacheCleanupDays] = useState<number>(30)
   const [gitCacheTtlSecs, setGitCacheTtlSecs] = useState<number>(60)
   const [githubToken, setGithubToken] = useState<string>('')
+  const [githubTokenConfigured, setGithubTokenConfigured] = useState(false)
   const [originRules, setOriginRules] = useState<OriginRules>({
     myGitOwners: [],
     myGitRepos: [],
@@ -947,6 +948,8 @@ function App() {
       if (!isTauri) return
       try {
         await invokeTauri('set_github_token', { token: nextToken })
+        setGithubTokenConfigured(nextToken.trim().length > 0)
+        setGithubToken('')
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       }
@@ -3212,6 +3215,7 @@ function App() {
             onGitCacheTtlSecsChange={handleGitCacheTtlSecsChange}
             onClearGitCacheNow={handleClearGitCacheNow}
             githubToken={githubToken}
+            githubTokenConfigured={githubTokenConfigured}
             onGithubTokenChange={handleGithubTokenChange}
             originRules={originRules}
             onOriginRulesChange={handleOriginRulesChange}

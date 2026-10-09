@@ -185,14 +185,17 @@ All commands support `--json` for agent-friendly structured output and `--yes` t
 | `skilldo sync --skill <name> --tool <key> [--scope project --project-path <path>]` | Sync globally or into one project |
 | `skilldo unsync --skill <name> --tool <key> [--scope project --project-path <path>]` | Remove a global or project target |
 | `skilldo config get\|set <key> [value] [--stdin] [--json]` | Read/write scalar or structured config; use stdin for secrets |
+| `skilldo github token-set --stdin` | Store a token from stdin without placing it in command arguments |
+| `skilldo github token-get` | Report whether a token is configured; never reveal its value |
+| `skilldo github token-validate` | Validate the stored token |
 | `skilldo update --skill <name> [--yes]` | Update from source (auto git pull) |
 | `skilldo track-local --skill <name> --path <dir> [--yes]` | Track a validated local Skill directory; preserve old Git provenance without performing Git operations |
 | `skilldo update --all [--yes]` | Update all git-managed skills |
 | `skilldo delete --skill <name> [--yes]` | Delete skill and all targets |
 | `skilldo push --skill <name> [-m "msg"]` | Commit & push git-managed skill |
 | `skilldo sources list [--json]` | List explore sources |
-| `skilldo backup file [path] [--json]` | Export a lossless SQLite snapshot in one JSON file |
-| `skilldo backup webdav [--json]` | Upload the lossless snapshot, including configured credentials |
+| `skilldo backup file [path] [--json]` | Export a complete SQLite snapshot without local authentication credentials |
+| `skilldo backup webdav [--json]` | Upload the complete snapshot without local authentication credentials |
 | `skilldo restore file <path> [--json]` | Validate and restore a local snapshot |
 | `skilldo restore webdav [--json]` | Validate and restore the WebDAV snapshot |
 | `skilldo profile check [--json]` | Verify WebDAV Profile access using a read-only GET |
@@ -265,9 +268,9 @@ Passwords, WebDAV credentials, storage paths, custom scan directories, per-tool 
 
 If an older import was incorrectly recorded as local, run `skilldo repair sources --json` first. The audit reads standard `.agents/.skill-lock.json` provenance, content-matched Codex plugin manifests, and real Git worktrees. Review the structured report, then use `skilldo repair sources --apply --json`. Ambiguous central copies remain unresolved. For a confirmed source that lacks local metadata, use `repair source`; SkillDo clones the remote and verifies the selected directory contains a matching `SKILL.md` before writing. When a local checkout is the desired authority, use `track-local` and then `update --skill`; this copies the current working tree without fetching or resetting it. Source repair preserves existing `publish_strategy=none`; it never grants Git push capability just because a repository owner matches.
 
-For a Git Skill whose older manual override pinned updates to `local_copy`, preview `skilldo repair origin --skill <name> --url <recorded-repository> --subpath <recorded-path> --dry-run --json`. Before applying, create a private full-state backup with `skilldo backup file <private-path> --json`; backups contain stored credentials and must not be shared. Then rerun the reviewed migration with `--apply`. The migration verifies the registered remote and Skill directory, updates only the origin record in one transaction, and leaves the Skill record and all target registrations intact.
+For a Git Skill whose older manual override pinned updates to `local_copy`, preview `skilldo repair origin --skill <name> --url <recorded-repository> --subpath <recorded-path> --dry-run --json`. Before applying, create a full-state backup with `skilldo backup file <path> --json`; new backups exclude stored GitHub and WebDAV credentials. Then rerun the reviewed migration with `--apply`. The migration verifies the registered remote and Skill directory, updates only the origin record in one transaction, and leaves the Skill record and all target registrations intact.
 
-The separate `skilldo-backup.json` v2 format embeds a consistent SQLite image as Base64 with a SHA-256 checksum. It preserves every database table, ID, timestamp, setting, tag, origin record, target, discovery row, index, and sequence. At the user's request it also includes GitHub and WebDAV credentials, so the backup location must be private. Repository working trees and local-only skill files are filesystem content, not database data; use the Profile/Git flow to reconstruct repository skills on another computer.
+The separate `skilldo-backup.json` v2 format embeds a consistent SQLite image as Base64 with a SHA-256 checksum. It preserves database data while clearing GitHub and WebDAV passwords. Restore keeps credentials configured on the current device and ignores credentials in older v2 files. Repository working trees and local-only skill files are filesystem content, not database data; use the Profile/Git flow to reconstruct repository skills on another computer.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
