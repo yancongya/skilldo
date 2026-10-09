@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-10-09
+
+### 更新
+- 改进 WebDAV TLS 错误诊断
+
 ## [0.7.11] - 2026-10-09
 
 ### 修复
