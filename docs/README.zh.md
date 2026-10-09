@@ -265,7 +265,7 @@ skilldo device publish --yes --json
 
 密码、WebDAV 凭据、存储路径、自定义扫描目录、按工具路径覆盖、项目目标与本地独有 Skills 永远不会进入 Profile。新设备必须先输入一次 WebDAV 凭据才能下载任何内容。`config get` 会刻意脱敏密码。删除操作在未显式确认前只报告为待定。并发修改按各设备最近一次同步基线合并；上传使用 WebDAV ETags 防止覆盖更新的远端 revision。
 
-若旧导入被错误记录为本地，先运行 `skilldo repair sources --json`。审计会读取标准 `.agents/.skill-lock.json` 溯源、内容匹配的 Codex 插件清单与真实 Git worktree。审阅结构化报告后，使用 `skilldo repair sources --apply --json`。存在歧义的中心副本保持未解决。对缺少本地元数据的已确认来源，使用 `repair source`；SkillDo 会 clone 远程并验证所选目录含有匹配的 `SKILL.md` 后再写入。
+若旧导入被错误记录为本地，先运行 `skilldo repair sources --json`。审计会读取标准 `.agents/.skill-lock.json` 溯源、内容匹配的 Codex 插件清单与真实 Git worktree。审阅结构化报告后，使用 `skilldo repair sources --apply --json`。存在歧义的中心副本保持未解决。对缺少本地元数据的已确认来源，使用 `repair source`；SkillDo 会 clone 远程并验证所选目录含有匹配的 `SKILL.md` 后再写入。来源修复会保留已有的 `publish_strategy=none`，不会仅因仓库所有者匹配就静默开启 Git 推送。
 
 如果旧版手动覆盖把 Git Skill 固定为 `local_copy`，先预览 `skilldo repair origin --skill <名称> --url <已登记仓库> --subpath <已登记目录> --dry-run --json`。应用前先用 `skilldo backup file <私有路径> --json` 创建完整状态备份；备份包含已保存的凭据，必须保存在私有位置且不要分享。确认预览后再加 `--apply`。迁移会验证登记的 Git 远端和 Skill 子目录，并在一个事务中只更新来源记录，保留 Skill 行和所有目标配置。
 

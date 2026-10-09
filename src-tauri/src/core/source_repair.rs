@@ -312,6 +312,11 @@ fn detected_origin_record(
     let rules = get_origin_rules_impl(store)?;
     let (owner, repo) = parse_github_owner_repo(&detected.remote_url);
     let is_mine = matches_my_git_rules(owner.as_deref(), repo.as_deref(), &rules);
+    // Source repair may infer repository ownership, but it must not grant
+    // Git push capability to an origin that was explicitly kept pull-only.
+    let preserve_pull_only = previous
+        .as_ref()
+        .is_some_and(|origin| origin.publish_strategy == "none");
     Ok(SkillOriginRecord {
         skill_id: skill.id.clone(),
         origin_kind: "git".to_string(),
@@ -327,7 +332,7 @@ fn detected_origin_record(
         branch,
         subpath: detected.subpath.clone(),
         update_strategy: "git_pull".to_string(),
-        publish_strategy: if is_mine {
+        publish_strategy: if is_mine && !preserve_pull_only {
             "git_push".to_string()
         } else {
             "none".to_string()
@@ -1515,7 +1520,74 @@ mod tests {
         assert_eq!(origin.origin_role, "mine");
         assert_eq!(origin.owner.as_deref(), Some("yancongya"));
         assert_eq!(origin.repo.as_deref(), Some("cli-anything"));
-        assert_eq!(origin.publish_strategy, "git_push");
+        assert_eq!(origin.publish_strategy, "none");
+    }
+
+    #[test]
+    fn repair_treats_verified_pull_only_origin_as_portable_without_enabling_push() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        store
+            .set_setting(
+                super::super::app_config::ORIGIN_RULES_KEY,
+                r#"{"myGitOwners":["yancongya"]}"#,
+            )
+            .unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "migrated-skill".to_string(),
+                name: "my-skill".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/yancongya/my-skill.git".to_string()),
+                source_subpath: Some("skills/my-skill".to_string()),
+                source_revision: Some("verified-revision".to_string()),
+                central_path: db_dir
+                    .path()
+                    .join("central/my-skill")
+                    .to_string_lossy()
+                    .to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 2,
+                last_sync_at: None,
+                last_seen_at: 3,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+        store
+            .upsert_skill_origin(&SkillOriginRecord {
+                skill_id: "migrated-skill".to_string(),
+                origin_kind: "git".to_string(),
+                origin_role: "mine".to_string(),
+                provider: Some("git".to_string()),
+                remote_url: Some("https://github.com/yancongya/my-skill.git".to_string()),
+                owner: Some("yancongya".to_string()),
+                repo: Some("my-skill".to_string()),
+                branch: Some("main".to_string()),
+                subpath: Some("skills/my-skill".to_string()),
+                update_strategy: "git_pull".to_string(),
+                publish_strategy: "none".to_string(),
+                manual_override: false,
+                reason: Some(
+                    "Git remote and Skill subpath verified; migrated to Git updates".to_string(),
+                ),
+                updated_at: 4,
+            })
+            .unwrap();
+
+        let report = repair_skill_sources(&store, false).unwrap();
+        assert_eq!(report.repairable, 0);
+        assert_eq!(report.already_portable, 1);
+        assert_eq!(
+            store
+                .get_skill_origin("migrated-skill")
+                .unwrap()
+                .unwrap()
+                .publish_strategy,
+            "none"
+        );
     }
 
     #[test]

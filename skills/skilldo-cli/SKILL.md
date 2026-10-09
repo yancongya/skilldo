@@ -79,6 +79,8 @@ Use `repair origin` only when a Git Skill already has the same registered remote
 
 `repair sources` only promotes a local Skill to Git provenance when its source subpath contains tracked files and has no uncommitted or untracked changes. A dirty or newly added project Skill remains a local source and is reported as unresolved until the repository work is committed and the upstream path is verified. This prevents project metadata or lockfiles from overriding active local work.
 
+Source repair preserves an existing `publish_strategy=none` even when repository ownership rules classify the repository as yours. It must not silently grant Git push capability; change publish access only through an explicit origin setting.
+
 > **`delete` is destructive and cannot be undone.** It removes target paths and the central copy. Retiring a Skill file in Git does not remove its existing central copy or target links. Review the target list and back up first.
 
 ## Global flags

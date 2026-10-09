@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+- fix(source-repair): 保留 Git 来源的 pull-only 推送策略，归属重校验不得静默授予 `git_push`。
+
 ## [0.7.10] - 2026-10-09
 
 ### 更新
