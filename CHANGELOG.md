@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-10-09
+
+### 更新
+- 避免备份清单静默丢失同步目标
+- 修复设备状态查询的只读副作用
+
 ## [0.7.12] - 2026-10-09
 
 ### 更新
