@@ -516,14 +516,16 @@ mod tests {
     {
         let (_dir, store) = test_store();
         store.set_setting("github_token", "legacy-github").unwrap();
-        let mut config = AppConfig::default();
-        config.github_token = "incoming-github".to_owned();
-        config.webdav = Some(WebDavConfig {
-            url: "https://dav.example.test".to_owned(),
-            user: "user".to_owned(),
-            password: "legacy-webdav".to_owned(),
-            remote_dir: "skilldo".to_owned(),
-        });
+        let config = AppConfig {
+            github_token: "incoming-github".to_owned(),
+            webdav: Some(WebDavConfig {
+                url: "https://dav.example.test".to_owned(),
+                user: "user".to_owned(),
+                password: "legacy-webdav".to_owned(),
+                remote_dir: "skilldo".to_owned(),
+            }),
+            ..AppConfig::default()
+        };
 
         save_app_config_impl(&store, &config).unwrap();
 

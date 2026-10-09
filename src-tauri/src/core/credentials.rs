@@ -257,10 +257,12 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
+    type RunnerCall = (String, Vec<String>, Option<Vec<u8>>);
+
     #[derive(Clone)]
     struct FakeRunner {
         response: Arc<Mutex<Result<CommandOutput, CommandRunError>>>,
-        calls: Arc<Mutex<Vec<(String, Vec<String>, Option<Vec<u8>>)>>>,
+        calls: Arc<Mutex<Vec<RunnerCall>>>,
     }
 
     impl FakeRunner {
