@@ -23,6 +23,7 @@ use serde::Serialize;
 
 use crate::core::config::PRODUCT_NAME;
 use crate::core::content_hash::hash_dir;
+use crate::core::credentials::{BwVaultCredentialProvider, CredentialProvider, GITHUB_TOKEN_ALIAS};
 use crate::core::skill_store::{SkillOriginRecord, SkillStore};
 
 #[derive(Debug, Serialize)]
@@ -140,36 +141,53 @@ fn push_with_token(dir: &Path, branch: &str, token: &str) -> Result<()> {
 
 /// Resolve the GitHub token used for API calls and publishing.
 ///
-/// Preference order:
-///   1. An explicit token passed by the caller (highest priority).
-///   2. The token stored in SkillDo's own settings (`github_token`).
-///   3. The `gh` CLI login (`gh auth token`) — SkillDo reuses the user's
-///      existing authentication instead of requiring a separately managed token.
-fn resolve_github_token(store: &SkillStore, explicit: Option<&str>) -> Result<String> {
+/// A configured vault alias is authoritative: if it cannot be read, fail
+/// safely instead of silently using another identity from `gh`.
+fn resolve_github_token_with(
+    provider: &dyn CredentialProvider,
+    explicit: Option<&str>,
+    gh_token: impl FnOnce() -> Result<String>,
+) -> Result<String> {
     if let Some(t) = explicit {
         let t = t.trim();
         if !t.is_empty() {
             return Ok(t.to_string());
         }
     }
-    if let Some(stored) = store.get_setting("github_token")? {
-        let stored = stored.trim();
-        if !stored.is_empty() {
-            return Ok(stored.to_string());
-        }
+
+    let alias_is_configured = provider.alias_exists(GITHUB_TOKEN_ALIAS).map_err(|_| {
+        anyhow::anyhow!(
+            "Could not check the GitHub credential in bwvault. Verify that the vault is available."
+        )
+    })?;
+    if alias_is_configured {
+        return provider.get_secret(GITHUB_TOKEN_ALIAS).map_err(|_| {
+            anyhow::anyhow!(
+                "The configured GitHub credential alias `{}` could not be read from bwvault. Verify the vault and alias; no alternate credential was used.",
+                GITHUB_TOKEN_ALIAS
+            )
+        });
     }
-    if let Ok(output) = Command::new("gh").args(["auth", "token"]).output() {
-        if output.status.success() {
-            let gh_token = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !gh_token.is_empty() {
-                return Ok(gh_token);
-            }
+
+    if let Ok(token) = gh_token() {
+        if !token.trim().is_empty() {
+            return Ok(token.trim().to_string());
         }
     }
     bail!(
-        "GitHub token not found. Set one with `skilldo github token-set --stdin` \
-         or authenticate the `gh` CLI with `gh auth login`"
+        "GitHub authentication is required. Configure bwvault alias `{}` or authenticate the `gh` CLI with `gh auth login`.",
+        GITHUB_TOKEN_ALIAS
     );
+}
+
+fn resolve_github_token(explicit: Option<&str>) -> Result<String> {
+    resolve_github_token_with(&BwVaultCredentialProvider::default(), explicit, || {
+        let output = Command::new("gh").args(["auth", "token"]).output()?;
+        if !output.status.success() {
+            bail!("gh auth token failed");
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    })
 }
 
 fn is_git_repo(dir: &Path) -> bool {
@@ -270,7 +288,7 @@ pub fn repoify_skill(
         bail!("central path not found: {:?}", central_path);
     }
 
-    let token = resolve_github_token(store, None)?;
+    let token = resolve_github_token(None)?;
 
     let login = authenticated_login(&token)?;
     let effective_owner = if owner.unwrap_or("").is_empty() {
@@ -371,7 +389,74 @@ pub fn repoify_skill(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::credentials::{CredentialError, MockCredentialProvider};
     use git2::Signature;
+
+    struct UnreadableConfiguredProvider;
+
+    impl CredentialProvider for UnreadableConfiguredProvider {
+        fn get_secret(&self, _alias: &str) -> Result<String, CredentialError> {
+            Err(CredentialError)
+        }
+
+        fn alias_exists(&self, _alias: &str) -> Result<bool, CredentialError> {
+            Ok(true)
+        }
+
+        fn set_secret(
+            &self,
+            _alias: &str,
+            _secret: &str,
+            _username: Option<&str>,
+        ) -> Result<(), CredentialError> {
+            Err(CredentialError)
+        }
+    }
+
+    #[test]
+    fn configured_vault_token_is_used_without_gh_fallback() {
+        let provider = MockCredentialProvider::new([(
+            GITHUB_TOKEN_ALIAS.to_owned(),
+            "vault-token".to_owned(),
+        )]);
+        let gh_called = std::cell::Cell::new(false);
+
+        let token = resolve_github_token_with(&provider, None, || {
+            gh_called.set(true);
+            Ok("gh-token".to_owned())
+        })
+        .unwrap();
+
+        assert_eq!(token, "vault-token");
+        assert!(!gh_called.get());
+    }
+
+    #[test]
+    fn unreadable_configured_vault_token_fails_without_gh_fallback() {
+        let gh_called = std::cell::Cell::new(false);
+
+        let error = resolve_github_token_with(&UnreadableConfiguredProvider, None, || {
+            gh_called.set(true);
+            Ok("gh-token".to_owned())
+        })
+        .unwrap_err();
+        let message = format!("{error:#}");
+
+        assert!(message.contains(GITHUB_TOKEN_ALIAS));
+        assert!(message.contains("no alternate credential was used"));
+        assert!(!message.contains("gh-token"));
+        assert!(!gh_called.get());
+    }
+
+    #[test]
+    fn gh_token_remains_available_when_vault_alias_is_not_configured() {
+        let provider = MockCredentialProvider::default();
+
+        let token =
+            resolve_github_token_with(&provider, None, || Ok("gh-token".to_owned())).unwrap();
+
+        assert_eq!(token, "gh-token");
+    }
 
     fn repository_with_commit(path: &Path) -> (git2::Repository, String) {
         let repo = git2::Repository::init(path).unwrap();

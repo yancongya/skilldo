@@ -12,6 +12,7 @@ use super::cache_cleanup::get_git_cache_ttl_secs;
 use super::cancel_token::CancelToken;
 use super::central_repo::{ensure_central_repo, resolve_central_repo_path};
 use super::content_hash::hash_dir;
+use super::credentials::{BwVaultCredentialProvider, CredentialProvider, GITHUB_TOKEN_ALIAS};
 use super::git_fetcher::{
     clone_local_repo, clone_or_pull, clone_or_pull_sparse, commit_all_and_push,
 };
@@ -29,6 +30,30 @@ pub struct InstallResult {
     pub name: String,
     pub central_path: PathBuf,
     pub content_hash: Option<String>,
+}
+
+/// GitHub credentials are optional for public installs. Resolve the token only
+/// when the unauthenticated sparse Git path has failed and the API fallback is
+/// about to run.
+fn optional_github_api_token(provider: &dyn CredentialProvider) -> Result<Option<String>> {
+    let alias_is_configured = provider.alias_exists(GITHUB_TOKEN_ALIAS).map_err(|_| {
+        anyhow::anyhow!(
+            "Could not check the GitHub credential in bwvault. Verify that the vault is available."
+        )
+    })?;
+    if !alias_is_configured {
+        return Ok(None);
+    }
+
+    provider
+        .get_secret(GITHUB_TOKEN_ALIAS)
+        .map(Some)
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "The configured GitHub credential alias `{}` could not be read from bwvault. Verify the vault and alias.",
+                GITHUB_TOKEN_ALIAS
+            )
+        })
 }
 
 fn detect_local_install_git_source(
@@ -241,12 +266,6 @@ pub fn install_git_skill<R: tauri::Runtime>(
     // Fast path: for subpath installs, prefer sparse git checkout.
     // The old GitHub Contents API path is much slower on large repos because it performs
     // one directory/file request at a time and can time out before we even attempt git.
-    let github_token = store.get_setting("github_token")?.unwrap_or_default();
-    let github_token_opt = if github_token.is_empty() {
-        None
-    } else {
-        Some(github_token.as_str())
-    };
     let revision;
     if let Some((owner, repo, branch, subpath)) = parse_github_api_params(
         &parsed.clone_url,
@@ -288,6 +307,8 @@ pub fn install_git_skill<R: tauri::Runtime>(
                     "[installer] sparse git checkout failed, falling back to GitHub API download: {:#}",
                     err
                 );
+                let github_token =
+                    optional_github_api_token(&BwVaultCredentialProvider::default())?;
                 match download_github_directory(
                     &owner,
                     &repo,
@@ -295,7 +316,7 @@ pub fn install_git_skill<R: tauri::Runtime>(
                     &subpath,
                     &central_path,
                     cancel,
-                    github_token_opt,
+                    github_token.as_deref(),
                 ) {
                     Ok(()) => {
                         revision = format!("api-download-{}", branch);
@@ -2361,12 +2382,6 @@ pub fn install_git_skill_cli(
         anyhow::bail!("skill already exists in central repo: {:?}", central_path);
     }
 
-    let github_token = store.get_setting("github_token")?.unwrap_or_default();
-    let github_token_opt = if github_token.is_empty() {
-        None
-    } else {
-        Some(github_token.as_str())
-    };
     let revision;
     if let Some((owner, repo, branch, subpath)) = parse_github_api_params(
         &parsed.clone_url,
@@ -2396,6 +2411,8 @@ pub fn install_git_skill_cli(
                     "[installer:cli] sparse git checkout failed, falling back to GitHub API: {:#}",
                     err
                 );
+                let github_token =
+                    optional_github_api_token(&BwVaultCredentialProvider::default())?;
                 match download_github_directory(
                     &owner,
                     &repo,
@@ -2403,7 +2420,7 @@ pub fn install_git_skill_cli(
                     &subpath,
                     &central_path,
                     None,
-                    github_token_opt,
+                    github_token.as_deref(),
                 ) {
                     Ok(()) => {
                         revision = format!("api-download-{}", branch);
@@ -3195,3 +3212,61 @@ fn git_push(repo_dir: &Path) -> Result<()> {
 #[cfg(test)]
 #[path = "tests/installer.rs"]
 mod tests;
+
+#[cfg(test)]
+mod credential_consumer_tests {
+    use super::optional_github_api_token;
+    use crate::core::credentials::{
+        CredentialError, CredentialProvider, MockCredentialProvider, GITHUB_TOKEN_ALIAS,
+    };
+
+    struct UnreadableConfiguredProvider;
+
+    impl CredentialProvider for UnreadableConfiguredProvider {
+        fn get_secret(&self, _alias: &str) -> Result<String, CredentialError> {
+            Err(CredentialError)
+        }
+
+        fn alias_exists(&self, _alias: &str) -> Result<bool, CredentialError> {
+            Ok(true)
+        }
+
+        fn set_secret(
+            &self,
+            _alias: &str,
+            _secret: &str,
+            _username: Option<&str>,
+        ) -> Result<(), CredentialError> {
+            Err(CredentialError)
+        }
+    }
+
+    #[test]
+    fn public_install_api_fallback_uses_vault_token_when_available() {
+        let provider = MockCredentialProvider::new([(
+            GITHUB_TOKEN_ALIAS.to_owned(),
+            "vault-token".to_owned(),
+        )]);
+
+        assert_eq!(
+            optional_github_api_token(&provider).unwrap().as_deref(),
+            Some("vault-token")
+        );
+    }
+
+    #[test]
+    fn public_install_api_fallback_remains_unauthenticated_without_vault_token() {
+        let provider = MockCredentialProvider::default();
+
+        assert_eq!(optional_github_api_token(&provider).unwrap(), None);
+    }
+
+    #[test]
+    fn public_install_api_fallback_fails_closed_for_unreadable_configured_token() {
+        let error = optional_github_api_token(&UnreadableConfiguredProvider).unwrap_err();
+        let message = format!("{error:#}");
+
+        assert!(message.contains(GITHUB_TOKEN_ALIAS));
+        assert!(!message.contains("secret"));
+    }
+}
