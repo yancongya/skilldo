@@ -3,12 +3,20 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use walkdir::{DirEntry, WalkDir};
 
-const IGNORE_NAMES: [&str; 4] = [".git", ".DS_Store", "Thumbs.db", ".gitignore"];
+const IGNORE_NAMES: [&str; 6] = [
+    ".git",
+    ".DS_Store",
+    "Thumbs.db",
+    ".gitignore",
+    ".skilldo-cache.json",
+    "__pycache__",
+];
 const MAX_FILE_SIZE: u64 = 1_048_576; // 1 MB
 
 fn is_ignored(entry: &DirEntry) -> bool {
     let file_name = entry.file_name().to_string_lossy();
     IGNORE_NAMES.iter().any(|name| name == &file_name.as_ref())
+        || (entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "pyc"))
 }
 
 pub struct FileEntry {
@@ -88,3 +96,7 @@ pub fn read_file(central_path: &Path, relative_path: &str) -> Result<String> {
     String::from_utf8(bytes)
         .map_err(|_| anyhow::anyhow!("File is not valid UTF-8 text and cannot be displayed"))
 }
+
+#[cfg(test)]
+#[path = "tests/skill_files.rs"]
+mod tests;
