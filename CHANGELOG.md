@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.15] - 2026-10-09
+
+### 更新
+- Fix credential integration CI lints
+- Scrub legacy GitHub credential after vault update
+- Store SkillDo credentials in bwvault
+- 切换 GitHub 凭据消费到 bwvault
+- Use vault credential for WebDAV auth
+- feat(credentials): add safe legacy vault migration core
+- feat(credentials): add alias existence lookup
+- feat(credentials): support secure bwvault writes
+- feat(credentials): add bwvault provider module
+
 ## [0.7.14] - 2026-10-09
 
 ### 更新
