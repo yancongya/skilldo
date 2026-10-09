@@ -76,6 +76,29 @@ impl WebDavClient {
         }
     }
 
+    fn request_error_context(operation: &str, is_connect: bool, error_detail: &str) -> String {
+        let detail = error_detail.to_ascii_lowercase();
+        let tls_validation_failure = is_connect
+            && [
+                "certificate",
+                "cert",
+                "tls",
+                "ssl",
+                "unknownissuer",
+                "invalid peer",
+            ]
+            .iter()
+            .any(|marker| detail.contains(marker));
+
+        if tls_validation_failure {
+            format!(
+                "{operation} 请求失败：TLS 证书验证未通过。请使用证书 SAN 中匹配的 HTTPS 主机名，并确认签发 CA 属于 HTTP 客户端的受信任根证书集合；不要改用远程 HTTP 或关闭证书验证"
+            )
+        } else {
+            format!("{operation} 请求失败")
+        }
+    }
+
     /// Join the server base URL with a remote path (no leading slash).
     fn full_url(&self, path: &str) -> String {
         let path = path.trim_start_matches('/');
@@ -90,7 +113,11 @@ impl WebDavClient {
         let resp = self
             .auth(self.client.request(method, &url))
             .send()
-            .context("MKCOL 请求失败")?;
+            .map_err(|error| {
+                let context =
+                    Self::request_error_context("MKCOL", error.is_connect(), &error.to_string());
+                anyhow::Error::new(error).context(context)
+            })?;
         let status = resp.status();
         if status.is_success() || status == 405 {
             Ok(())
@@ -107,7 +134,11 @@ impl WebDavClient {
             .header("Content-Type", "application/json")
             .body(body.to_string())
             .send()
-            .context("PUT 请求失败")?;
+            .map_err(|error| {
+                let context =
+                    Self::request_error_context("PUT", error.is_connect(), &error.to_string());
+                anyhow::Error::new(error).context(context)
+            })?;
         let status = resp.status();
         if status.is_success() || status == 201 || status == 204 {
             Ok(())
@@ -119,10 +150,11 @@ impl WebDavClient {
     /// Download `remote_path` and return its text contents.
     pub fn get(&self, remote_path: &str) -> Result<String> {
         let url = self.full_url(remote_path);
-        let resp = self
-            .auth(self.client.get(&url))
-            .send()
-            .context("GET 请求失败")?;
+        let resp = self.auth(self.client.get(&url)).send().map_err(|error| {
+            let context =
+                Self::request_error_context("GET", error.is_connect(), &error.to_string());
+            anyhow::Error::new(error).context(context)
+        })?;
         let status = resp.status();
         if status.is_success() {
             resp.text().context("读取响应内容失败")
@@ -136,10 +168,11 @@ impl WebDavClient {
     /// Download a document together with its ETag. Missing documents return `None`.
     pub fn get_optional(&self, remote_path: &str) -> Result<Option<WebDavDocument>> {
         let url = self.full_url(remote_path);
-        let resp = self
-            .auth(self.client.get(&url))
-            .send()
-            .context("GET 请求失败")?;
+        let resp = self.auth(self.client.get(&url)).send().map_err(|error| {
+            let context =
+                Self::request_error_context("GET", error.is_connect(), &error.to_string());
+            anyhow::Error::new(error).context(context)
+        })?;
         let status = resp.status();
         if status.is_success() {
             let etag = resp
@@ -182,7 +215,11 @@ impl WebDavClient {
         } else {
             request.header(reqwest::header::IF_NONE_MATCH, "*")
         };
-        let resp = request.send().context("条件 PUT 请求失败")?;
+        let resp = request.send().map_err(|error| {
+            let context =
+                Self::request_error_context("条件 PUT", error.is_connect(), &error.to_string());
+            anyhow::Error::new(error).context(context)
+        })?;
         let status = resp.status();
         if status == 412 || status == 409 {
             anyhow::bail!("PROFILE_REMOTE_CONFLICT|远端 Profile 已被其他设备更新，请重新同步")
@@ -322,6 +359,26 @@ mod tests {
             Err(error) => error.to_string(),
         };
         assert!(error.contains("不能在 URL 中嵌入凭据"));
+    }
+
+    #[test]
+    fn tls_connection_error_suggests_verified_host_and_trusted_ca() {
+        let context = WebDavClient::request_error_context(
+            "GET",
+            true,
+            "invalid peer certificate: UnknownIssuer",
+        );
+
+        assert!(context.contains("证书 SAN"));
+        assert!(context.contains("CA"));
+        assert!(context.contains("不要改用远程 HTTP"));
+    }
+
+    #[test]
+    fn non_tls_request_error_keeps_generic_context() {
+        let context = WebDavClient::request_error_context("GET", false, "connection timed out");
+
+        assert_eq!(context, "GET 请求失败");
     }
 
     #[test]

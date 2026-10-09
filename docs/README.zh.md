@@ -261,6 +261,8 @@ skilldo device publish --yes --json
 
 不同设备的 Git/npm Skills 列表、标签和全局同步目标会取并集。来源/revision 不一致和“删除对修改”会保留为明确冲突，不会静默覆盖。本地独有且没有仓库来源的 Skills 无法在新设备自动重建。
 
+HTTPS 地址中的 DNS 主机名必须与服务器证书的 Subject Alternative Name（SAN）匹配；使用 IP 或证书未列出的别名会导致主机名校验失败。SkillDo 始终启用 TLS 证书校验，并使用 HTTP 客户端内置的 CA 根证书。私有或自签 CA 必须属于该信任集合；SkillDo 不提供关闭证书校验或按服务器添加 CA 的选项。遇到 TLS 证书错误时，请核对 URL 主机名，并请 WebDAV 管理员提供由受信任 CA 签发的证书。
+
 版本化的 `skilldo-profile.json` 存储可移植的期望状态：Git/包管理的 Skill 来源与 revision、标准全局目标、标签、手动来源规则、语言、缓存策略与 Explore 来源。Git 管理的 Skill 在接收端电脑上 clone 或 pull。独立的 Skill 列表、标签与目标以并集合并。
 
 密码、WebDAV 凭据、存储路径、自定义扫描目录、按工具路径覆盖、项目目标与本地独有 Skills 永远不会进入 Profile。新设备必须先输入一次 WebDAV 凭据才能下载任何内容。`config get` 会刻意脱敏密码。删除操作在未显式确认前只报告为待定。并发修改按各设备最近一次同步基线合并；上传使用 WebDAV ETags 防止覆盖更新的远端 revision。
