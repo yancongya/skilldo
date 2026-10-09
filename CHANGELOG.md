@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-10-09
+
+### 更新
+- 忽略 SkillDo 生成缓存文件
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+
 ## [0.7.7] - 2026-09-23
 
 ### 更新
