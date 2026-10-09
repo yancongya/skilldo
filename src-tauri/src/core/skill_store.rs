@@ -287,6 +287,9 @@ impl SkillStore {
         let snapshot_path = self
             .db_path
             .with_extension(format!("restore-{}.db", uuid::Uuid::new_v4()));
+        let backup_path = self
+            .db_path
+            .with_extension(format!("pre-restore-{}.db", uuid::Uuid::new_v4()));
         let result = (|| -> Result<()> {
             std::fs::write(&snapshot_path, bytes)
                 .with_context(|| format!("failed to stage snapshot at {snapshot_path:?}"))?;
@@ -301,26 +304,148 @@ impl SkillStore {
             if version > SCHEMA_VERSION {
                 anyhow::bail!("快照数据库版本 {version} 高于当前支持版本 {SCHEMA_VERSION}");
             }
-            let required_table: i64 = source.query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='skills'",
-                [],
-                |row| row.get(0),
-            )?;
-            if required_table != 1 {
-                anyhow::bail!("快照不是有效的 SkillDo 数据库");
-            }
+            drop(source);
+
+            // Run all compatible migrations against the temporary copy first.
+            // Never let a structurally invalid but SQLite-readable file replace
+            // the live database before the application schema is verified.
+            let staged_store = SkillStore::new(snapshot_path.clone());
+            staged_store.ensure_schema().context("迁移备份快照失败")?;
+            Self::validate_required_schema(&snapshot_path)?;
+
+            // Keep a consistent, restorable image of the current database before
+            // the SQLite backup API atomically replaces its contents.
+            let current_snapshot = self.export_database_snapshot()?;
+            std::fs::write(&backup_path, current_snapshot)
+                .with_context(|| format!("保存恢复前数据库备份失败: {backup_path:?}"))?;
+
+            let source = Connection::open(&snapshot_path).context("打开已验证快照失败")?;
             let mut destination = Connection::open(&self.db_path)
                 .with_context(|| format!("failed to open db at {:?}", self.db_path))?;
-            Backup::new(&source, &mut destination)?.run_to_completion(
-                64,
-                std::time::Duration::from_millis(10),
-                None,
-            )?;
+            if let Err(error) = Backup::new(&source, &mut destination).and_then(|backup| {
+                backup.run_to_completion(64, std::time::Duration::from_millis(10), None)
+            }) {
+                // A failed restore must not strand the live DB in a partial or
+                // unusable state. The preserved snapshot is validated through
+                // the same path before being copied back.
+                let recovery = (|| -> Result<()> {
+                    let recovery_source = Connection::open(&backup_path)?;
+                    Backup::new(&recovery_source, &mut destination)?.run_to_completion(
+                        64,
+                        std::time::Duration::from_millis(10),
+                        None,
+                    )?;
+                    Ok(())
+                })();
+                return Err(error).context(format!(
+                    "替换数据库失败；恢复旧数据库结果: {}",
+                    recovery
+                        .err()
+                        .map(|error| error.to_string())
+                        .unwrap_or_else(|| "成功".to_string())
+                ));
+            }
+            drop(destination);
             Ok(())
         })();
         let _ = std::fs::remove_file(&snapshot_path);
-        result?;
-        self.ensure_schema()
+        result
+    }
+
+    /// Confirm the staged database contains every table and column required by
+    /// the current application after supported migrations have run.
+    fn validate_required_schema(path: &Path) -> Result<()> {
+        let conn =
+            Connection::open(path).with_context(|| format!("打开数据库结构失败: {path:?}"))?;
+        let version: i32 = conn.query_row("PRAGMA user_version;", [], |row| row.get(0))?;
+        if version != SCHEMA_VERSION {
+            anyhow::bail!("数据库迁移后版本为 {version}，预期为 {SCHEMA_VERSION}");
+        }
+
+        let required: &[(&str, &[&str])] = &[
+            (
+                "skills",
+                &[
+                    "id",
+                    "name",
+                    "description",
+                    "source_type",
+                    "source_ref",
+                    "source_revision",
+                    "source_subpath",
+                    "central_path",
+                    "content_hash",
+                    "created_at",
+                    "updated_at",
+                    "last_sync_at",
+                    "last_seen_at",
+                    "status",
+                ],
+            ),
+            (
+                "skill_targets",
+                &[
+                    "id",
+                    "skill_id",
+                    "tool",
+                    "scope",
+                    "project_path",
+                    "target_path",
+                    "mode",
+                    "status",
+                    "last_error",
+                    "synced_at",
+                ],
+            ),
+            ("settings", &["key", "value"]),
+            (
+                "discovered_skills",
+                &[
+                    "id",
+                    "tool",
+                    "found_path",
+                    "name_guess",
+                    "fingerprint",
+                    "found_at",
+                    "imported_skill_id",
+                ],
+            ),
+            ("skill_tags", &["id", "name", "created_at", "updated_at"]),
+            ("skill_tag_links", &["skill_id", "tag_id", "created_at"]),
+            (
+                "skill_origins",
+                &[
+                    "skill_id",
+                    "origin_kind",
+                    "origin_role",
+                    "provider",
+                    "remote_url",
+                    "owner",
+                    "repo",
+                    "branch",
+                    "subpath",
+                    "update_strategy",
+                    "publish_strategy",
+                    "manual_override",
+                    "reason",
+                    "updated_at",
+                ],
+            ),
+        ];
+        for (table, columns) in required {
+            let mut statement = conn.prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
+            let found = statement
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+            if columns.iter().any(|column| !found.contains(*column)) {
+                anyhow::bail!("数据库缺少 {table} 表或必需字段");
+            }
+        }
+        let mut foreign_keys = conn.prepare("PRAGMA foreign_key_check")?;
+        if foreign_keys.query([])?.next()?.is_some() {
+            anyhow::bail!("数据库存在无效的外键引用");
+        }
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -577,8 +702,8 @@ impl SkillStore {
     ) -> Result<()> {
         self.with_conn(|conn| {
             conn.execute(
-                "UPDATE skills SET source_type = ?1, source_ref = ?2 WHERE id = ?3",
-                params![source_type, source_ref, skill_id],
+                "UPDATE skills SET source_type = ?1, source_ref = ?2, source_subpath = NULL, source_revision = NULL, updated_at = ?3 WHERE id = ?4",
+                params![source_type, source_ref, now_ms(), skill_id],
             )?;
             Ok(())
         })

@@ -453,8 +453,8 @@ pub fn default_tool_adapters() -> Vec<ToolAdapter> {
         ToolAdapter {
             id: ToolId::MimoCode,
             display_name: "MiMoCode",
-            // MiMoCode (mimo CLI) inherits ~/.claude/skills by default; project skills live under .mimocode/skills.
-            relative_skills_dir: ".claude/skills",
+            // MiMoCode user Skills live under ~/.config/mimocode/skills; Claude discovery is opt-in.
+            relative_skills_dir: ".config/mimocode/skills",
             relative_detect_dir: ".config/mimocode",
         },
     ]

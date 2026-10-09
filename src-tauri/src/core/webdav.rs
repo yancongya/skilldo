@@ -33,8 +33,31 @@ impl WebDavClient {
         if base.is_empty() {
             anyhow::bail!("WebDAV URL 未配置");
         }
+        let parsed = reqwest::Url::parse(&base).context("WebDAV URL 格式无效")?;
+        let is_loopback = parsed
+            .host_str()
+            .map(|host| {
+                host.eq_ignore_ascii_case("localhost")
+                    || host
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|ip| ip.is_loopback())
+            })
+            .unwrap_or(false);
+        if parsed.scheme() != "https" && !(parsed.scheme() == "http" && is_loopback) {
+            anyhow::bail!("WebDAV 必须使用 HTTPS；HTTP 会明文发送 Basic Auth 凭据");
+        }
+        if parsed.host_str().is_none()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+        {
+            anyhow::bail!("WebDAV URL 必须包含主机，且不能在 URL 中嵌入凭据");
+        }
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(30))
+            // Never follow a server redirect with an authenticated request;
+            // this also prevents a TLS endpoint from redirecting credentials
+            // to an insecure or unrelated destination.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .context("创建 HTTP 客户端失败")?;
         Ok(Self {
@@ -133,6 +156,12 @@ impl WebDavClient {
             return Ok(None);
         }
         anyhow::bail!("下载文件失败 (HTTP {})", status)
+    }
+
+    /// Read-only connection check. It only GETs the profile document and never
+    /// creates collections or uploads data.
+    pub fn check_profile(&self, remote_path: &str) -> Result<bool> {
+        Ok(self.get_optional(remote_path)?.is_some())
     }
 
     /// Upload with optimistic concurrency. `expected_etag=None` creates only
@@ -271,6 +300,31 @@ mod tests {
     }
 
     #[test]
+    fn rejects_remote_http_before_constructing_authenticated_client() {
+        let cfg = WebDavConfig {
+            url: "http://dav.example.test".to_string(),
+            user: "username".to_string(),
+            password: "<redacted>".to_string(),
+            remote_dir: "skills".to_string(),
+        };
+        let error = match WebDavClient::new(&cfg) {
+            Ok(_) => panic!("HTTP should be rejected"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("HTTPS"));
+    }
+
+    #[test]
+    fn rejects_credentials_embedded_in_url() {
+        let cfg = config("https://user:pass@dav.example.test".to_string());
+        let error = match WebDavClient::new(&cfg) {
+            Ok(_) => panic!("URL credentials should be rejected"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("不能在 URL 中嵌入凭据"));
+    }
+
+    #[test]
     fn collection_paths_rejects_parent_traversal() {
         assert!(collection_paths("backups/../private").is_err());
     }
@@ -304,6 +358,19 @@ mod tests {
         request.assert();
         assert_eq!(document.etag.as_deref(), Some("\"profile-7\""));
         assert_eq!(document.body, "{\"profileVersion\":1}");
+    }
+
+    #[test]
+    fn check_profile_is_get_only_and_does_not_create_remote_state() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("GET", "/skilldo-profile.json")
+            .with_status(404)
+            .create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        assert!(!client.check_profile(PROFILE_REMOTE_FILE).unwrap());
+        request.assert();
     }
 
     #[test]

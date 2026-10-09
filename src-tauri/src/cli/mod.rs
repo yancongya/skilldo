@@ -30,11 +30,11 @@ use crate::core::github_auth::compute_github_token_status;
 use crate::core::github_publish::RepoNameStrategy;
 use crate::core::installer;
 use crate::core::profile_sync::{
-    export_profile_json, import_profile_json, synchronize_profile, ConflictStrategy,
-    ProfileSyncReport,
+    check_profile_connection, export_profile_json, import_profile_json, synchronize_profile,
+    ConflictStrategy, ProfileSyncReport,
 };
 use crate::core::project_skills::{inspect_project, remember_project_path};
-use crate::core::skill_store::{default_db_path_cli, SkillStore};
+use crate::core::skill_store::{default_db_path_cli, SkillOriginRecord, SkillStore};
 use crate::core::source_repair::{repair_skill_source, repair_skill_sources};
 use crate::core::tool_adapters;
 use crate::core::webdav::{download_backup, upload_backup};
@@ -130,6 +130,18 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         all: bool,
         /// Skip confirmation prompts (agent mode).
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
+    /// Track an existing skill from a local source directory (no Git fetch/pull).
+    TrackLocal {
+        /// Skill ID or name.
+        #[arg(long)]
+        skill: String,
+        /// Directory containing the authoritative SKILL.md.
+        #[arg(long)]
+        path: PathBuf,
+        /// Confirm changing this Skill's source metadata to the local directory.
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
@@ -383,13 +395,18 @@ enum RestoreTarget {
 
 #[derive(Subcommand)]
 enum ProfileAction {
+    /// Check WebDAV Profile access with a read-only GET request.
+    Check,
     /// Compare local and remote profiles without changing either side.
     Status,
-    /// Merge, apply, update Git skills, and upload the resulting profile.
+    /// Merge and upload the Profile; refresh upstream Skills only with --update-skills.
     Sync {
         /// Also apply deletions propagated from another computer.
         #[arg(long, default_value_t = false)]
         yes: bool,
+        /// Also update Git-backed Skills from their upstream sources.
+        #[arg(long, default_value_t = false)]
+        update_skills: bool,
     },
     /// Export the portable Profile to a local JSON file.
     Export {
@@ -428,11 +445,14 @@ enum DeviceAction {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
-    /// Refresh sources, push owned changes, then upload Profile and full backup.
+    /// Push owned changes, then upload Profile and full backup.
     Publish {
         /// Allow Git commits and pushes for owned repositories.
         #[arg(long, default_value_t = false)]
         yes: bool,
+        /// Also update Git-backed Skills from their upstream sources.
+        #[arg(long, default_value_t = false)]
+        update_skills: bool,
     },
 }
 
@@ -580,8 +600,11 @@ fn execute(cli: Cli) -> Result<()> {
             RestoreTarget::Webdav => cmd_restore_webdav(&store, cli.json),
         },
         Commands::Profile { action } => match action {
+            ProfileAction::Check => cmd_profile_check(&store, cli.json),
             ProfileAction::Status => cmd_profile_status(&store, cli.json),
-            ProfileAction::Sync { yes } => cmd_profile_sync(&store, yes, cli.json),
+            ProfileAction::Sync { yes, update_skills } => {
+                cmd_profile_sync(&store, yes, update_skills, cli.json)
+            }
             ProfileAction::Export { path } => cmd_profile_export(&store, &path, cli.json),
             ProfileAction::Import {
                 path,
@@ -595,9 +618,11 @@ fn execute(cli: Cli) -> Result<()> {
         Commands::Device { action } => match action {
             DeviceAction::Status => cmd_device(&store, device_status(&store)?, cli.json),
             DeviceAction::Pull { yes } => cmd_device(&store, device_pull(&store, yes)?, cli.json),
-            DeviceAction::Publish { yes } => {
-                cmd_device(&store, device_publish(&store, yes)?, cli.json)
-            }
+            DeviceAction::Publish { yes, update_skills } => cmd_device(
+                &store,
+                device_publish(&store, yes, update_skills)?,
+                cli.json,
+            ),
         },
         Commands::Repair { action } => match action {
             RepairAction::Sources { apply } => cmd_repair_sources(&store, apply, cli.json),
@@ -609,6 +634,9 @@ fn execute(cli: Cli) -> Result<()> {
             } => cmd_repair_source(&store, &skill, &url, subpath.as_deref(), apply, cli.json),
         },
         Commands::Install { url, name, yes } => cmd_install(&store, &url, name, yes, cli.json),
+        Commands::TrackLocal { skill, path, yes } => {
+            cmd_track_local(&store, &skill, &path, yes, cli.json)
+        }
         Commands::Sync {
             skill,
             tool,
@@ -1733,7 +1761,7 @@ fn cmd_device(_store: &SkillStore, report: DevicePipelineReport, json: bool) -> 
 }
 
 fn cmd_profile_status(store: &SkillStore, json: bool) -> Result<()> {
-    let report = synchronize_profile(store, true, false, ConflictStrategy::Abort)?;
+    let report = synchronize_profile(store, true, false, false, ConflictStrategy::Abort)?;
     if json {
         print_json(&report)
     } else {
@@ -1742,8 +1770,33 @@ fn cmd_profile_status(store: &SkillStore, json: bool) -> Result<()> {
     }
 }
 
-fn cmd_profile_sync(store: &SkillStore, apply_deletions: bool, json: bool) -> Result<()> {
-    let report = synchronize_profile(store, false, apply_deletions, ConflictStrategy::Abort)?;
+fn cmd_profile_check(store: &SkillStore, json: bool) -> Result<()> {
+    let found = check_profile_connection(store)?;
+    if json {
+        print_json(
+            &serde_json::json!({"ok": true, "target": "webdav-profile", "remoteFound": found, "readOnly": true}),
+        )?;
+    } else if found {
+        println!("WebDAV Profile 可读取；远端 Profile 已存在（只读检查）。");
+    } else {
+        println!("WebDAV 可访问；远端 Profile 尚不存在（只读检查）。");
+    }
+    Ok(())
+}
+
+fn cmd_profile_sync(
+    store: &SkillStore,
+    apply_deletions: bool,
+    update_skills: bool,
+    json: bool,
+) -> Result<()> {
+    let report = synchronize_profile(
+        store,
+        false,
+        apply_deletions,
+        update_skills,
+        ConflictStrategy::Abort,
+    )?;
     if json {
         print_json(&report)
     } else {
@@ -1796,6 +1849,7 @@ fn cmd_profile_resolve(
         store,
         false,
         apply_deletions,
+        false,
         ConflictStrategy::parse(strategy)?,
     )?;
     if json {
@@ -1953,6 +2007,187 @@ fn cmd_install(
     Ok(())
 }
 
+fn cmd_track_local(
+    store: &SkillStore,
+    skill_name: &str,
+    source_path: &std::path::Path,
+    yes: bool,
+    json: bool,
+) -> Result<()> {
+    let skill_id = resolve_skill_id(store, skill_name)?;
+    let record = store
+        .get_skill_by_id(&skill_id)?
+        .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
+    let source_path = source_path
+        .canonicalize()
+        .with_context(|| format!("local source not found: {:?}", source_path))?;
+    if !source_path.is_dir() {
+        anyhow::bail!("local source must be a directory: {:?}", source_path);
+    }
+    let skill_md = source_path.join("SKILL.md");
+    if skill_md.is_symlink() || !skill_md.is_file() {
+        anyhow::bail!("local source must contain a regular SKILL.md");
+    }
+    let central_path = std::path::PathBuf::from(&record.central_path)
+        .canonicalize()
+        .context("central skill path not found")?;
+    if source_path == central_path
+        || source_path.starts_with(&central_path)
+        || central_path.starts_with(&source_path)
+    {
+        anyhow::bail!("local source cannot overlap the SkillDo central copy");
+    }
+    let allowed_entries = [
+        "SKILL.md",
+        "README.md",
+        "LICENSE",
+        "LICENSE.txt",
+        "scripts",
+        "references",
+        "reference",
+        "entries",
+        "assets",
+        "examples",
+        "bin",
+        "manifest.json",
+        "agents",
+        "dashboard_template.html",
+    ];
+    for entry in std::fs::read_dir(&source_path)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if !allowed_entries.iter().any(|allowed| name == *allowed) {
+            anyhow::bail!("local source contains non-Skill project content at {:?}; track a Skill-only directory", name);
+        }
+    }
+    // A directory can look like a Skill at its top level while hiding links
+    // under scripts/, references/, etc. Later copies must not be able to read
+    // or materialize content outside the validated source tree.
+    for entry in walkdir::WalkDir::new(&source_path).follow_links(false) {
+        let entry = entry.context("inspect local Skill source")?;
+        if entry.file_type().is_symlink() {
+            anyhow::bail!(
+                "local source contains a symbolic link at {:?}; track a Skill-only directory without symlinks",
+                entry.path().strip_prefix(&source_path).unwrap_or(entry.path())
+            );
+        }
+    }
+    let metadata = std::fs::read_to_string(&skill_md)?;
+    let has_frontmatter = metadata
+        .lines()
+        .next()
+        .is_some_and(|line| line.trim() == "---");
+    let declared_name = metadata
+        .lines()
+        .skip(usize::from(has_frontmatter))
+        .take_while(|line| !has_frontmatter || line.trim() != "---")
+        .find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == "name").then(|| {
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string()
+            })
+        });
+    let folder_name = source_path.file_name().and_then(|name| name.to_str());
+    let name_matches = declared_name
+        .map(|name| name.eq_ignore_ascii_case(&record.name))
+        .unwrap_or_else(|| folder_name.is_some_and(|name| name.eq_ignore_ascii_case(&record.name)));
+    if !name_matches {
+        anyhow::bail!(
+            "local source name does not match managed skill '{}'",
+            record.name
+        );
+    }
+    if !yes {
+        eprintln!(
+            "About to track '{}' from local source {}. No Git operation will run.",
+            record.name,
+            source_path.display()
+        );
+        eprint!("Continue? [y/N] ");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            anyhow::bail!("cancelled by user");
+        }
+    }
+
+    let detected_git = crate::core::source_repair::detect_git_source(&source_path)
+        .ok()
+        .flatten();
+    let previous_remote = detected_git
+        .as_ref()
+        .map(|source| source.remote_url.clone())
+        .or_else(|| record.source_ref.clone());
+    store.update_skill_source(&skill_id, "local", &source_path.to_string_lossy())?;
+    let mut origin = store.get_skill_origin(&skill_id)?.unwrap_or_else(|| {
+        let (owner, repo) = previous_remote
+            .as_deref()
+            .map(parse_github_repository)
+            .unwrap_or_default();
+        SkillOriginRecord {
+            skill_id: skill_id.clone(),
+            origin_kind: "local".to_string(),
+            origin_role: "mine".to_string(),
+            provider: Some("local".to_string()),
+            remote_url: previous_remote.clone(),
+            owner,
+            repo,
+            branch: None,
+            subpath: record.source_subpath.clone(),
+            update_strategy: "local_copy".to_string(),
+            publish_strategy: "none".to_string(),
+            manual_override: true,
+            reason: None,
+            updated_at: 0,
+        }
+    });
+    origin.origin_kind = "local".to_string();
+    origin.origin_role = "mine".to_string();
+    origin.provider = Some("local".to_string());
+    if let Some(source) = detected_git {
+        origin.branch = source.branch;
+        origin.subpath = source.subpath;
+    } else {
+        origin.branch = None;
+        origin.subpath = None;
+    }
+    origin.update_strategy = "local_copy".to_string();
+    origin.publish_strategy = "none".to_string();
+    origin.manual_override = true;
+    origin.reason = Some("Local repository directory is authoritative; SkillDo copies its current files without Git fetch or reset.".to_string());
+    origin.updated_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    store.upsert_skill_origin(&origin)?;
+
+    let output = serde_json::json!({
+        "success": true, "skillId": skill_id, "name": record.name,
+        "sourceType": "local", "sourcePath": source_path,
+        "previousSource": previous_remote,
+        "nextStep": format!("skilldo update --skill {} --yes", record.name),
+        "gitOperation": "none",
+    });
+    if json {
+        print_json(&output)
+    } else {
+        println!(
+            "Now tracking '{}' from local repository source {}.",
+            record.name,
+            source_path.display()
+        );
+        println!(
+            "Update the central copy with: {}",
+            output["nextStep"].as_str().unwrap_or_default()
+        );
+        Ok(())
+    }
+}
+
 fn cmd_sync(
     store: &SkillStore,
     skill_name: &str,
@@ -2084,19 +2319,27 @@ fn cmd_update(
         let record = store
             .get_skill_by_id(&skill_id)?
             .ok_or_else(|| anyhow::anyhow!("skill not found"))?;
-        if record.source_type != "git" {
+        if record.source_type != "git" && record.source_type != "local" {
             anyhow::bail!(
-                "skill '{}' is not a git skill (source_type={}), cannot update from source",
+                "skill '{}' has unsupported source type '{}' for update",
                 record.name,
                 record.source_type
             );
         }
         if !yes {
-            eprintln!(
-                "About to update skill '{}' from {}.",
-                record.name,
-                record.source_ref.as_deref().unwrap_or("unknown")
-            );
+            if record.source_type == "local" {
+                eprintln!(
+                    "About to copy skill '{}' from local source {}.",
+                    record.name,
+                    record.source_ref.as_deref().unwrap_or("unknown")
+                );
+            } else {
+                eprintln!(
+                    "About to update skill '{}' from {}.",
+                    record.name,
+                    record.source_ref.as_deref().unwrap_or("unknown")
+                );
+            }
             eprint!("Continue? [y/N] ");
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
@@ -2292,6 +2535,7 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::skill_store::SkillRecord;
 
     #[test]
     fn cli_db_path_matches_app_identifier() {
@@ -2304,7 +2548,301 @@ mod tests {
     }
 
     #[test]
+    fn track_local_binds_skill_to_validated_checkout_and_preserves_remote_provenance() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("myworkforce-pipeline");
+        let central = temp.path().join("central/myworkforce-pipeline");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&central).unwrap();
+        std::fs::write(
+            source.join("SKILL.md"),
+            "---\nname: myworkforce-pipeline\n---\nnew source\n",
+        )
+        .unwrap();
+        std::fs::write(
+            central.join("SKILL.md"),
+            "---\nname: myworkforce-pipeline\n---\nold central\n",
+        )
+        .unwrap();
+        let store = SkillStore::new(temp.path().join("skills.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "workforce-skill".to_string(),
+                name: "myworkforce-pipeline".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/example/myworkforce.git".to_string()),
+                source_subpath: None,
+                source_revision: Some("old-revision".to_string()),
+                central_path: central.to_string_lossy().to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+
+        cmd_track_local(&store, "myworkforce-pipeline", &source, true, true).unwrap();
+
+        let updated = store.get_skill_by_id("workforce-skill").unwrap().unwrap();
+        assert_eq!(updated.source_type, "local");
+        assert_eq!(
+            updated.source_ref.as_deref(),
+            Some(source.canonicalize().unwrap().to_string_lossy().as_ref())
+        );
+        assert_eq!(updated.source_revision, None);
+        let origin = store.get_skill_origin("workforce-skill").unwrap().unwrap();
+        assert_eq!(
+            origin.remote_url.as_deref(),
+            Some("https://github.com/example/myworkforce.git")
+        );
+        assert_eq!(origin.subpath, None);
+        assert_eq!(origin.update_strategy, "local_copy");
+        assert!(origin.manual_override);
+        assert_eq!(
+            std::fs::read_to_string(central.join("SKILL.md")).unwrap(),
+            "---\nname: myworkforce-pipeline\n---\nold central\n"
+        );
+    }
+
+    #[test]
+    fn track_local_rejects_project_root_with_non_skill_files_without_changing_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("myworkforce-pipeline");
+        let central = temp.path().join("central/myworkforce-pipeline");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&central).unwrap();
+        std::fs::write(
+            source.join("SKILL.md"),
+            "---\nname: myworkforce-pipeline\n---\n",
+        )
+        .unwrap();
+        std::fs::write(source.join("pyproject.toml"), "[project]\n").unwrap();
+        std::fs::write(
+            central.join("SKILL.md"),
+            "---\nname: myworkforce-pipeline\n---\n",
+        )
+        .unwrap();
+        let store = SkillStore::new(temp.path().join("skills.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "workforce-skill".to_string(),
+                name: "myworkforce-pipeline".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/example/myworkforce.git".to_string()),
+                source_subpath: None,
+                source_revision: Some("baseline".to_string()),
+                central_path: central.to_string_lossy().to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+
+        assert!(cmd_track_local(&store, "myworkforce-pipeline", &source, true, true).is_err());
+        let unchanged = store.get_skill_by_id("workforce-skill").unwrap().unwrap();
+        assert_eq!(unchanged.source_type, "git");
+        assert_eq!(unchanged.source_revision.as_deref(), Some("baseline"));
+    }
+
+    #[test]
+    fn track_local_accepts_skill_package_resource_directories() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("trim-cli");
+        let central = temp.path().join("central/trim-cli");
+        for relative in ["entries", "reference", "bin", "agents"] {
+            std::fs::create_dir_all(source.join(relative)).unwrap();
+        }
+        std::fs::create_dir_all(&central).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: trim-cli\n---\n").unwrap();
+        std::fs::write(source.join("entries/trim-docker.md"), "Docker reference\n").unwrap();
+        std::fs::write(
+            source.join("reference/dockermgr.md"),
+            "Protocol reference\n",
+        )
+        .unwrap();
+        std::fs::write(source.join("bin/trim-cli"), "#!/bin/sh\n").unwrap();
+        std::fs::write(source.join("manifest.json"), "{}\n").unwrap();
+        std::fs::write(
+            source.join("agents/openai.yaml"),
+            "interface:\n  display_name: Test Skill\n",
+        )
+        .unwrap();
+        std::fs::write(source.join("dashboard_template.html"), "<html></html>\n").unwrap();
+        std::fs::write(central.join("SKILL.md"), "central copy\n").unwrap();
+        let store = SkillStore::new(temp.path().join("skills.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "trim-skill".to_string(),
+                name: "trim-cli".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/example/fnos-skills.git".to_string()),
+                source_subpath: Some("skills/trim-cli".to_string()),
+                source_revision: Some("baseline".to_string()),
+                central_path: central.to_string_lossy().to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+
+        cmd_track_local(&store, "trim-cli", &source, true, true).unwrap();
+
+        let updated = store.get_skill_by_id("trim-skill").unwrap().unwrap();
+        assert_eq!(updated.source_type, "local");
+        assert_eq!(updated.source_subpath, None);
+        assert_eq!(
+            updated.source_ref.as_deref(),
+            Some(source.canonicalize().unwrap().to_string_lossy().as_ref())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn track_local_rejects_nested_symlink_without_changing_database() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("myworkforce-pipeline");
+        let central = temp.path().join("central/myworkforce-pipeline");
+        let outside = temp.path().join("outside.txt");
+        std::fs::create_dir_all(source.join("scripts")).unwrap();
+        std::fs::create_dir_all(&central).unwrap();
+        std::fs::write(
+            source.join("SKILL.md"),
+            "---\nname: myworkforce-pipeline\n---\n",
+        )
+        .unwrap();
+        std::fs::write(central.join("SKILL.md"), "central copy\n").unwrap();
+        std::fs::write(&outside, "outside the Skill source\n").unwrap();
+        symlink(&outside, source.join("scripts/external.txt")).unwrap();
+
+        let store = SkillStore::new(temp.path().join("skills.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "workforce-skill".to_string(),
+                name: "myworkforce-pipeline".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/example/myworkforce.git".to_string()),
+                source_subpath: None,
+                source_revision: Some("baseline".to_string()),
+                central_path: central.to_string_lossy().to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+        let before = store.export_database_snapshot().unwrap();
+
+        let error =
+            cmd_track_local(&store, "myworkforce-pipeline", &source, true, true).unwrap_err();
+
+        assert!(error.to_string().contains("symbolic link"));
+        assert_eq!(store.export_database_snapshot().unwrap(), before);
+        assert_eq!(
+            std::fs::read_to_string(central.join("SKILL.md")).unwrap(),
+            "central copy\n"
+        );
+    }
+
+    #[test]
+    fn track_local_detects_repository_remote_and_subpath_as_provenance() {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = git2::Repository::init(temp.path()).unwrap();
+        repository
+            .remote("origin", "https://github.com/example/skilldo.git")
+            .unwrap();
+        let source = temp.path().join("skills/skilldo-cli");
+        let central = temp.path().join("central/skilldo-cli");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&central).unwrap();
+        std::fs::write(source.join("SKILL.md"), "---\nname: skilldo-cli\n---\n").unwrap();
+        std::fs::write(central.join("SKILL.md"), "---\nname: skilldo-cli\n---\n").unwrap();
+        let store = SkillStore::new(temp.path().join("skills.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "skilldo-skill".to_string(),
+                name: "skilldo-cli".to_string(),
+                description: None,
+                source_type: "local".to_string(),
+                source_ref: Some(central.to_string_lossy().to_string()),
+                source_subpath: None,
+                source_revision: None,
+                central_path: central.to_string_lossy().to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+
+        cmd_track_local(&store, "skilldo-cli", &source, true, true).unwrap();
+
+        let origin = store.get_skill_origin("skilldo-skill").unwrap().unwrap();
+        assert_eq!(
+            origin.remote_url.as_deref(),
+            Some("https://github.com/example/skilldo.git")
+        );
+        assert_eq!(origin.subpath.as_deref(), Some("skills/skilldo-cli"));
+    }
+
+    #[test]
     fn parses_offline_profile_and_conflict_commands() {
+        let check = Cli::try_parse_from(["skilldo", "profile", "check", "--json"])
+            .expect("parse read-only profile check");
+        assert!(matches!(
+            check.command,
+            Commands::Profile {
+                action: ProfileAction::Check
+            }
+        ));
+
+        let sync = Cli::try_parse_from(["skilldo", "profile", "sync", "--json"])
+            .expect("parse profile sync without upstream refresh");
+        assert!(matches!(
+            sync.command,
+            Commands::Profile {
+                action: ProfileAction::Sync {
+                    yes: false,
+                    update_skills: false
+                }
+            }
+        ));
+
+        let sync_updates =
+            Cli::try_parse_from(["skilldo", "profile", "sync", "--update-skills", "--json"])
+                .expect("parse profile sync with explicit upstream refresh");
+        assert!(matches!(
+            sync_updates.command,
+            Commands::Profile {
+                action: ProfileAction::Sync {
+                    update_skills: true,
+                    ..
+                }
+            }
+        ));
+
         let export = Cli::try_parse_from(["skilldo", "profile", "export", "profile.json"])
             .expect("parse profile export");
         assert!(matches!(
@@ -2347,7 +2885,22 @@ mod tests {
         assert!(matches!(
             publish.command,
             Commands::Device {
-                action: DeviceAction::Publish { yes: true }
+                action: DeviceAction::Publish {
+                    yes: true,
+                    update_skills: false
+                }
+            }
+        ));
+        let publish_updates =
+            Cli::try_parse_from(["skilldo", "device", "publish", "--yes", "--update-skills"])
+                .expect("parse device publish with explicit source refresh");
+        assert!(matches!(
+            publish_updates.command,
+            Commands::Device {
+                action: DeviceAction::Publish {
+                    update_skills: true,
+                    ..
+                }
             }
         ));
     }

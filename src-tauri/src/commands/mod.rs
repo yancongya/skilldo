@@ -1971,7 +1971,7 @@ pub async fn get_profile_sync_status(
 ) -> Result<ProfileSyncReport, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        synchronize_profile(&store, true, false, ConflictStrategy::Abort)
+        synchronize_profile(&store, true, false, false, ConflictStrategy::Abort)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -2012,7 +2012,7 @@ pub async fn publish_device_state(
     confirmPush: bool,
 ) -> Result<DevicePipelineReport, String> {
     let store = store.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || device_publish(&store, confirmPush))
+    tauri::async_runtime::spawn_blocking(move || device_publish(&store, confirmPush, false))
         .await
         .map_err(|error| error.to_string())?
         .map_err(format_anyhow_error)
@@ -2027,7 +2027,13 @@ pub async fn sync_profile(
 ) -> Result<ProfileSyncReport, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        synchronize_profile(&store, false, applyDeletions, ConflictStrategy::Abort)
+        synchronize_profile(
+            &store,
+            false,
+            applyDeletions,
+            false,
+            ConflictStrategy::Abort,
+        )
     })
     .await
     .map_err(|error| error.to_string())?
@@ -2086,6 +2092,7 @@ pub async fn resolve_profile_conflicts(
             &store,
             false,
             applyDeletions,
+            false,
             ConflictStrategy::parse(&strategy)?,
         )
     })

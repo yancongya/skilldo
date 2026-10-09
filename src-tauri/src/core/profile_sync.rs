@@ -865,6 +865,7 @@ fn apply_document(
     store: &SkillStore,
     document: &ProfileDocument,
     apply_deletions: bool,
+    update_git_skills: bool,
     report: &mut ProfileSyncReport,
 ) -> Result<()> {
     apply_portable_config(store, &document.config)?;
@@ -892,7 +893,8 @@ fn apply_document(
         }
 
         let record = if let Some(record) = existing.get(&desired.key).cloned() {
-            if matches!(desired.update_policy.as_str(), "latest" | "pinned")
+            if update_git_skills
+                && matches!(desired.update_policy.as_str(), "latest" | "pinned")
                 && record.source_type == "git"
             {
                 let current_hash = hash_dir(std::path::Path::new(&record.central_path)).ok();
@@ -1040,6 +1042,7 @@ pub fn synchronize_profile(
     store: &SkillStore,
     dry_run: bool,
     apply_deletions: bool,
+    update_git_skills: bool,
     strategy: ConflictStrategy,
 ) -> Result<ProfileSyncReport> {
     let app_config = load_app_config(store)?;
@@ -1089,7 +1092,13 @@ pub fn synchronize_profile(
         return Ok(report);
     }
 
-    apply_document(store, &merged, apply_deletions, &mut report)?;
+    apply_document(
+        store,
+        &merged,
+        apply_deletions,
+        update_git_skills,
+        &mut report,
+    )?;
     if changed {
         merged.generation = remote_document
             .map(|document| document.generation)
@@ -1109,6 +1118,17 @@ pub fn synchronize_profile(
     store.set_setting(PROFILE_ID_KEY, &profile_id)?;
     store.set_setting(PROFILE_BASE_KEY, &serde_json::to_string(&merged)?)?;
     Ok(report)
+}
+
+/// Validate saved WebDAV credentials and report whether a remote Profile is
+/// readable. This performs a GET only; it does not create directories or write.
+pub fn check_profile_connection(store: &SkillStore) -> Result<bool> {
+    let app_config = load_app_config(store)?;
+    let webdav = app_config
+        .webdav
+        .ok_or_else(|| anyhow::anyhow!("WebDAV 未配置"))?;
+    let client = WebDavClient::new(&webdav)?;
+    client.check_profile(&profile_remote_path(&webdav.remote_dir))
 }
 
 /// Export the current portable desired state without contacting WebDAV.
@@ -1157,7 +1177,7 @@ pub fn import_profile_json(
     if !report.conflicts.is_empty() && strategy == ConflictStrategy::Abort {
         return Ok(report);
     }
-    apply_document(store, &merged, apply_deletions, &mut report)?;
+    apply_document(store, &merged, apply_deletions, false, &mut report)?;
     store.set_setting(PROFILE_ID_KEY, &imported.profile_id)?;
     store.set_setting(PROFILE_BASE_KEY, &serde_json::to_string(&merged)?)?;
     Ok(report)

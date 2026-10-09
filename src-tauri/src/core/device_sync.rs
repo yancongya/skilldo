@@ -92,7 +92,7 @@ fn refresh_git_snapshot(store: &SkillStore, skill: &SkillRecord) -> Result<()> {
 }
 
 pub fn device_status(store: &SkillStore) -> Result<DevicePipelineReport> {
-    let profile = synchronize_profile(store, true, false, ConflictStrategy::Abort)?;
+    let profile = synchronize_profile(store, true, false, false, ConflictStrategy::Abort)?;
     let mut report = DevicePipelineReport {
         mode: "status".to_string(),
         state: if profile.conflicts.is_empty() {
@@ -145,7 +145,13 @@ pub fn device_pull(store: &SkillStore, apply_deletions: bool) -> Result<DevicePi
         "running",
         "Downloading and merging WebDAV Profile",
     ));
-    let profile = synchronize_profile(store, false, apply_deletions, ConflictStrategy::Abort)?;
+    let profile = synchronize_profile(
+        store,
+        false,
+        apply_deletions,
+        false,
+        ConflictStrategy::Abort,
+    )?;
     report.local_only_skills = profile.skipped_local.clone();
     report.failures.extend(profile.failures.clone());
     report.state = if !profile.conflicts.is_empty() {
@@ -174,7 +180,11 @@ pub fn device_pull(store: &SkillStore, apply_deletions: bool) -> Result<DevicePi
     Ok(report)
 }
 
-pub fn device_publish(store: &SkillStore, confirm_push: bool) -> Result<DevicePipelineReport> {
+pub fn device_publish(
+    store: &SkillStore,
+    confirm_push: bool,
+    update_git_skills: bool,
+) -> Result<DevicePipelineReport> {
     let mut report = DevicePipelineReport {
         mode: "publish".to_string(),
         state: "running".to_string(),
@@ -183,9 +193,15 @@ pub fn device_publish(store: &SkillStore, confirm_push: bool) -> Result<DevicePi
     report.stages.push(stage(
         "pull",
         "running",
-        "Merging Profile and refreshing Git/package sources",
+        "Merging Profile and applying repository publication settings",
     ));
-    let initial = synchronize_profile(store, false, false, ConflictStrategy::Abort)?;
+    let initial = synchronize_profile(
+        store,
+        false,
+        false,
+        update_git_skills,
+        ConflictStrategy::Abort,
+    )?;
     if !initial.conflicts.is_empty() {
         report.state = "conflict".to_string();
         report.stages.push(stage(
@@ -295,7 +311,7 @@ pub fn device_publish(store: &SkillStore, confirm_push: bool) -> Result<DevicePi
         format!("Pushed {} Skill(s)", report.pushed.len()),
     ));
 
-    let final_profile = synchronize_profile(store, false, false, ConflictStrategy::Abort)?;
+    let final_profile = synchronize_profile(store, false, false, false, ConflictStrategy::Abort)?;
     report.failures.extend(final_profile.failures.clone());
     report.stages.push(stage(
         "profile",

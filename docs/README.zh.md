@@ -322,7 +322,7 @@ SkillDo 支持 **47** 个 AI 编程工具。项目级 skills 目录相对所选�
 | `hermes_agent` | Hermes Agent | `.hermes/skills` | 不支持 | `.hermes` |
 | `workbuddy` | WorkBuddy | `.workbuddy/skills` | `.workbuddy/skills` | `.workbuddy` |
 | `mimo_desktop` | MiMo Desktop | `.claude/skills` | `.claude/skills` | `Library/Application Support/Xiaomi MiMo` |
-| `mimocode` | MiMoCode | `.claude/skills` | `.mimocode/skills` | `.config/mimocode` |
+| `mimocode` | MiMoCode | `.config/mimocode/skills` | `.mimocode/skills` | `.config/mimocode` |
 
 > 工具数由 `readme-please` 的 `gen_tool_table.py` 从源码自动生成——请保持同步，不要手抄维护。
 

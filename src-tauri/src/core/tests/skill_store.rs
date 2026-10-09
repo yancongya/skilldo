@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::core::skill_store::{SkillOriginRecord, SkillRecord, SkillStore, SkillTargetRecord};
 use rusqlite::Connection;
+use sha2::{Digest, Sha256};
 
 fn make_store() -> (tempfile::TempDir, SkillStore) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -34,6 +35,72 @@ fn make_skill(id: &str, name: &str, central_path: &str, updated_at: i64) -> Skil
 fn schema_is_idempotent() {
     let (_dir, store) = make_store();
     store.ensure_schema().expect("ensure_schema again");
+}
+
+#[test]
+fn malformed_but_integral_restore_snapshot_does_not_replace_live_database() {
+    let (dir, store) = make_store();
+    store
+        .upsert_skill(&make_skill("keep", "keep", "/central/keep", 1))
+        .unwrap();
+    let live_path = store.db_path().to_path_buf();
+    let live_before = std::fs::read(&live_path).unwrap();
+    let live_hash = Sha256::digest(&live_before);
+
+    let malformed_path = dir.path().join("malformed.db");
+    let malformed = Connection::open(&malformed_path).unwrap();
+    malformed
+        .execute_batch(
+            "CREATE TABLE skills (id TEXT PRIMARY KEY, name TEXT); PRAGMA user_version = 6;",
+        )
+        .unwrap();
+    let integrity: String = malformed
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(integrity, "ok");
+    drop(malformed);
+
+    let error = store
+        .import_database_snapshot(&std::fs::read(malformed_path).unwrap())
+        .unwrap_err();
+    assert!(error.to_string().contains("必需字段"));
+    assert_eq!(Sha256::digest(std::fs::read(live_path).unwrap()), live_hash);
+    assert_eq!(store.list_skills().unwrap()[0].id, "keep");
+}
+
+#[test]
+fn valid_restore_keeps_a_readable_backup_of_the_previous_database() {
+    let (_target_dir, target) = make_store();
+    target
+        .upsert_skill(&make_skill("old", "old", "/central/old", 1))
+        .unwrap();
+    let previous_db = target.db_path().to_path_buf();
+
+    let (_source_dir, source) = make_store();
+    source
+        .upsert_skill(&make_skill("new", "new", "/central/new", 2))
+        .unwrap();
+    target
+        .import_database_snapshot(&source.export_database_snapshot().unwrap())
+        .unwrap();
+
+    assert_eq!(target.list_skills().unwrap()[0].id, "new");
+    let backup_path = std::fs::read_dir(previous_db.parent().unwrap())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().contains("pre-restore-"))
+        })
+        .expect("pre-restore database snapshot is retained");
+    let backup = Connection::open(backup_path).unwrap();
+    let old_count: i64 = backup
+        .query_row("SELECT COUNT(*) FROM skills WHERE id = 'old'", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(old_count, 1);
 }
 
 #[test]

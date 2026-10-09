@@ -62,6 +62,7 @@ fn project_relative_skills_dir_maps_supported_agents() {
 
     let mimocode = adapter_by_key("mimocode").unwrap();
     assert_eq!(project_relative_skills_dir(&mimocode), ".mimocode/skills");
+    assert_eq!(mimocode.relative_skills_dir, ".config/mimocode/skills");
 
     let openclaw = adapter_by_key("openclaw").unwrap();
     assert_eq!(project_relative_skills_dir(&openclaw), "skills");

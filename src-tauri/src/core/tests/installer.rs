@@ -316,7 +316,7 @@ fn installs_local_skill_and_updates_from_source() {
 }
 
 #[test]
-fn cli_reinstall_reconnects_existing_local_record_to_git_source() {
+fn cli_reinstall_keeps_untracked_project_skill_as_local_source() {
     let (_dir, store) = make_store();
     let central_root = tempfile::tempdir().unwrap();
     set_central_path(&store, central_root.path());
@@ -354,12 +354,47 @@ fn cli_reinstall_reconnects_existing_local_record_to_git_source() {
         super::install_local_skill_cli(&store, &candidate, Some("reconnect".to_string())).unwrap();
     assert_eq!(result.skill_id, "existing-id");
     let repaired = store.get_skill_by_id("existing-id").unwrap().unwrap();
-    assert_eq!(repaired.source_type, "git");
+    assert_eq!(repaired.source_type, "local");
     assert_eq!(
         repaired.source_ref.as_deref(),
-        Some("https://github.com/example/skills.git")
+        Some(candidate.to_string_lossy().as_ref())
     );
-    assert_eq!(repaired.source_subpath.as_deref(), Some("skills/reconnect"));
+    assert_eq!(repaired.source_subpath, None);
+    assert_eq!(repaired.source_revision, None);
+    let origin = store.get_skill_origin("existing-id").unwrap().unwrap();
+    assert_eq!(origin.origin_kind, "local");
+    assert_eq!(origin.update_strategy, "local_copy");
+}
+
+#[test]
+fn cli_install_keeps_untracked_skill_subdirectory_local() {
+    let (_dir, store) = make_store();
+    let central_root = tempfile::tempdir().unwrap();
+    set_central_path(&store, central_root.path());
+
+    let repo_dir = tempfile::tempdir().unwrap();
+    let repo = init_git_repo(repo_dir.path());
+    repo.remote("origin", "https://github.com/example/project.git")
+        .unwrap();
+    let candidate = repo_dir.path().join("skills/demo");
+    fs::create_dir_all(&candidate).unwrap();
+    fs::write(candidate.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+
+    super::install_local_skill_cli(&store, &candidate, Some("demo".to_string())).unwrap();
+
+    let record = store
+        .list_skills()
+        .unwrap()
+        .into_iter()
+        .find(|skill| skill.name == "demo")
+        .unwrap();
+    assert_eq!(record.source_type, "local");
+    assert_eq!(
+        record.source_ref.as_deref(),
+        Some(candidate.to_string_lossy().as_ref())
+    );
+    assert_eq!(record.source_subpath, None);
+    assert_eq!(record.source_revision, None);
 }
 
 #[test]
@@ -1009,6 +1044,7 @@ fn cli_update_keeps_symlink_targets_linked() {
     fs::create_dir_all(&source).unwrap();
     fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
     fs::write(source.join("a.txt"), b"v1").unwrap();
+    fs::write(source.join("new-only.txt"), b"source version").unwrap();
 
     let central_path = dir.path().join("central/demo");
     fs::create_dir_all(&central_path).unwrap();
@@ -1064,6 +1100,23 @@ fn cli_update_keeps_symlink_targets_linked() {
 
     let out = super::update_managed_skill_from_source_cli(&store, "cli-update").unwrap();
 
+    let recovery_copy = fs::read_dir(central_path.parent().unwrap())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".skilldo-old-")
+        })
+        .expect("old central content must be retained for recovery");
+    assert_eq!(
+        fs::read_to_string(recovery_copy.join("SKILL.md")).unwrap(),
+        "---\nname: demo\n---\n"
+    );
+    assert!(!recovery_copy.join("new-only.txt").exists());
+
     // The link survived the update and still resolves to the (swapped) central
     // directory, so it picks up the new content for free.
     let meta = fs::symlink_metadata(&link_target).unwrap();
@@ -1099,4 +1152,50 @@ fn cli_update_keeps_symlink_targets_linked() {
         .file_type()
         .is_symlink());
     assert_eq!(fs::read_link(&link_target).unwrap(), central_path);
+}
+
+#[test]
+fn cli_local_update_copies_git_worktree_without_mutating_it() {
+    let (dir, store) = make_store();
+    let source = dir.path().join("source/demo");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    fs::write(source.join("content.txt"), "committed").unwrap();
+    let repo = init_git_repo(&source);
+    let committed_head = repo.head().unwrap().target().unwrap();
+    fs::write(source.join("content.txt"), "working tree update").unwrap();
+
+    let central_path = dir.path().join("central/demo");
+    fs::create_dir_all(&central_path).unwrap();
+    fs::write(central_path.join("SKILL.md"), "---\nname: demo\n---\n").unwrap();
+    store
+        .upsert_skill(&SkillRecord {
+            id: "local-git-update".to_string(),
+            name: "demo".to_string(),
+            description: None,
+            source_type: "local".to_string(),
+            source_ref: Some(source.to_string_lossy().to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: central_path.to_string_lossy().to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        })
+        .unwrap();
+
+    super::update_managed_skill_from_source_cli(&store, "local-git-update").unwrap();
+
+    assert_eq!(
+        fs::read_to_string(central_path.join("content.txt")).unwrap(),
+        "working tree update"
+    );
+    assert_eq!(repo.head().unwrap().target().unwrap(), committed_head);
+    assert_eq!(
+        fs::read_to_string(source.join("content.txt")).unwrap(),
+        "working tree update"
+    );
 }

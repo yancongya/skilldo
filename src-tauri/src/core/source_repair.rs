@@ -23,6 +23,13 @@ pub struct DetectedGitSource {
     pub revision: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum LocalGitSourceAssessment {
+    NotGitWorktree,
+    Clean(Option<DetectedGitSource>),
+    Dirty(Option<DetectedGitSource>),
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceRepairItem {
@@ -128,6 +135,70 @@ pub fn detect_git_source(source_path: &Path) -> Result<Option<DetectedGitSource>
         subpath,
         revision,
     }))
+}
+
+pub fn assess_local_git_source(source_path: &Path) -> Result<LocalGitSourceAssessment> {
+    if Repository::discover(source_path).is_err() {
+        return Ok(LocalGitSourceAssessment::NotGitWorktree);
+    }
+    let detected = detect_git_source(source_path)?;
+    if source_subpath_is_committed_and_clean(source_path)? {
+        Ok(LocalGitSourceAssessment::Clean(detected))
+    } else {
+        Ok(LocalGitSourceAssessment::Dirty(detected))
+    }
+}
+
+fn source_subpath_is_committed_and_clean(source_path: &Path) -> Result<bool> {
+    let repository = match Repository::discover(source_path) {
+        Ok(repository) => repository,
+        Err(_) => return Ok(false),
+    };
+    let Some(workdir) = repository.workdir() else {
+        return Ok(false);
+    };
+    let canonical_source = source_path
+        .canonicalize()
+        .unwrap_or_else(|_| source_path.to_path_buf());
+    let canonical_workdir = workdir
+        .canonicalize()
+        .unwrap_or_else(|_| workdir.to_path_buf());
+    let Ok(relative) = canonical_source.strip_prefix(&canonical_workdir) else {
+        return Ok(false);
+    };
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    let prefix = if relative.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", relative.trim_end_matches('/'))
+    };
+    let index = repository.index()?;
+    let has_tracked_files = index.iter().any(|entry| {
+        std::str::from_utf8(&entry.path).ok().is_some_and(|path| {
+            if prefix.is_empty() {
+                true
+            } else {
+                path.starts_with(&prefix)
+            }
+        })
+    });
+    if !has_tracked_files {
+        return Ok(false);
+    }
+
+    let mut options = git2::StatusOptions::new();
+    options
+        .include_untracked(true)
+        // Ignored files still affect the copied Skill contents and are not
+        // part of the repository revision that a remote install can reproduce.
+        .include_ignored(true)
+        .recurse_untracked_dirs(true)
+        .exclude_submodules(false);
+    if !relative.is_empty() {
+        options.pathspec(relative.as_str());
+    }
+    let statuses = repository.statuses(Some(&mut options))?;
+    Ok(statuses.is_empty())
 }
 
 pub(crate) fn apply_detected_source(
@@ -493,6 +564,11 @@ pub fn repair_skill_sources(store: &SkillStore, apply: bool) -> Result<SourceRep
             };
             metadata_candidate.or(path_candidate)
         };
+        // Local repository paths must be verified before accepting *any*
+        // provenance candidate, including lockfile and plugin metadata. A
+        // dirty or untracked project Skill remains a local source.
+        let (candidate, local_source_uncommitted) =
+            reject_uncommitted_local_source_candidate(skill, candidate)?;
         if let Some(candidate) = candidate {
             let origin_needs_repair =
                 detected_origin_needs_repair(store, skill, &candidate.detected)?;
@@ -518,6 +594,8 @@ pub fn repair_skill_sources(store: &SkillStore, apply: bool) -> Result<SourceRep
             let source_path = skill.source_ref.as_deref().map(Path::new);
             let reason = if skill.source_type == "git" {
                 "Git Skill 缺少可验证的远程来源"
+            } else if local_source_uncommitted {
+                "sourceRef 子路径包含未跟踪或未提交内容，需先提交并核对上游后再改为 Git 来源"
             } else if source_path.is_some_and(Path::is_symlink) {
                 "sourceRef 是指向中央副本的符号链接，副本不包含 .git"
             } else if source_path.is_some_and(Path::exists) {
@@ -547,6 +625,24 @@ pub fn repair_skill_sources(store: &SkillStore, apply: bool) -> Result<SourceRep
         already_portable: skills.len().saturating_sub(repairable + unresolved),
         items,
     })
+}
+
+fn reject_uncommitted_local_source_candidate(
+    skill: &SkillRecord,
+    candidate: Option<ProvenanceCandidate>,
+) -> Result<(Option<ProvenanceCandidate>, bool)> {
+    if skill.source_type != "local" {
+        return Ok((candidate, false));
+    }
+    let Some(source_path) = skill.source_ref.as_deref().map(Path::new) else {
+        return Ok((candidate, false));
+    };
+    match assess_local_git_source(source_path)? {
+        LocalGitSourceAssessment::Dirty(_) => Ok((None, true)),
+        LocalGitSourceAssessment::Clean(_) | LocalGitSourceAssessment::NotGitWorktree => {
+            Ok((candidate, false))
+        }
+    }
 }
 
 pub fn repair_skill_source(
@@ -689,6 +785,7 @@ mod tests {
         std::fs::write(skill.join("SKILL.md"), "# Demo").unwrap();
         let mut index = repository.index().unwrap();
         index.add_path(Path::new("skills/demo/SKILL.md")).unwrap();
+        index.write().unwrap();
         let tree_id = index.write_tree().unwrap();
         let tree = repository.find_tree(tree_id).unwrap();
         let signature = git2::Signature::now("SkillDo", "test@example.com").unwrap();
@@ -758,6 +855,165 @@ mod tests {
             repaired.source_ref.as_deref(),
             Some("https://github.com/example/skills.git")
         );
+    }
+
+    #[test]
+    fn repair_keeps_uncommitted_local_skill_as_local_source() {
+        let (_directory, tracked_skill) = git_skill_fixture();
+        let untracked_skill = tracked_skill.parent().unwrap().join("new-skill");
+        std::fs::create_dir_all(&untracked_skill).unwrap();
+        std::fs::write(untracked_skill.join("SKILL.md"), "# New Skill").unwrap();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "new-skill-id".to_string(),
+                name: "new-skill".to_string(),
+                description: None,
+                source_type: "local".to_string(),
+                source_ref: Some(untracked_skill.to_string_lossy().to_string()),
+                source_subpath: None,
+                source_revision: None,
+                central_path: db_dir
+                    .path()
+                    .join("central/new-skill")
+                    .to_string_lossy()
+                    .to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+
+        let report = repair_skill_sources(&store, true).unwrap();
+        assert_eq!(report.applied, 0);
+        assert_eq!(report.unresolved, 1);
+        assert!(report.items[0].reason.contains("未跟踪或未提交"));
+        assert_eq!(
+            store
+                .get_skill_by_id("new-skill-id")
+                .unwrap()
+                .unwrap()
+                .source_type,
+            "local"
+        );
+    }
+
+    #[test]
+    fn repair_does_not_promote_skill_with_ignored_subtree_content() {
+        let (directory, skill_path) = git_skill_fixture();
+        let repository = Repository::open(directory.path()).unwrap();
+        std::fs::write(
+            directory.path().join(".gitignore"),
+            "skills/demo/generated.txt\n",
+        )
+        .unwrap();
+        let mut index = repository.index().unwrap();
+        index.add_path(Path::new(".gitignore")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repository.find_tree(tree_id).unwrap();
+        let parent = repository.head().unwrap().peel_to_commit().unwrap();
+        let signature = git2::Signature::now("SkillDo", "test@example.com").unwrap();
+        repository
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "ignore generated Skill artifact",
+                &tree,
+                &[&parent],
+            )
+            .unwrap();
+        std::fs::write(skill_path.join("generated.txt"), "local generated content").unwrap();
+
+        assert!(matches!(
+            assess_local_git_source(&skill_path).unwrap(),
+            LocalGitSourceAssessment::Dirty(_)
+        ));
+
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "ignored-skill".to_string(),
+                name: "demo".to_string(),
+                description: None,
+                source_type: "local".to_string(),
+                source_ref: Some(skill_path.to_string_lossy().to_string()),
+                source_subpath: None,
+                source_revision: None,
+                central_path: db_dir
+                    .path()
+                    .join("central/demo")
+                    .to_string_lossy()
+                    .to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+
+        let report = repair_skill_sources(&store, true).unwrap();
+        assert_eq!(report.applied, 0);
+        assert_eq!(report.unresolved, 1);
+        assert!(report.items[0].reason.contains("未跟踪或未提交"));
+        assert_eq!(
+            store
+                .get_skill_by_id("ignored-skill")
+                .unwrap()
+                .unwrap()
+                .source_type,
+            "local"
+        );
+    }
+
+    #[test]
+    fn repair_rejects_lock_or_plugin_candidate_for_untracked_local_source() {
+        let (_directory, tracked_skill) = git_skill_fixture();
+        let untracked_skill = tracked_skill.parent().unwrap().join("new-skill");
+        std::fs::create_dir_all(&untracked_skill).unwrap();
+        std::fs::write(untracked_skill.join("SKILL.md"), "# New Skill").unwrap();
+        let skill = SkillRecord {
+            id: "new-skill-id".to_string(),
+            name: "new-skill".to_string(),
+            description: None,
+            source_type: "local".to_string(),
+            source_ref: Some(untracked_skill.to_string_lossy().to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: "/tmp/central/new-skill".to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        };
+        let metadata_candidate = ProvenanceCandidate {
+            detected: DetectedGitSource {
+                repo_root: _directory.path().to_path_buf(),
+                remote_url: "https://github.com/example/skills.git".to_string(),
+                branch: Some("main".to_string()),
+                subpath: Some("skills/new-skill".to_string()),
+                revision: None,
+            },
+            reason: "synthetic lockfile/plugin provenance".to_string(),
+        };
+
+        let (candidate, uncommitted) =
+            reject_uncommitted_local_source_candidate(&skill, Some(metadata_candidate)).unwrap();
+
+        assert!(uncommitted);
+        assert!(candidate.is_none());
     }
 
     #[test]

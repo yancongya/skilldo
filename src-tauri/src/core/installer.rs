@@ -16,7 +16,7 @@ use super::git_fetcher::{
     clone_local_repo, clone_or_pull, clone_or_pull_sparse, commit_all_and_push,
 };
 use super::github_download::{download_github_directory, parse_github_api_params};
-use super::skill_store::{SkillRecord, SkillStore};
+use super::skill_store::{SkillOriginRecord, SkillRecord, SkillStore};
 use super::sync_engine::copy_dir_recursive;
 use super::sync_engine::is_same_link;
 use super::sync_engine::sync_dir_copy_with_overwrite;
@@ -29,6 +29,78 @@ pub struct InstallResult {
     pub name: String,
     pub central_path: PathBuf,
     pub content_hash: Option<String>,
+}
+
+fn detect_local_install_git_source(
+    source_path: &Path,
+    name: &str,
+    central_path: &Path,
+) -> Result<(Option<super::source_repair::DetectedGitSource>, bool)> {
+    use super::source_repair::LocalGitSourceAssessment;
+
+    match super::source_repair::assess_local_git_source(source_path)? {
+        LocalGitSourceAssessment::Dirty(_) => Ok((None, true)),
+        LocalGitSourceAssessment::Clean(detected) => Ok((
+            detected.or_else(|| super::source_repair::detect_recorded_source(name, central_path)),
+            false,
+        )),
+        LocalGitSourceAssessment::NotGitWorktree => Ok((
+            super::source_repair::detect_recorded_source(name, central_path),
+            false,
+        )),
+    }
+}
+
+fn bind_existing_skill_to_local_source(
+    store: &SkillStore,
+    skill: &SkillRecord,
+    source_path: &Path,
+    git_provenance: Option<&super::source_repair::DetectedGitSource>,
+) -> Result<()> {
+    let mut local = skill.clone();
+    local.source_type = "local".to_string();
+    local.source_ref = Some(source_path.to_string_lossy().to_string());
+    local.source_subpath = None;
+    local.source_revision = None;
+    local.updated_at = now_ms();
+    store.upsert_skill(&local)?;
+
+    let mut origin = store
+        .get_skill_origin(&skill.id)?
+        .unwrap_or_else(|| SkillOriginRecord {
+            skill_id: skill.id.clone(),
+            origin_kind: "local".to_string(),
+            origin_role: "mine".to_string(),
+            provider: Some("local".to_string()),
+            remote_url: git_provenance.map(|source| source.remote_url.clone()),
+            owner: None,
+            repo: None,
+            branch: git_provenance.and_then(|source| source.branch.clone()),
+            subpath: git_provenance.and_then(|source| source.subpath.clone()),
+            update_strategy: "local_copy".to_string(),
+            publish_strategy: "none".to_string(),
+            manual_override: true,
+            reason: None,
+            updated_at: 0,
+        });
+    origin.origin_kind = "local".to_string();
+    origin.origin_role = "mine".to_string();
+    origin.provider = Some("local".to_string());
+    if let Some(source) = git_provenance {
+        origin.remote_url = Some(source.remote_url.clone());
+        origin.branch = source.branch.clone();
+        origin.subpath = source.subpath.clone();
+    }
+    origin.update_strategy = "local_copy".to_string();
+    origin.publish_strategy = "none".to_string();
+    origin.manual_override = true;
+    origin.reason = Some(
+        "Local source contains uncommitted project work and remains authoritative until committed and verified."
+            .to_string(),
+    );
+    origin.updated_at = now_ms();
+    store.upsert_skill_origin(&origin)?;
+    Ok(())
 }
 
 pub fn install_local_skill<R: tauri::Runtime>(
@@ -60,8 +132,7 @@ pub fn install_local_skill<R: tauri::Runtime>(
     // source is a Git worktree with a remote (not merely a subdir of a larger
     // repo), clone it — keeping a real `.git` in the central copy so that
     // `skilldo push` works directly. Otherwise fall back to a plain file copy.
-    let detected_git = super::source_repair::detect_git_source(source_path)?
-        .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
+    let (detected_git, _) = detect_local_install_git_source(source_path, &name, &central_path)?;
     let preserve_git = detected_git
         .as_ref()
         .map(|git| git.subpath.is_none())
@@ -1264,13 +1335,20 @@ pub fn update_managed_skill_from_source<R: tauri::Runtime>(
         anyhow::bail!("unsupported source_type for update: {}", record.source_type);
     }
 
-    // Swap: remove old dir and rename staging into place (best effort).
-    std::fs::remove_dir_all(&central_path)
-        .with_context(|| format!("failed to remove old central dir {:?}", central_path))?;
+    // Keep the previous central directory for recovery. Never discard the only
+    // local copy during a source update; users may have files outside Git's tree.
+    let old_backup = central_parent.join(format!(".skilldo-old-{}", Uuid::new_v4()));
+    std::fs::rename(&central_path, &old_backup)
+        .with_context(|| format!("failed to preserve old central dir {:?}", central_path))?;
     if let Err(err) = std::fs::rename(&staging_dir, &central_path) {
         // Fallback for cross-device rename: copy then delete staging.
-        copy_dir_recursive(&staging_dir, &central_path)
-            .with_context(|| format!("fallback copy {:?} -> {:?}", staging_dir, central_path))?;
+        if let Err(copy_err) = copy_dir_recursive(&staging_dir, &central_path) {
+            let _ = std::fs::remove_dir_all(&central_path);
+            let restore_err = std::fs::rename(&old_backup, &central_path).err();
+            return Err(copy_err).with_context(|| {
+                format!("fallback copy failed after {err}; previous central directory restore: {restore_err:?}")
+            });
+        }
         let _ = std::fs::remove_dir_all(&staging_dir);
         // Still surface original rename error in logs for troubleshooting.
         eprintln!("[update] rename warning: {}", err);
@@ -2417,8 +2495,7 @@ pub fn install_local_skill_cli(
     if !already_in_central {
         // Preserve Git history when the source is a Git worktree with a remote,
         // so the consolidated copy keeps a real `.git` and `skilldo push` works.
-        let detected_git = super::source_repair::detect_git_source(source_path)?
-            .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
+        let (detected_git, _) = detect_local_install_git_source(source_path, &name, &central_path)?;
         let preserve_git = detected_git
             .as_ref()
             .map(|git| git.subpath.is_none())
@@ -2462,10 +2539,13 @@ pub fn install_local_skill_cli(
         patched.last_seen_at = now_ms();
         patched.status = "ok".to_string();
         store.upsert_skill(&patched)?;
-        if let Some(detected) = super::source_repair::detect_git_source(source_path)?
-            .or_else(|| super::source_repair::detect_recorded_source(&patched.name, &central_path))
-        {
+        let (detected, has_uncommitted_git_source) =
+            detect_local_install_git_source(source_path, &patched.name, &central_path)?;
+        if let Some(detected) = detected {
             super::source_repair::apply_detected_source(store, &patched, &detected)?;
+        } else if has_uncommitted_git_source {
+            let provenance = super::source_repair::detect_git_source(source_path)?;
+            bind_existing_skill_to_local_source(store, &patched, source_path, provenance.as_ref())?;
         }
         let content_hash = compute_content_hash(&central_path);
         return Ok(InstallResult {
@@ -2480,8 +2560,7 @@ pub fn install_local_skill_cli(
     let content_hash = compute_content_hash(&central_path);
     let description = parse_skill_md(&central_path.join("SKILL.md")).and_then(|(_, desc)| desc);
 
-    let detected_git = super::source_repair::detect_git_source(source_path)?
-        .or_else(|| super::source_repair::detect_recorded_source(&name, &central_path));
+    let (detected_git, _) = detect_local_install_git_source(source_path, &name, &central_path)?;
     let record = SkillRecord {
         id: Uuid::new_v4().to_string(),
         name,
@@ -2704,25 +2783,8 @@ pub fn update_managed_skill_from_source_cli(
         if !source_path.exists() {
             anyhow::bail!("source path not found: {:?}", source_path);
         }
-        // If the source is a git repository, pull latest changes first.
-        if source_path.join(".git").exists() {
-            log::info!(
-                "[installer:cli] source is a git repo, pulling latest: {:?}",
-                source_path
-            );
-            let url = source_path.to_string_lossy().to_string();
-            match super::git_fetcher::clone_or_pull(&url, &source_path, None, None) {
-                Ok(rev) => {
-                    log::info!("[installer:cli] pulled to rev: {}", rev);
-                }
-                Err(err) => {
-                    log::warn!(
-                        "[installer:cli] git pull failed for source, using existing: {:#}",
-                        err
-                    );
-                }
-            }
-        }
+        // A local source is the caller's working tree. Copy its current state
+        // without fetching, resetting, or otherwise mutating that repository.
         copy_dir_recursive(&source_path, &staging_dir)
             .with_context(|| format!("copy {:?} -> {:?}", source_path, staging_dir))?;
     } else {
@@ -2734,13 +2796,19 @@ pub fn update_managed_skill_from_source_cli(
 
     ensure_installable_skill_dir(&staging_dir)?;
 
-    // Atomic swap: rename old → .old, rename new → old, delete .old.
+    // Preserve the previous central directory for recovery instead of deleting
+    // user-created files that are not present in the source repository.
     let old_backup = central_parent.join(format!(".skilldo-old-{}", Uuid::new_v4()));
     std::fs::rename(&central_path, &old_backup)
         .with_context(|| format!("rename {:?} -> {:?}", central_path, old_backup))?;
-    std::fs::rename(&staging_dir, &central_path)
-        .with_context(|| format!("rename {:?} -> {:?}", staging_dir, central_path))?;
-    let _ = std::fs::remove_dir_all(&old_backup);
+    if let Err(err) = std::fs::rename(&staging_dir, &central_path) {
+        if let Err(restore_err) = std::fs::rename(&old_backup, &central_path) {
+            return Err(err).with_context(|| {
+                format!("failed to install staged Skill; restoring previous copy also failed: {restore_err}")
+            });
+        }
+        return Err(err).with_context(|| "restored previous SkillDo central copy");
+    }
 
     let new_hash = compute_content_hash(&central_path);
 
