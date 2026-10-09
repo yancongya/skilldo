@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-10-09
+
+### 更新
+- 移除 SkillDo 备份与 GitHub 凭据泄漏路径
+
 ## [0.7.13] - 2026-10-09
 
 ### 更新
