@@ -1583,7 +1583,7 @@ fn cmd_github_token_set(store: &SkillStore, token: &str, json: bool) -> Result<(
     Ok(())
 }
 
-fn cmd_github_token_get(store: &SkillStore, json: bool) -> Result<()> {
+fn cmd_github_token_get(_store: &SkillStore, json: bool) -> Result<()> {
     let configured = BwVaultCredentialProvider::default()
         .alias_exists(GITHUB_TOKEN_ALIAS)
         .map_err(|_| anyhow::anyhow!("无法检查 BWVault 中的 GitHub 凭据"))?;
@@ -1597,7 +1597,7 @@ fn cmd_github_token_get(store: &SkillStore, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_github_token_validate(store: &SkillStore, token: Option<&str>, json: bool) -> Result<()> {
+fn cmd_github_token_validate(_store: &SkillStore, token: Option<&str>, json: bool) -> Result<()> {
     let token = match token {
         Some(t) => t.to_string(),
         None => {

@@ -1713,7 +1713,7 @@ pub async fn migrate_credentials(
 
 #[tauri::command]
 pub async fn set_github_token(store: State<'_, SkillStore>, token: String) -> Result<(), String> {
-    let _store = store.inner().clone();
+    let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let trimmed = token.trim();
         if trimmed.is_empty() {
@@ -1731,6 +1731,7 @@ pub async fn set_github_token(store: State<'_, SkillStore>, token: String) -> Re
         if stored != trimmed {
             anyhow::bail!("BWVault 凭据写入核验不匹配");
         }
+        store.scrub_legacy_auth_settings(None)?;
         Ok::<_, anyhow::Error>(())
     })
     .await
