@@ -126,7 +126,7 @@ pub fn export_full_backup(store: &SkillStore) -> Result<String> {
     for rec in &records {
         let targets = store
             .list_skill_targets(&rec.id)
-            .unwrap_or_default()
+            .context("列出技能安装目标失败")?
             .into_iter()
             .map(|target| {
                 SkillTargetBackupEntry::Detailed(SkillTargetBackupDetails {
@@ -319,6 +319,41 @@ fn parse_package_ref(raw: &str) -> Result<(String, Option<String>)> {
 mod tests {
     use super::*;
     use crate::core::app_config::CONFIG_VERSION;
+    use crate::core::skill_store::SkillRecord;
+
+    #[test]
+    fn export_fails_instead_of_silently_omitting_targets() {
+        let temp = tempfile::tempdir().unwrap();
+        let db_path = temp.path().join("source.db");
+        let source = SkillStore::new(db_path.clone());
+        source.ensure_schema().unwrap();
+        source
+            .upsert_skill(&SkillRecord {
+                id: "skill-1".to_string(),
+                name: "demo".to_string(),
+                description: None,
+                source_type: "git".to_string(),
+                source_ref: Some("https://github.com/example/demo".to_string()),
+                source_subpath: None,
+                source_revision: None,
+                central_path: temp.path().join("demo").to_string_lossy().to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+        rusqlite::Connection::open(db_path)
+            .unwrap()
+            .execute("DROP TABLE skill_targets", [])
+            .unwrap();
+
+        let error = export_full_backup(&source).unwrap_err();
+
+        assert!(error.to_string().contains("列出技能安装目标失败"));
+    }
 
     #[test]
     fn parses_legacy_string_targets() {
