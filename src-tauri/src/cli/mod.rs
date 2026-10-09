@@ -906,13 +906,11 @@ fn cmd_list(store: &SkillStore, filter: &str, json: bool) -> Result<()> {
                 .as_deref()
                 .map(parse_github_repository)
                 .unwrap_or_default();
-            let is_current = owner.as_deref().is_some_and(|value| {
-                config
-                    .origin_rules
-                    .my_git_owners
-                    .iter()
-                    .any(|mine| mine.eq_ignore_ascii_case(value))
-            });
+            let is_current = source_matches_my_git_rules(
+                owner.as_deref(),
+                repo.as_deref(),
+                &config.origin_rules,
+            );
             CliSkillOrigin {
                 kind: rec.source_type.clone(),
                 role: if rec.source_type == "local" || is_current {
@@ -1086,6 +1084,29 @@ fn parse_github_repository(source: &str) -> (Option<String>, Option<String>) {
             .filter(|value| !value.is_empty())
             .map(str::to_string),
     )
+}
+
+fn source_matches_my_git_rules(
+    owner: Option<&str>,
+    repo: Option<&str>,
+    rules: &crate::core::app_config::OriginRules,
+) -> bool {
+    if owner.is_some_and(|owner| {
+        rules
+            .my_git_owners
+            .iter()
+            .any(|mine| mine.eq_ignore_ascii_case(owner))
+    }) {
+        return true;
+    }
+    let (Some(owner), Some(repo)) = (owner, repo) else {
+        return false;
+    };
+    let source = format!("{owner}/{repo}");
+    rules
+        .my_git_repos
+        .iter()
+        .any(|mine| mine.eq_ignore_ascii_case(&source))
 }
 
 fn cmd_status(json: bool) -> Result<()> {
@@ -2675,6 +2696,27 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
 mod tests {
     use super::*;
     use crate::core::skill_store::SkillRecord;
+
+    #[test]
+    fn source_owner_inference_matches_registered_repository_rules() {
+        let rules = crate::core::app_config::OriginRules {
+            my_git_owners: vec![],
+            my_git_repos: vec!["Yancongya/MyWorkforce".to_string()],
+            official_git_repos: vec![],
+        };
+
+        let (owner, repo) = parse_github_repository("https://github.com/yancongya/myworkforce.git");
+        assert!(source_matches_my_git_rules(
+            owner.as_deref(),
+            repo.as_deref(),
+            &rules
+        ));
+        assert!(!source_matches_my_git_rules(
+            Some("yancongya"),
+            Some("other"),
+            &rules
+        ));
+    }
 
     #[test]
     fn cli_db_path_matches_app_identifier() {

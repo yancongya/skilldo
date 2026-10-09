@@ -850,6 +850,17 @@ fn ensure_installable_skill_dir(p: &Path) -> Result<()> {
     }
 }
 
+fn validate_remote_update_source(path: &Path) -> Result<()> {
+    if is_skill_dir(path) {
+        Ok(())
+    } else {
+        anyhow::bail!(
+            "source skill path is missing or invalid in the remote revision: {:?}",
+            path
+        );
+    }
+}
+
 /// Check if a directory is a Claude plugin skill (under .claude/skills/ without SKILL.md).
 fn is_claude_skill_dir(p: &Path) -> bool {
     // A directory under .claude/skills/ is treated as a valid skill even without SKILL.md
@@ -1145,6 +1156,20 @@ fn check_skill_record_update<R: tauri::Runtime>(
             .as_deref()
             .map(|subpath| repo_dir.join(subpath))
             .unwrap_or(repo_dir);
+        if let Err(err) = validate_remote_update_source(&source_dir) {
+            return Ok(UpdateCheckResult {
+                skill_id: record.id.clone(),
+                name: record.name.clone(),
+                checkable: false,
+                has_update: false,
+                has_local_changes: false,
+                current_revision: record.source_revision.clone(),
+                latest_revision,
+                current_hash,
+                latest_hash: None,
+                message: Some(err.to_string()),
+            });
+        }
         latest_hash = hash_dir(&source_dir).ok();
         if store
             .get_skill_origin(&record.id)?
@@ -2678,11 +2703,23 @@ pub fn check_managed_skill_update_cli(
         } else {
             repo_dir
         };
-        if source_dir.exists() {
-            let latest_hash = hash_dir(&source_dir).ok();
-            has_local_changes =
-                current_hash.is_some() && latest_hash.is_some() && current_hash != latest_hash;
+        if let Err(err) = validate_remote_update_source(&source_dir) {
+            return Ok(UpdateCheckResult {
+                skill_id: record.id,
+                name: record.name,
+                checkable: false,
+                has_update: false,
+                has_local_changes: false,
+                current_revision: record.source_revision,
+                latest_revision,
+                current_hash,
+                latest_hash: None,
+                message: Some(err.to_string()),
+            });
         }
+        let latest_hash = hash_dir(&source_dir).ok();
+        has_local_changes =
+            current_hash.is_some() && latest_hash.is_some() && current_hash != latest_hash;
     }
 
     let latest_hash = if record.source_type == "git" {

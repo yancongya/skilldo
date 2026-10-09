@@ -10,6 +10,21 @@ fn make_store() -> (tempfile::TempDir, SkillStore) {
     (dir, store)
 }
 
+#[test]
+fn remote_update_source_requires_a_valid_skill_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let skill_dir = temp.path().join("skill");
+    fs::create_dir_all(&skill_dir).unwrap();
+
+    let missing = super::validate_remote_update_source(&skill_dir).unwrap_err();
+    assert!(missing
+        .to_string()
+        .contains("source skill path is missing or invalid in the remote revision"));
+
+    fs::write(skill_dir.join("SKILL.md"), "---\nname: sample\n---\n").unwrap();
+    super::validate_remote_update_source(&skill_dir).unwrap();
+}
+
 fn set_central_path(store: &SkillStore, central: &Path) {
     store
         .set_setting("central_repo_path", central.to_string_lossy().as_ref())
