@@ -11,6 +11,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 use crate::core::app_config::WebDavConfig;
+use crate::core::credentials::{
+    BwVaultCredentialProvider, CredentialProvider, WEBDAV_PASSWORD_ALIAS,
+};
 
 #[derive(Debug, Clone)]
 pub struct WebDavDocument {
@@ -29,6 +32,13 @@ pub struct WebDavClient {
 impl WebDavClient {
     /// Build a client from a stored [`WebDavConfig`].
     pub fn new(cfg: &WebDavConfig) -> Result<Self> {
+        Self::new_with_provider(cfg, &BwVaultCredentialProvider::default())
+    }
+
+    fn new_with_provider(
+        cfg: &WebDavConfig,
+        credential_provider: &dyn CredentialProvider,
+    ) -> Result<Self> {
         let base = cfg.url.trim_end_matches('/').to_string();
         if base.is_empty() {
             anyhow::bail!("WebDAV URL 未配置");
@@ -60,10 +70,18 @@ impl WebDavClient {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .context("创建 HTTP 客户端失败")?;
+        let user = cfg.user.trim().to_string();
+        let password = if user.is_empty() || !cfg.password.is_empty() {
+            cfg.password.clone()
+        } else {
+            credential_provider
+                .get_secret(WEBDAV_PASSWORD_ALIAS)
+                .map_err(|_| anyhow::anyhow!("WebDAV 密码凭据不可用"))?
+        };
         Ok(Self {
             base,
-            user: cfg.user.trim().to_string(),
-            password: cfg.password.clone(),
+            user,
+            password,
             client,
         })
     }
@@ -116,7 +134,7 @@ impl WebDavClient {
             .map_err(|error| {
                 let context =
                     Self::request_error_context("MKCOL", error.is_connect(), &error.to_string());
-                anyhow::Error::new(error).context(context)
+                anyhow::anyhow!(context)
             })?;
         let status = resp.status();
         if status.is_success() || status == 405 {
@@ -137,7 +155,7 @@ impl WebDavClient {
             .map_err(|error| {
                 let context =
                     Self::request_error_context("PUT", error.is_connect(), &error.to_string());
-                anyhow::Error::new(error).context(context)
+                anyhow::anyhow!(context)
             })?;
         let status = resp.status();
         if status.is_success() || status == 201 || status == 204 {
@@ -153,7 +171,7 @@ impl WebDavClient {
         let resp = self.auth(self.client.get(&url)).send().map_err(|error| {
             let context =
                 Self::request_error_context("GET", error.is_connect(), &error.to_string());
-            anyhow::Error::new(error).context(context)
+            anyhow::anyhow!(context)
         })?;
         let status = resp.status();
         if status.is_success() {
@@ -171,7 +189,7 @@ impl WebDavClient {
         let resp = self.auth(self.client.get(&url)).send().map_err(|error| {
             let context =
                 Self::request_error_context("GET", error.is_connect(), &error.to_string());
-            anyhow::Error::new(error).context(context)
+            anyhow::anyhow!(context)
         })?;
         let status = resp.status();
         if status.is_success() {
@@ -315,9 +333,63 @@ pub fn prepare_remote_dir(cfg: &WebDavConfig) -> Result<WebDavClient> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
     use mockito::Matcher;
 
     use super::*;
+    use crate::core::credentials::{CommandOutput, CommandRunError, CommandRunner};
+
+    struct FakeRunner {
+        success: bool,
+        stdout: Vec<u8>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl CommandRunner for FakeRunner {
+        fn run(
+            &self,
+            executable: &str,
+            args: &[&str],
+            _stdin: Option<&[u8]>,
+        ) -> std::result::Result<CommandOutput, CommandRunError> {
+            assert_eq!(executable, "bwvault");
+            assert_eq!(
+                args,
+                [
+                    "credential",
+                    "get",
+                    "--alias",
+                    WEBDAV_PASSWORD_ALIAS,
+                    "--reveal",
+                    "--json"
+                ]
+            );
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(CommandOutput {
+                success: self.success,
+                stdout: self.stdout.clone(),
+            })
+        }
+    }
+
+    fn vault_provider(
+        success: bool,
+        stdout: &[u8],
+    ) -> (BwVaultCredentialProvider<FakeRunner>, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        (
+            BwVaultCredentialProvider::new(FakeRunner {
+                success,
+                stdout: stdout.to_vec(),
+                calls: calls.clone(),
+            }),
+            calls,
+        )
+    }
 
     fn config(url: String) -> WebDavConfig {
         WebDavConfig {
@@ -359,6 +431,85 @@ mod tests {
             Err(error) => error.to_string(),
         };
         assert!(error.contains("不能在 URL 中嵌入凭据"));
+    }
+
+    #[test]
+    fn authenticated_empty_config_password_uses_vault_alias() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("GET", "/skilldo-profile.json")
+            .match_header("authorization", "Basic dXNlcm5hbWU6dmF1bHQtcGFzcw==")
+            .with_status(404)
+            .create();
+        let cfg = WebDavConfig {
+            url: server.url(),
+            user: "username".to_string(),
+            password: String::new(),
+            remote_dir: String::new(),
+        };
+        let (provider, calls) = vault_provider(true, br#"{"secret":"vault-pass"}"#);
+        let client = WebDavClient::new_with_provider(&cfg, &provider).unwrap();
+
+        assert!(!client.check_profile(PROFILE_REMOTE_FILE).unwrap());
+        request.assert();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn authenticated_in_memory_password_remains_available_for_tests() {
+        let mut server = mockito::Server::new();
+        let request = server
+            .mock("GET", "/skilldo-profile.json")
+            .match_header("authorization", "Basic dXNlcm5hbWU6bWVtb3J5LXBhc3M=")
+            .with_status(404)
+            .create();
+        let cfg = WebDavConfig {
+            url: server.url(),
+            user: "username".to_string(),
+            password: "memory-pass".to_string(),
+            remote_dir: String::new(),
+        };
+        let (provider, calls) = vault_provider(false, b"vault-secret-marker");
+        let client = WebDavClient::new_with_provider(&cfg, &provider).unwrap();
+
+        assert!(!client.check_profile(PROFILE_REMOTE_FILE).unwrap());
+        request.assert();
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn unavailable_vault_password_fails_closed_without_leaking_secret() {
+        let cfg = WebDavConfig {
+            url: "https://dav.example.test".to_string(),
+            user: "username".to_string(),
+            password: String::new(),
+            remote_dir: String::new(),
+        };
+        let (provider, calls) = vault_provider(false, b"vault-secret-marker");
+
+        let error = match WebDavClient::new_with_provider(&cfg, &provider) {
+            Ok(_) => panic!("missing vault credential should fail closed"),
+            Err(error) => error.to_string(),
+        };
+
+        assert_eq!(error, "WebDAV 密码凭据不可用");
+        assert!(!error.contains("vault-secret-marker"));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn no_auth_profile_does_not_read_vault() {
+        let cfg = WebDavConfig {
+            url: "https://dav.example.test".to_string(),
+            user: String::new(),
+            password: String::new(),
+            remote_dir: String::new(),
+        };
+        let (provider, calls) = vault_provider(false, b"vault-secret-marker");
+
+        WebDavClient::new_with_provider(&cfg, &provider).unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     #[test]
