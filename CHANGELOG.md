@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-10-09
+
 ### 更新
 - feat(cli): 新增 `skilldo repair origin`，可在验证 Git 远端和 Skill 子目录后，将手动 `local_copy` 覆盖迁移为 Git 更新；事务只改来源元数据并保留 Skill 与目标记录。
 
