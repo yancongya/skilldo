@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.16] - 2026-10-09
+
+### 更新
+- fix: validate managed skill update sources
+
 ## [0.7.15] - 2026-10-09
 
 ### 更新
