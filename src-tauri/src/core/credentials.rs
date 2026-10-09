@@ -11,6 +11,7 @@ use serde_json::Value;
 
 /// Stable alias used by SkillDo for its GitHub publishing credential.
 pub const GITHUB_TOKEN_ALIAS: &str = "skilldo.github.token";
+pub const WEBDAV_PASSWORD_ALIAS: &str = "skilldo.webdav.password";
 
 const BWVAULT_COMMAND: &str = "bwvault";
 const SAFE_ERROR: &str = "credential provider could not retrieve the requested credential";

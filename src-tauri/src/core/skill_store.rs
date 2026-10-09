@@ -299,6 +299,42 @@ impl SkillStore {
         })
     }
 
+    /// Replace the legacy authentication settings with sanitized values,
+    /// securely delete their previous SQLite pages where supported, then
+    /// compact/checkpoint the database. Call only after credentials have been
+    /// written to and verified in the external credential store.
+    pub fn scrub_legacy_auth_settings(&self, sanitized_webdav: Option<&str>) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute_batch("PRAGMA secure_delete = ON; BEGIN IMMEDIATE;")?;
+            let result = (|| -> Result<()> {
+                conn.execute(
+                    "UPDATE settings SET value = '' WHERE key = 'github_token'",
+                    [],
+                )?;
+                if let Some(webdav) = sanitized_webdav {
+                    conn.execute(
+                        "UPDATE settings SET value = ?1 WHERE key = 'webdav_config'",
+                        [webdav],
+                    )?;
+                }
+                conn.execute_batch("COMMIT;")?;
+                conn.execute_batch("VACUUM;")?;
+                let (busy,): (i64,) =
+                    conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
+                        Ok((row.get(0)?,))
+                    })?;
+                if busy != 0 {
+                    anyhow::bail!("数据库仍被其他进程占用，凭据已从活动设置移除但旧页面压缩未完成");
+                }
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = conn.execute_batch("ROLLBACK;");
+            }
+            result
+        })
+    }
+
     /// Produce a consistent SQLite image containing every table, index,
     /// sequence, setting, and metadata row currently stored by SkillDo.
     pub fn export_database_snapshot(&self) -> Result<Vec<u8>> {

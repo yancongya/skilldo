@@ -5,6 +5,7 @@ pub mod cancel_token;
 pub mod central_repo;
 pub mod config;
 pub mod content_hash;
+pub mod credential_migration;
 pub mod credentials;
 pub mod device_sync;
 pub mod explore_sources;
