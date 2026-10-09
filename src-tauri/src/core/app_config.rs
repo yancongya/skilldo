@@ -387,7 +387,9 @@ pub fn save_app_config_impl(store: &SkillStore, cfg: &AppConfig) -> anyhow::Resu
     let ttl_secs = cfg.git_cache_ttl_secs.clamp(0, 3600);
     set_git_cache_cleanup_days(store, cleanup_days)?;
     set_git_cache_ttl_secs(store, ttl_secs)?;
-    store.set_setting("github_token", cfg.github_token.trim())?;
+    // Credentials are owned by BWVault. Legacy values remain untouched until
+    // the explicit migration succeeds; ordinary settings saves never rewrite
+    // them from a UI/export DTO.
 
     let rules: OriginRules = convert_via_json(&cfg.origin_rules)?;
     let normalized = normalize_rules(rules);
@@ -407,7 +409,23 @@ pub fn save_app_config_impl(store: &SkillStore, cfg: &AppConfig) -> anyhow::Resu
     explore_sources::save_explore_sources(store, &cfg.explore_sources)?;
 
     match &cfg.webdav {
-        Some(wd) => store.set_setting(WEBDAV_CONFIG_KEY, &serde_json::to_string(wd)?)?,
+        Some(wd) => {
+            let current_raw = store.get_setting(WEBDAV_CONFIG_KEY)?;
+            let mut sanitized = wd.clone();
+            // Preserve legacy data when a caller supplies an empty field. This
+            // prevents unrelated saves/restores from destroying it before the
+            // explicit migration can transfer it to BWVault.
+            if sanitized.password.is_empty() {
+                if let Some(raw) = current_raw {
+                    if let Ok(current) = serde_json::from_str::<WebDavConfig>(&raw) {
+                        if current.url == wd.url && current.user == wd.user {
+                            sanitized.password = current.password;
+                        }
+                    }
+                }
+            }
+            store.set_setting(WEBDAV_CONFIG_KEY, &serde_json::to_string(&sanitized)?)?
+        }
         None => store.delete_setting(WEBDAV_CONFIG_KEY)?,
     }
     Ok(())
@@ -416,6 +434,13 @@ pub fn save_app_config_impl(store: &SkillStore, cfg: &AppConfig) -> anyhow::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_store() -> (tempfile::TempDir, SkillStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(dir.path().join("skilldo.db"));
+        store.ensure_schema().unwrap();
+        (dir, store)
+    }
 
     fn config_with_secrets() -> AppConfig {
         AppConfig {
@@ -484,5 +509,30 @@ mod tests {
 
         assert!(imported.github_token.is_empty());
         assert_eq!(imported.webdav.unwrap().password, "");
+    }
+
+    #[test]
+    fn ordinary_config_save_does_not_write_github_secret_and_preserves_legacy_webdav_for_migration()
+    {
+        let (_dir, store) = test_store();
+        store.set_setting("github_token", "legacy-github").unwrap();
+        let mut config = AppConfig::default();
+        config.github_token = "incoming-github".to_owned();
+        config.webdav = Some(WebDavConfig {
+            url: "https://dav.example.test".to_owned(),
+            user: "user".to_owned(),
+            password: "legacy-webdav".to_owned(),
+            remote_dir: "skilldo".to_owned(),
+        });
+
+        save_app_config_impl(&store, &config).unwrap();
+
+        assert_eq!(
+            store.get_setting("github_token").unwrap().as_deref(),
+            Some("legacy-github")
+        );
+        let raw = store.get_setting(WEBDAV_CONFIG_KEY).unwrap().unwrap();
+        let saved: WebDavConfig = serde_json::from_str(&raw).unwrap();
+        assert_eq!(saved.password, "legacy-webdav");
     }
 }

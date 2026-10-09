@@ -839,12 +839,21 @@ function App() {
     officialGitRepos: [],
   })
   const [webdav, setWebdav] = useState<WebDavConfigDto | null>(null)
+  const [webdavPasswordConfigured, setWebdavPasswordConfigured] = useState(false)
+
+  useEffect(() => {
+    if (!isTauri) return
+    invokeTauri<boolean>('get_webdav_credential_is_configured')
+      .then(setWebdavPasswordConfigured)
+      .catch(() => setWebdavPasswordConfigured(false))
+  }, [invokeTauri, isTauri])
 
   const handleSaveWebdav = useCallback(
     async (next: WebDavConfigDto) => {
       if (!isTauri) return
       await invokeTauri('set_webdav_config', { webdav: next })
-      setWebdav(next)
+      setWebdav({ ...next, password: '' })
+      setWebdavPasswordConfigured(next.user.trim().length > 0)
     },
     [invokeTauri, isTauri],
   )
@@ -3231,6 +3240,7 @@ function App() {
             onValidateGithubToken={handleValidateGithubToken}
             toolStatus={toolStatus}
             webdav={webdav}
+            webdavPasswordConfigured={webdavPasswordConfigured}
             onSaveWebdav={handleSaveWebdav}
             onBackupWebdav={handleBackupWebdav}
             onListGithubOwners={handleListGithubOwners}

@@ -10,6 +10,7 @@ import type {
 type BackupSyncSectionProps = {
   isTauri: boolean
   webdav: WebDavConfigDto | null
+  webdavPasswordConfigured: boolean
   onSaveWebdav: (webdav: WebDavConfigDto) => Promise<void>
   onBackupWebdav: () => Promise<void>
   onDevicePull: () => Promise<DevicePipelineReportDto>
@@ -22,6 +23,7 @@ type BackupSyncSectionProps = {
 const BackupSyncSection = memo(function BackupSyncSection({
   isTauri,
   webdav,
+  webdavPasswordConfigured,
   onSaveWebdav,
   onBackupWebdav,
   onDevicePull,
@@ -33,7 +35,8 @@ const BackupSyncSection = memo(function BackupSyncSection({
   // backupMsg 已移除，使用 toast 反馈
   const [wdUrl, setWdUrl] = useState(webdav?.url ?? '')
   const [wdUser, setWdUser] = useState(webdav?.user ?? '')
-  const [wdPassword, setWdPassword] = useState(webdav?.password ?? '')
+  const [wdPassword, setWdPassword] = useState('')
+  const [wdPasswordConfigured, setWdPasswordConfigured] = useState(webdavPasswordConfigured)
   const [wdRemoteDir, setWdRemoteDir] = useState(webdav?.remoteDir ?? '')
   const [deviceReport, setDeviceReport] = useState<DevicePipelineReportDto | null>(null)
   const [deviceBusy, setDeviceBusy] = useState(false)
@@ -48,9 +51,11 @@ const BackupSyncSection = memo(function BackupSyncSection({
   useEffect(() => {
     setWdUrl(webdav?.url ?? '')
     setWdUser(webdav?.user ?? '')
-    setWdPassword(webdav?.password ?? '')
+    setWdPassword('')
     setWdRemoteDir(webdav?.remoteDir ?? '')
   }, [webdav])
+
+  useEffect(() => setWdPasswordConfigured(webdavPasswordConfigured), [webdavPasswordConfigured])
 
   const handleSaveWebdav = useCallback(async () => {
     if (!isTauri) return
@@ -61,6 +66,8 @@ const BackupSyncSection = memo(function BackupSyncSection({
         password: wdPassword,
         remoteDir: wdRemoteDir,
       })
+      setWdPassword('')
+      setWdPasswordConfigured(wdUser.trim().length > 0)
       toast.success(t('saveWebdav'))
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err))
@@ -139,7 +146,7 @@ const BackupSyncSection = memo(function BackupSyncSection({
               <input
                 type="password"
                 value={wdPassword}
-                placeholder={t('webdavPasswordPlaceholder')}
+                placeholder={wdPasswordConfigured ? t('webdavPasswordPlaceholder') : ''}
                 onChange={(e) => setWdPassword(e.target.value)}
               />
             </label>

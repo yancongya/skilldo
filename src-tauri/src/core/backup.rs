@@ -190,6 +190,7 @@ pub fn restore_full_backup(store: &SkillStore, raw: &str) -> Result<RestoreRepor
             anyhow::bail!("数据库快照 SHA256 校验失败");
         }
         let current_config = load_app_config(store)?;
+        let current_github_token = store.get_setting("github_token")?;
         store.import_backup_database_snapshot(&bytes)?;
         let mut restored_config = load_app_config(store)?;
         // Credentials are device-local. Never trust credential values from a
@@ -197,6 +198,9 @@ pub fn restore_full_backup(store: &SkillStore, raw: &str) -> Result<RestoreRepor
         // device's current credential configuration.
         restored_config.retain_device_local_credentials(&current_config);
         save_app_config_impl(store, &restored_config)?;
+        if let Some(token) = current_github_token {
+            store.set_setting("github_token", &token)?;
+        }
         return Ok(RestoreReport {
             backup_version: backup.backup_version,
             database_restored: true,

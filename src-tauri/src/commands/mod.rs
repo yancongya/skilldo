@@ -25,6 +25,10 @@ use crate::core::cache_cleanup::{
 use crate::core::cancel_token::CancelToken;
 use crate::core::central_repo::{ensure_central_repo, resolve_central_repo_path};
 use crate::core::content_hash::hash_dir;
+use crate::core::credential_migration::migrate_legacy_credentials;
+use crate::core::credentials::{
+    BwVaultCredentialProvider, CredentialProvider, GITHUB_TOKEN_ALIAS, WEBDAV_PASSWORD_ALIAS,
+};
 use crate::core::expand_home_path;
 use crate::core::explore_sources::{
     get_explore_skills as get_explore_skills_core, get_explore_sources as get_explore_sources_core,
@@ -1649,16 +1653,29 @@ pub async fn search_github(
     query: String,
     limit: Option<u32>,
 ) -> Result<Vec<RepoSummary>, String> {
-    let store = store.inner().clone();
+    let _store = store.inner().clone();
     let limit = limit.unwrap_or(10) as usize;
     tauri::async_runtime::spawn_blocking(move || {
-        let token = store.get_setting("github_token")?.unwrap_or_default();
-        let token_opt = if token.is_empty() {
-            None
+        let provider = BwVaultCredentialProvider::default();
+        let configured = provider
+            .alias_exists(GITHUB_TOKEN_ALIAS)
+            .map_err(|_| anyhow::anyhow!("无法检查 BWVault 中的 GitHub 凭据"))?;
+        let token = if configured {
+            provider
+                .get_secret(GITHUB_TOKEN_ALIAS)
+                .map_err(|_| anyhow::anyhow!("BWVault 中已配置的 GitHub 凭据无法读取"))?
         } else {
-            Some(token.as_str())
+            String::new()
         };
-        search_github_repos(&query, limit, token_opt)
+        search_github_repos(
+            &query,
+            limit,
+            if configured {
+                Some(token.as_str())
+            } else {
+                None
+            },
+        )
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1669,12 +1686,25 @@ pub async fn search_github(
 pub async fn github_token_is_configured(store: State<'_, SkillStore>) -> Result<bool, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        Ok::<_, anyhow::Error>(
-            !store
+        match BwVaultCredentialProvider::default().alias_exists(GITHUB_TOKEN_ALIAS) {
+            Ok(configured) => Ok(configured),
+            Err(_) => Ok(store
                 .get_setting("github_token")?
-                .unwrap_or_default()
-                .is_empty(),
-        )
+                .is_some_and(|value| !value.is_empty())),
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn migrate_credentials(
+    store: State<'_, SkillStore>,
+) -> Result<crate::core::credential_migration::CredentialMigrationReport, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        migrate_legacy_credentials(&store, &BwVaultCredentialProvider::default())
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1683,19 +1713,47 @@ pub async fn github_token_is_configured(store: State<'_, SkillStore>) -> Result<
 
 #[tauri::command]
 pub async fn set_github_token(store: State<'_, SkillStore>, token: String) -> Result<(), String> {
-    let store = store.inner().clone();
+    let _store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let trimmed = token.trim();
         if trimmed.is_empty() {
-            store.set_setting("github_token", "")?;
-        } else {
-            store.set_setting("github_token", trimmed)?;
+            anyhow::bail!(
+                "令牌不能为空；如需移除凭据，请通过 bwvault 管理别名 `{GITHUB_TOKEN_ALIAS}`"
+            );
+        }
+        let provider = BwVaultCredentialProvider::default();
+        provider
+            .set_secret(GITHUB_TOKEN_ALIAS, trimmed, None)
+            .map_err(|_| anyhow::anyhow!("BWVault 凭据写入失败"))?;
+        let stored = provider
+            .get_secret(GITHUB_TOKEN_ALIAS)
+            .map_err(|_| anyhow::anyhow!("BWVault 凭据写入后无法核验"))?;
+        if stored != trimmed {
+            anyhow::bail!("BWVault 凭据写入核验不匹配");
         }
         Ok::<_, anyhow::Error>(())
     })
     .await
     .map_err(|err| err.to_string())?
     .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn validate_stored_github_token() -> Result<GithubTokenStatus, String> {
+    let provider = BwVaultCredentialProvider::default();
+    let configured = provider
+        .alias_exists(GITHUB_TOKEN_ALIAS)
+        .map_err(|_| "无法检查 BWVault 中的 GitHub 凭据")?;
+    if !configured {
+        return Err("GitHub token 未配置".to_string());
+    }
+    let token = provider
+        .get_secret(GITHUB_TOKEN_ALIAS)
+        .map_err(|_| "BWVault 中已配置的 GitHub 凭据无法读取")?;
+    let status = tauri::async_runtime::spawn_blocking(move || compute_github_token_status(token))
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1726,7 +1784,44 @@ pub fn set_origin_rules(
 pub async fn get_app_config(store: State<'_, SkillStore>) -> Result<AppConfig, String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        load_app_config(&store).map(|config| config.sanitized_for_export())
+        let mut config = load_app_config(&store)?;
+        config.github_token.clear();
+        if let Some(webdav) = &mut config.webdav {
+            webdav.password.clear();
+        }
+        Ok(config)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(format_anyhow_error)
+}
+
+#[tauri::command]
+pub async fn get_webdav_credential_is_configured(
+    store: State<'_, SkillStore>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<bool> {
+        let provider = BwVaultCredentialProvider::default();
+        match provider.alias_exists(WEBDAV_PASSWORD_ALIAS) {
+            Ok(true) => Ok(true),
+            Ok(false) => {
+                let legacy = store.get_setting("webdav_config")?;
+                Ok(legacy.as_deref().is_some_and(|raw| {
+                    serde_json::from_str::<WebDavConfig>(raw)
+                        .map(|cfg| !cfg.password.is_empty())
+                        .unwrap_or(false)
+                }))
+            }
+            Err(_) => {
+                let legacy = store.get_setting("webdav_config")?;
+                Ok(legacy.as_deref().is_some_and(|raw| {
+                    serde_json::from_str::<WebDavConfig>(raw)
+                        .map(|cfg| !cfg.password.is_empty())
+                        .unwrap_or(false)
+                }))
+            }
+        }
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1740,9 +1835,11 @@ pub async fn save_app_config(
 ) -> Result<(), String> {
     let store = store.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let current = load_app_config(&store)?;
         let mut config = config;
-        config.preserve_missing_secrets_from(&current);
+        config.github_token.clear();
+        if let Some(wd) = &mut config.webdav {
+            wd.password.clear();
+        }
         save_app_config_impl(&store, &config)
     })
     .await
@@ -1803,16 +1900,18 @@ pub async fn validate_github_token(token: String) -> Result<GithubTokenStatus, S
 /// List unique GitHub owners/orgs from the authenticated user's repos.
 #[tauri::command]
 pub async fn list_github_owners(
-    store: State<'_, SkillStore>,
+    _store: State<'_, SkillStore>,
 ) -> Result<Vec<GithubOwnerEntry>, String> {
-    let store = store.inner().clone();
-    let token = store
-        .get_setting("github_token")
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
-    if token.is_empty() {
+    let provider = BwVaultCredentialProvider::default();
+    let configured = provider
+        .alias_exists(GITHUB_TOKEN_ALIAS)
+        .map_err(|_| "无法检查 BWVault 中的 GitHub 凭据")?;
+    if !configured {
         return Err("GitHub token 未配置".to_string());
     }
+    let token = provider
+        .get_secret(GITHUB_TOKEN_ALIAS)
+        .map_err(|_| "BWVault 中已配置的 GitHub 凭据无法读取")?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::core::github_auth::list_github_owners(token)
     })
@@ -1969,15 +2068,69 @@ pub async fn set_webdav_config(
     tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<()> {
         let mut cfg = load_app_config(&store)?;
         let mut webdav = webdav;
-        if webdav.password.is_empty() {
-            if let Some(current) = &cfg.webdav {
-                if current.url == webdav.url && current.user == webdav.user {
+        let provider = BwVaultCredentialProvider::default();
+        if !webdav.password.is_empty() {
+            provider
+                .set_secret(
+                    WEBDAV_PASSWORD_ALIAS,
+                    &webdav.password,
+                    (!webdav.user.is_empty()).then_some(webdav.user.as_str()),
+                )
+                .map_err(|_| anyhow::anyhow!("BWVault WebDAV 凭据写入失败"))?;
+            let verified = provider
+                .get_secret(WEBDAV_PASSWORD_ALIAS)
+                .map_err(|_| anyhow::anyhow!("BWVault WebDAV 凭据写入后无法核验"))?;
+            if verified != webdav.password {
+                anyhow::bail!("BWVault WebDAV 凭据写入核验不匹配");
+            }
+        } else if !webdav.user.is_empty() {
+            let alias_exists = provider
+                .alias_exists(WEBDAV_PASSWORD_ALIAS)
+                .map_err(|_| anyhow::anyhow!("无法检查 BWVault 中的 WebDAV 凭据"))?;
+            if alias_exists {
+                provider
+                    .get_secret(WEBDAV_PASSWORD_ALIAS)
+                    .map_err(|_| anyhow::anyhow!("BWVault 中已配置的 WebDAV 凭据无法读取"))?;
+                if let Some(current) = &cfg.webdav {
+                    if current.url != webdav.url || current.user != webdav.user {
+                        anyhow::bail!("修改已配置凭据的 WebDAV 用户或服务器时，请先输入新密码");
+                    }
+                }
+            } else if let Some(current) = &cfg.webdav {
+                if current.url == webdav.url
+                    && current.user == webdav.user
+                    && !current.password.is_empty()
+                {
                     webdav.password = current.password.clone();
                 }
             }
+            if !webdav.password.is_empty() && !alias_exists {
+                provider
+                    .set_secret(
+                        WEBDAV_PASSWORD_ALIAS,
+                        &webdav.password,
+                        (!webdav.user.is_empty()).then_some(webdav.user.as_str()),
+                    )
+                    .map_err(|_| anyhow::anyhow!("BWVault WebDAV 凭据写入失败"))?;
+                let verified = provider
+                    .get_secret(WEBDAV_PASSWORD_ALIAS)
+                    .map_err(|_| anyhow::anyhow!("BWVault WebDAV 凭据写入后无法核验"))?;
+                if verified != webdav.password {
+                    anyhow::bail!("BWVault WebDAV 凭据写入核验不匹配");
+                }
+            }
         }
+        webdav.password.clear();
         cfg.webdav = Some(webdav);
-        save_app_config_impl(&store, &cfg)
+        save_app_config_impl(&store, &cfg)?;
+        let sanitized_json = serde_json::to_string(&cfg.webdav.as_ref().unwrap())?;
+        if let Some(raw) = store.get_setting("webdav_config")? {
+            let legacy: WebDavConfig = serde_json::from_str(&raw).unwrap_or_default();
+            if !legacy.password.is_empty() {
+                store.scrub_legacy_webdav_config(&sanitized_json)?;
+            }
+        }
+        Ok(())
     })
     .await
     .map_err(|err| err.to_string())?

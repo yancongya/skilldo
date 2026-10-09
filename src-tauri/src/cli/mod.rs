@@ -24,6 +24,8 @@ use crate::core::app_config::{
     CurrentAuthorConfig, WebDavConfig,
 };
 use crate::core::backup::{export_full_backup, restore_full_backup, RestoreReport};
+use crate::core::credential_migration::migrate_legacy_credentials;
+use crate::core::credentials::{BwVaultCredentialProvider, CredentialProvider, GITHUB_TOKEN_ALIAS};
 use crate::core::device_sync::{device_publish, device_pull, device_status, DevicePipelineReport};
 use crate::core::explore_sources::{self, ExploreSourceConfig};
 use crate::core::github_auth::compute_github_token_status;
@@ -200,6 +202,11 @@ enum Commands {
         #[command(subcommand)]
         action: GithubAction,
     },
+    /// Migrate historical credentials to BWVault.
+    Credentials {
+        #[command(subcommand)]
+        action: CredentialsAction,
+    },
     /// Detect and configure the current environment author.
     Author {
         #[command(subcommand)]
@@ -369,6 +376,15 @@ enum GithubAction {
     TokenGet,
     /// Validate the stored token against GitHub.
     TokenValidate,
+}
+
+#[derive(Subcommand)]
+enum CredentialsAction {
+    /// Store historical SQLite credentials in BWVault and compact the database.
+    Migrate {
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -604,6 +620,24 @@ fn execute(cli: Cli) -> Result<()> {
             }
             GithubAction::TokenGet => cmd_github_token_get(&store, cli.json),
             GithubAction::TokenValidate => cmd_github_token_validate(&store, None, cli.json),
+        },
+        Commands::Credentials { action } => match action {
+            CredentialsAction::Migrate { yes } => {
+                if !yes {
+                    anyhow::bail!("请显式使用 --yes 确认迁移旧凭据到 BWVault");
+                }
+                let report =
+                    migrate_legacy_credentials(&store, &BwVaultCredentialProvider::default())?;
+                if cli.json {
+                    print_json(&report)
+                } else {
+                    println!(
+                        "GitHub: {:?}; WebDAV: {:?}; database compacted: {}",
+                        report.github_token, report.webdav_password, report.database_compacted
+                    );
+                    Ok(())
+                }
+            }
         },
         Commands::Author { action } => match action.unwrap_or(AuthorAction::Status) {
             AuthorAction::Status => cmd_author_status(&store, cli.json),
@@ -1179,6 +1213,10 @@ fn canonical_config_key(key: &str) -> String {
 }
 
 fn config_set_value(cfg: &mut AppConfig, key: &str, value: &str) -> Result<()> {
+    let canonical = canonical_config_key(key);
+    if matches!(canonical.as_str(), "githubToken" | "webdav.password") {
+        anyhow::bail!("凭据不能通过通用配置写入；GitHub 使用 `skilldo github token-set --stdin`，WebDAV 请在应用设置中保存");
+    }
     if key.starts_with("webdav.") && cfg.webdav.is_none() {
         cfg.webdav = Some(WebDavConfig::default());
     }
@@ -1521,9 +1559,22 @@ fn cmd_project_skills(store: &SkillStore, project_path: Option<&str>, json: bool
 // ===========================================================================
 
 fn cmd_github_token_set(store: &SkillStore, token: &str, json: bool) -> Result<()> {
-    let mut cfg = load_app_config(store)?;
-    cfg.github_token = token.to_string();
-    save_app_config_impl(store, &cfg)?;
+    let token = token.trim();
+    if token.is_empty() {
+        anyhow::bail!("GitHub token 不能为空");
+    }
+    let provider = BwVaultCredentialProvider::default();
+    provider
+        .set_secret(GITHUB_TOKEN_ALIAS, token, None)
+        .map_err(|_| anyhow::anyhow!("BWVault 凭据写入失败"))?;
+    if provider
+        .get_secret(GITHUB_TOKEN_ALIAS)
+        .map_err(|_| anyhow::anyhow!("BWVault 凭据写入后无法核验"))?
+        != token
+    {
+        anyhow::bail!("BWVault 凭据写入核验不匹配");
+    }
+    store.scrub_legacy_auth_settings(None)?;
     if json {
         print_json(&serde_json::json!({"ok": true, "configured": true}))?;
     } else {
@@ -1533,10 +1584,12 @@ fn cmd_github_token_set(store: &SkillStore, token: &str, json: bool) -> Result<(
 }
 
 fn cmd_github_token_get(store: &SkillStore, json: bool) -> Result<()> {
-    let cfg = load_app_config(store)?;
+    let configured = BwVaultCredentialProvider::default()
+        .alias_exists(GITHUB_TOKEN_ALIAS)
+        .map_err(|_| anyhow::anyhow!("无法检查 BWVault 中的 GitHub 凭据"))?;
     if json {
-        print_json(&serde_json::json!({"configured": !cfg.github_token.is_empty()}))?;
-    } else if cfg.github_token.is_empty() {
+        print_json(&serde_json::json!({"configured": configured}))?;
+    } else if !configured {
         println!("(未配置 GitHub token)");
     } else {
         println!("GitHub token 已配置");
@@ -1547,7 +1600,18 @@ fn cmd_github_token_get(store: &SkillStore, json: bool) -> Result<()> {
 fn cmd_github_token_validate(store: &SkillStore, token: Option<&str>, json: bool) -> Result<()> {
     let token = match token {
         Some(t) => t.to_string(),
-        None => load_app_config(store)?.github_token,
+        None => {
+            let provider = BwVaultCredentialProvider::default();
+            if !provider
+                .alias_exists(GITHUB_TOKEN_ALIAS)
+                .map_err(|_| anyhow::anyhow!("无法检查 BWVault 中的 GitHub 凭据"))?
+            {
+                anyhow::bail!("GitHub token 未配置");
+            }
+            provider
+                .get_secret(GITHUB_TOKEN_ALIAS)
+                .map_err(|_| anyhow::anyhow!("BWVault 中已配置的 GitHub 凭据无法读取"))?
+        }
     };
     let status = compute_github_token_status(token);
     if json {
@@ -3141,6 +3205,13 @@ mod tests {
             "do-not-put-secrets-in-argv",
         ])
         .is_err());
+    }
+
+    #[test]
+    fn generic_config_set_rejects_credential_fields() {
+        let mut config = AppConfig::default();
+        assert!(config_set_value(&mut config, "github_token", "sensitive").is_err());
+        assert!(config_set_value(&mut config, "webdav.password", "sensitive").is_err());
     }
 
     #[test]

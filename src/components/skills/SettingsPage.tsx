@@ -55,6 +55,7 @@ type SettingsPageProps = {
   onValidateGithubToken: (token: string) => Promise<GithubTokenStatusDto>
   toolStatus: ToolStatusDto | null
   webdav: WebDavConfigDto | null
+  webdavPasswordConfigured: boolean
   onSaveWebdav: (webdav: WebDavConfigDto) => Promise<void>
   onBackupWebdav: () => Promise<void>
   onListGithubOwners: () => Promise<GithubOwnerEntry[]>
@@ -93,6 +94,7 @@ const SettingsPage = ({
   onValidateGithubToken,
   toolStatus,
   webdav,
+  webdavPasswordConfigured,
   onSaveWebdav,
   onBackupWebdav,
   onListGithubOwners,
@@ -180,6 +182,7 @@ const SettingsPage = ({
         <BackupSyncSection
           isTauri={isTauri}
           webdav={webdav}
+          webdavPasswordConfigured={webdavPasswordConfigured}
           onSaveWebdav={onSaveWebdav}
           onBackupWebdav={onBackupWebdav}
           onDevicePull={onDevicePull}

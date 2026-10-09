@@ -335,6 +335,32 @@ impl SkillStore {
         })
     }
 
+    /// Replace only the historical WebDAV setting after its password has been
+    /// stored and verified in BWVault. This avoids clearing an unmigrated
+    /// GitHub token when the user updates the WebDAV profile independently.
+    pub fn scrub_legacy_webdav_config(&self, sanitized_webdav: &str) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute_batch("PRAGMA secure_delete = ON; BEGIN IMMEDIATE;")?;
+            let result = (|| -> Result<()> {
+                conn.execute(
+                    "UPDATE settings SET value = ?1 WHERE key = 'webdav_config'",
+                    [sanitized_webdav],
+                )?;
+                conn.execute_batch("COMMIT; VACUUM;")?;
+                let busy: i64 =
+                    conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))?;
+                if busy != 0 {
+                    anyhow::bail!("数据库仍被其他进程占用，WebDAV 旧凭据页面压缩未完成");
+                }
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = conn.execute_batch("ROLLBACK;");
+            }
+            result
+        })
+    }
+
     /// Produce a consistent SQLite image containing every table, index,
     /// sequence, setting, and metadata row currently stored by SkillDo.
     pub fn export_database_snapshot(&self) -> Result<Vec<u8>> {
