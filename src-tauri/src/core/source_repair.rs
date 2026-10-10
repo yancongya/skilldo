@@ -565,6 +565,22 @@ pub fn repair_skill_sources(store: &SkillStore, apply: bool) -> Result<SourceRep
         if skill.source_type == "package" {
             continue;
         }
+        // `track-local` is an explicit source-of-truth decision. A local Skill
+        // may live inside a Git checkout for version control while SkillDo is
+        // intentionally configured to copy from that working tree (for
+        // example, a private policy overlay on top of an upstream repo). Do
+        // not silently offer to convert that choice back to git_pull: doing so
+        // can replace the locally maintained Skill with an older upstream
+        // copy during the next update.
+        if skill.source_type == "local"
+            && store.get_skill_origin(&skill.id)?.is_some_and(|origin| {
+                origin.origin_kind == "local"
+                    && origin.update_strategy == "local_copy"
+                    && origin.manual_override
+            })
+        {
+            continue;
+        }
         let candidate = if let Some(candidate) = recorded_git_candidate(skill) {
             Some(candidate)
         } else {
@@ -1298,6 +1314,66 @@ mod tests {
         assert_eq!(
             repaired.source_ref.as_deref(),
             Some("https://github.com/example/skills.git")
+        );
+    }
+
+    #[test]
+    fn repair_respects_explicit_local_copy_override_inside_git_checkout() {
+        let (_directory, skill_path) = git_skill_fixture();
+        let db_dir = tempfile::tempdir().unwrap();
+        let store = SkillStore::new(db_dir.path().join("test.db"));
+        store.ensure_schema().unwrap();
+        store
+            .upsert_skill(&SkillRecord {
+                id: "explicit-local".to_string(),
+                name: "demo".to_string(),
+                description: None,
+                source_type: "local".to_string(),
+                source_ref: Some(skill_path.to_string_lossy().to_string()),
+                source_subpath: None,
+                source_revision: None,
+                central_path: db_dir
+                    .path()
+                    .join("central/demo")
+                    .to_string_lossy()
+                    .to_string(),
+                content_hash: None,
+                created_at: 1,
+                updated_at: 1,
+                last_sync_at: None,
+                last_seen_at: 1,
+                status: "ok".to_string(),
+            })
+            .unwrap();
+        store
+            .upsert_skill_origin(&SkillOriginRecord {
+                skill_id: "explicit-local".to_string(),
+                origin_kind: "local".to_string(),
+                origin_role: "mine".to_string(),
+                provider: Some("local".to_string()),
+                remote_url: Some("https://github.com/example/skills.git".to_string()),
+                owner: Some("example".to_string()),
+                repo: Some("skills".to_string()),
+                branch: Some("main".to_string()),
+                subpath: Some("skills/demo".to_string()),
+                update_strategy: "local_copy".to_string(),
+                publish_strategy: "none".to_string(),
+                manual_override: true,
+                reason: Some("explicit local source".to_string()),
+                updated_at: 1,
+            })
+            .unwrap();
+
+        let report = repair_skill_sources(&store, false).unwrap();
+
+        assert_eq!(report.repairable, 0);
+        assert_eq!(report.unresolved, 0);
+        assert_eq!(report.already_portable, 1);
+        let skill = store.get_skill_by_id("explicit-local").unwrap().unwrap();
+        assert_eq!(skill.source_type, "local");
+        assert_eq!(
+            skill.source_ref.as_deref(),
+            Some(skill_path.to_string_lossy().as_ref())
         );
     }
 
