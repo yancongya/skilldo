@@ -260,6 +260,48 @@ description: >-
 }
 
 #[test]
+fn cli_update_refreshes_stored_description_from_updated_skill_md() {
+    let (dir, store) = make_store();
+    let source = dir.path().join("source/my-skill");
+    let central = dir.path().join("central/my-skill");
+    fs::create_dir_all(&source).unwrap();
+    fs::create_dir_all(&central).unwrap();
+    fs::write(
+        source.join("SKILL.md"),
+        "---\nname: my-skill\ndescription: Updated from source\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        central.join("SKILL.md"),
+        "---\nname: my-skill\ndescription: Old central description\n---\n",
+    )
+    .unwrap();
+    store
+        .upsert_skill(&SkillRecord {
+            id: "my-skill".to_string(),
+            name: "my-skill".to_string(),
+            description: Some("Old stored description".to_string()),
+            source_type: "local".to_string(),
+            source_ref: Some(source.to_string_lossy().to_string()),
+            source_subpath: None,
+            source_revision: None,
+            central_path: central.to_string_lossy().to_string(),
+            content_hash: None,
+            created_at: 1,
+            updated_at: 1,
+            last_sync_at: None,
+            last_seen_at: 1,
+            status: "ok".to_string(),
+        })
+        .unwrap();
+
+    super::update_managed_skill_from_source_cli(&store, "my-skill").unwrap();
+
+    let updated = store.get_skill_by_id("my-skill").unwrap().unwrap();
+    assert_eq!(updated.description.as_deref(), Some("Updated from source"));
+}
+
+#[test]
 fn installs_local_skill_and_updates_from_source() {
     let app = tauri::test::mock_app();
     let (_dir, store) = make_store();

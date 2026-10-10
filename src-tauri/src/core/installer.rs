@@ -2865,8 +2865,12 @@ pub fn update_managed_skill_from_source_cli(
     }
 
     let new_hash = compute_content_hash(&central_path);
+    let description = parse_skill_md(&central_path.join("SKILL.md"))
+        .and_then(|(_, desc)| desc)
+        .or(record.description.clone());
 
     let mut patched = record.clone();
+    patched.description = description;
     patched.updated_at = now;
     patched.content_hash = new_hash.clone();
     if let Some(rev) = &new_revision {
