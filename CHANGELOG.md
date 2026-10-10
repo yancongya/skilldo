@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.17] - 2026-10-10
+
+### 更新
+- 补充本地技能来源保护说明
+- 修复本地技能来源误判
+- chore: update featured-skills.json
+
 ## [0.7.16] - 2026-10-09
 
 ### 更新
