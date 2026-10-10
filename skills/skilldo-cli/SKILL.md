@@ -154,6 +154,8 @@ python3 ~/.skillshub/skilldo-cli/scripts/skilldo_doctor.py --unregistered
 
 The default scan checks every target registered in the database. `--orphans` also finds unregistered real-directory copies; `--unregistered` finds symlinks pointing at the central directory but missing from the database. The classes `A` (identical to center), `B` (different content), and `C` (no center copy) require different recovery decisions. Never overwrite a newer `B` copy without reviewing it.
 
+For a complete filesystem audit, run the default check, `--orphans`, and `--unregistered`: these cover different states. A dangling symlink is distinct from a missing path, and a link can point somewhere other than the SkillDo center. Inspect links with `readlink`/`lstat` and test that the resolved target exists; file-type commands that follow symlinks can hide the link itself. Do not infer filesystem health from the database status alone.
+
 ## Converge loose copies
 
 `scripts/skilldo_converge.py` converts loose tool-directory copies to central symlinks. It defaults to a dry-run. `--apply` first creates an archive and quarantines originals rather than deleting them.
@@ -165,6 +167,10 @@ python3 ~/.skillshub/skilldo-cli/scripts/skilldo_converge.py --apply
 ```
 
 **Never replace a skill directory inside a Git working tree with a symlink.** Project-local Skill sources must remain ordinary repository files. The converge tool skips Git worktrees unless explicitly overridden; do not use `--include-repos` without a deliberate review.
+
+Avoid manual bulk `mv`/`ln` replacement. If a link has to be repaired by hand, preserve the original first, then register/reconcile that tool target with `skilldo sync --skill <name> --tool <tool>` and rerun the filesystem checks. A link that resolves correctly but is absent from the SkillDo target list is still unmanaged.
+
+`skilldo update` refreshes the central Skill directory from its registered source and can remove local files that are not in that source. Keep machine state, notes, credentials, and custom runtime data outside the Skill directory; put reusable files in the authoritative source repository.
 
 ## Skills already present in the central directory
 
