@@ -60,7 +60,7 @@ The installers select the current architecture, verify the release SHA-256, plac
 | `skilldo profile check [--json]` | Read-only GET to verify saved WebDAV access; 404 means reachable but no Profile exists |
 | `skilldo profile status [--json]` | Preview cross-device changes and conflicts without uploading or applying |
 | `skilldo profile sync [--yes] [--update-skills] [--json]` | Apply the profile; upstream Git Skills update only with `--update-skills`; `--yes` confirms pending deletions |
-| `skilldo repair sources [--apply] [--json]` | Audit or promote local records with a verified Git origin |
+| `skilldo repair sources [--apply] [--json]` | Audit or promote eligible local records with a verified Git origin |
 | `skilldo repair source --skill <name> --url <repo> [--subpath <path>] [--apply] [--json]` | Validate and reconnect one confirmed Git source |
 | `skilldo repair origin --skill <name> --url <repo> [--subpath <path>] (--dry-run\|--apply) [--json]` | Migrate a verified Git Skill from a manual local-copy override to Git updates |
 
@@ -77,7 +77,7 @@ For project-owned Skills, `track-local` points SkillDo at the canonical Skill-on
 
 Use `repair origin` only when a Git Skill already has the same registered remote and subpath but an older manual override changed it to `local_copy`. Preview with `--dry-run`, then make a full-state backup with `skilldo backup file <path> --json` before applying. New backups exclude stored GitHub and WebDAV credentials; restore keeps credentials configured on the current device. The migration re-clones and verifies the remote and Skill directory, then atomically updates only origin metadata; Skill IDs, names, source rows, tags, and target links stay intact.
 
-`repair sources` only promotes a local Skill to Git provenance when its source subpath contains tracked files and has no uncommitted or untracked changes. A dirty or newly added project Skill remains a local source and is reported as unresolved until the repository work is committed and the upstream path is verified. This prevents project metadata or lockfiles from overriding active local work.
+`repair sources` only promotes eligible local Skills to Git provenance when their source subpaths contain tracked files and have no uncommitted or untracked changes. A dirty or newly added project Skill remains a local source and is reported as unresolved until the repository work is committed and the upstream path is verified. An explicit `track-local` choice is also authoritative: if SkillDo records `manualOverride=true` with `updateStrategy=local_copy`, `repair sources` leaves it alone even when the directory is inside a clean Git checkout. This prevents an ordinary update or repair from replacing a repository's local policy overlay with an older upstream copy. Use `repair origin` only when deliberately migrating that override back to Git updates.
 
 Source repair preserves an existing `publish_strategy=none` even when repository ownership rules classify the repository as yours. It must not silently grant Git push capability; change publish access only through an explicit origin setting.
 
