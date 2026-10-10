@@ -1,6 +1,6 @@
 ---
 name: skilldo-cli
-description: Manage AI agent skills from the terminal with the SkillDo CLI (skilldo). Install, sync, update, delete, and push skills across 47+ AI tools. Agent-native, structured JSON output.
+description: Manage AI agent skills from the terminal with the SkillDo CLI (skilldo). Use for install, sync, update, delete, publish, profiles, and cross-agent source work, including duplicate copies, filesystem drift, broken or unregistered symlinks. Supports 47+ AI tools and structured JSON output.
 ---
 
 # SkillDo CLI (`skilldo`)
