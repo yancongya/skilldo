@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.18] - 2026-10-10
+
+### 更新
+- fix: refresh skill metadata on CLI update
+
 ## [0.7.17] - 2026-10-10
 
 ### 更新
