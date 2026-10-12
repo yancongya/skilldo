@@ -136,10 +136,14 @@ impl WebDavClient {
         format!("{}/{}", self.base, path)
     }
 
-    /// Ensure a remote directory (WebDAV collection) exists. A `405` means
-    /// the collection already exists and is treated as success.
+    fn collection_url(&self, path: &str) -> String {
+        format!("{}/", self.full_url(path).trim_end_matches('/'))
+    }
+
+    /// Ensure a remote directory (WebDAV collection) exists. A `405` is only
+    /// accepted when a read-only PROPFIND confirms the collection exists.
     pub fn mkcol(&self, dir: &str) -> Result<()> {
-        let url = self.full_url(dir);
+        let url = self.collection_url(dir);
         let method = reqwest::Method::from_bytes(b"MKCOL").context("非法 HTTP 方法 MKCOL")?;
         let resp = self
             .auth(self.client.request(method, &url))
@@ -150,8 +154,14 @@ impl WebDavClient {
                 anyhow::anyhow!(context)
             })?;
         let status = resp.status();
-        if status.is_success() || status == 405 {
+        if status.is_success() {
             Ok(())
+        } else if status == 405 && self.check_collection(dir)? {
+            Ok(())
+        } else if status == 405 {
+            anyhow::bail!(
+                "MKCOL 被拒绝 (HTTP 405)，且目标 WebDAV 目录不存在；请检查反向代理是否允许 MKCOL"
+            )
         } else {
             anyhow::bail!("{}", Self::status_error_context("创建远程目录", status))
         }
@@ -225,23 +235,34 @@ impl WebDavClient {
     /// Read-only connection check. It verifies the collection with PROPFIND,
     /// then GETs the profile document; it never creates or uploads data.
     pub fn check_profile(&self, remote_path: &str) -> Result<bool> {
-        Ok(self.get_profile_optional(remote_path)?.is_some())
+        let collection = remote_path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("");
+        if !self.check_collection(collection)? {
+            anyhow::bail!("WebDAV 远程目录不存在 (HTTP 404)：请检查 HTTPS 基础路径和远程目录配置")
+        }
+        Ok(self.get_optional(remote_path)?.is_some())
     }
 
     /// Read the profile only after confirming its parent collection exists.
+    /// A missing collection is an empty remote for synchronization; callers
+    /// may create it during an authorized upload.
     pub fn get_profile_optional(&self, remote_path: &str) -> Result<Option<WebDavDocument>> {
         let collection = remote_path
             .rsplit_once('/')
             .map(|(parent, _)| parent)
             .unwrap_or("");
-        self.check_collection(collection)?;
+        if !self.check_collection(collection)? {
+            return Ok(None);
+        }
         self.get_optional(remote_path)
     }
 
     /// Verify that the configured remote collection exists before treating a
     /// missing profile document as a normal first-sync state.
-    fn check_collection(&self, remote_dir: &str) -> Result<()> {
-        let url = format!("{}/", self.full_url(remote_dir).trim_end_matches('/'));
+    fn check_collection(&self, remote_dir: &str) -> Result<bool> {
+        let url = self.collection_url(remote_dir);
         let method = reqwest::Method::from_bytes(b"PROPFIND").context("非法 HTTP 方法 PROPFIND")?;
         let response = self
             .auth(self.client.request(method, &url).header("Depth", "0"))
@@ -253,9 +274,9 @@ impl WebDavClient {
             })?;
         let status = response.status();
         if status.is_success() {
-            Ok(())
+            Ok(true)
         } else if status == 404 {
-            anyhow::bail!("WebDAV 远程目录不存在 (HTTP 404)：请检查 HTTPS 基础路径和远程目录配置")
+            Ok(false)
         } else if status == 405 || status == 501 {
             anyhow::bail!("WebDAV 目录检查失败 (HTTP {status})：服务器或反向代理未允许 PROPFIND，无法确认远程目录是否存在")
         } else {
@@ -684,6 +705,25 @@ mod tests {
     }
 
     #[test]
+    fn profile_sync_can_bootstrap_missing_collection_without_reading_missing_file() {
+        let mut server = mockito::Server::new();
+        let collection = server.mock("PROPFIND", "/").with_status(404).create();
+        let profile = server
+            .mock("GET", "/skilldo-profile.json")
+            .with_status(404)
+            .expect(0)
+            .create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        assert!(client
+            .get_profile_optional(PROFILE_REMOTE_FILE)
+            .unwrap()
+            .is_none());
+        collection.assert();
+        profile.assert();
+    }
+
+    #[test]
     fn check_profile_reports_proxy_blocking_propfind() {
         let mut server = mockito::Server::new();
         let collection = server.mock("PROPFIND", "/").with_status(405).create();
@@ -714,6 +754,31 @@ mod tests {
         assert!(!client.check_profile("a/b/skilldo-profile.json").unwrap());
         collection.assert();
         profile.assert();
+    }
+
+    #[test]
+    fn mkcol_405_is_success_only_when_collection_exists() {
+        let mut server = mockito::Server::new();
+        let create = server.mock("MKCOL", "/a/").with_status(405).create();
+        let collection = server.mock("PROPFIND", "/a/").with_status(207).create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        client.mkcol("a").unwrap();
+        create.assert();
+        collection.assert();
+    }
+
+    #[test]
+    fn mkcol_405_reports_blocked_creation_when_collection_is_missing() {
+        let mut server = mockito::Server::new();
+        let create = server.mock("MKCOL", "/a/").with_status(405).create();
+        let collection = server.mock("PROPFIND", "/a/").with_status(404).create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        let error = client.mkcol("a").unwrap_err().to_string();
+        assert!(error.contains("MKCOL 被拒绝"));
+        create.assert();
+        collection.assert();
     }
 
     #[test]
