@@ -117,6 +117,19 @@ impl WebDavClient {
         }
     }
 
+    fn status_error_context(operation: &str, status: reqwest::StatusCode) -> String {
+        let guidance = match status.as_u16() {
+            401 => "请核对 WebDAV 用户名、密码或账户状态",
+            403 => "请检查 WebDAV 账号对目标共享目录的写入/创建权限，以及反向代理的 PUT/MKCOL 访问策略；服务器允许 HTTP 方法不代表账号有目录写权限",
+            _ => "",
+        };
+        if guidance.is_empty() {
+            format!("{operation}失败 (HTTP {status})")
+        } else {
+            format!("{operation}失败 (HTTP {status})：{guidance}")
+        }
+    }
+
     /// Join the server base URL with a remote path (no leading slash).
     fn full_url(&self, path: &str) -> String {
         let path = path.trim_start_matches('/');
@@ -140,7 +153,7 @@ impl WebDavClient {
         if status.is_success() || status == 405 {
             Ok(())
         } else {
-            anyhow::bail!("创建远程目录失败 (HTTP {})", status)
+            anyhow::bail!("{}", Self::status_error_context("创建远程目录", status))
         }
     }
 
@@ -161,7 +174,7 @@ impl WebDavClient {
         if status.is_success() || status == 201 || status == 204 {
             Ok(())
         } else {
-            anyhow::bail!("上传文件失败 (HTTP {})", status)
+            anyhow::bail!("{}", Self::status_error_context("上传文件", status))
         }
     }
 
@@ -243,7 +256,7 @@ impl WebDavClient {
             anyhow::bail!("PROFILE_REMOTE_CONFLICT|远端 Profile 已被其他设备更新，请重新同步")
         }
         if !status.is_success() {
-            anyhow::bail!("上传文件失败 (HTTP {})", status);
+            anyhow::bail!("{}", Self::status_error_context("上传文件", status));
         }
         Ok(resp
             .headers()
@@ -530,6 +543,17 @@ mod tests {
         let context = WebDavClient::request_error_context("GET", false, "connection timed out");
 
         assert_eq!(context, "GET 请求失败");
+    }
+
+    #[test]
+    fn forbidden_write_error_points_to_acl_or_proxy_without_response_body() {
+        let context =
+            WebDavClient::status_error_context("上传文件", reqwest::StatusCode::FORBIDDEN);
+
+        assert!(context.contains("HTTP 403"));
+        assert!(context.contains("共享目录"));
+        assert!(context.contains("反向代理"));
+        assert!(!context.contains("password"));
     }
 
     #[test]
