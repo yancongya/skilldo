@@ -1,6 +1,6 @@
 //! Minimal WebDAV client used for remote backup / restore.
 //!
-//! Only the verbs we need are implemented (MKCOL / PUT / GET) over the already
+//! Only the verbs we need are implemented (MKCOL / PROPFIND / PUT / GET) over the already
 //! available `reqwest` blocking client with HTTP Basic auth. We deliberately
 //! avoid PROPFIND / XML parsing by using a fixed remote layout
 //! (`<remote_dir>/skilldo-backup.json`), which keeps the dependency surface
@@ -222,10 +222,43 @@ impl WebDavClient {
         anyhow::bail!("下载文件失败 (HTTP {})", status)
     }
 
-    /// Read-only connection check. It only GETs the profile document and never
-    /// creates collections or uploads data.
+    /// Read-only connection check. It verifies the collection with PROPFIND,
+    /// then GETs the profile document; it never creates or uploads data.
     pub fn check_profile(&self, remote_path: &str) -> Result<bool> {
+        let collection = remote_path
+            .rsplit_once('/')
+            .map(|(parent, _)| parent)
+            .unwrap_or("");
+        self.check_collection(collection)?;
         Ok(self.get_optional(remote_path)?.is_some())
+    }
+
+    /// Verify that the configured remote collection exists before treating a
+    /// missing profile document as a normal first-sync state.
+    fn check_collection(&self, remote_dir: &str) -> Result<()> {
+        let url = self.full_url(remote_dir);
+        let method = reqwest::Method::from_bytes(b"PROPFIND").context("非法 HTTP 方法 PROPFIND")?;
+        let response = self
+            .auth(self.client.request(method, &url).header("Depth", "0"))
+            .send()
+            .map_err(|error| {
+                let context =
+                    Self::request_error_context("PROPFIND", error.is_connect(), &error.to_string());
+                anyhow::anyhow!(context)
+            })?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(())
+        } else if status == 404 {
+            anyhow::bail!("WebDAV 远程目录不存在 (HTTP 404)：请检查 HTTPS 基础路径和远程目录配置")
+        } else if status == 405 || status == 501 {
+            anyhow::bail!("WebDAV 目录检查失败 (HTTP {status})：服务器或反向代理未允许 PROPFIND，无法确认远程目录是否存在")
+        } else {
+            anyhow::bail!(
+                "{}",
+                Self::status_error_context("检查 WebDAV 远程目录", status)
+            )
+        }
     }
 
     /// Upload with optimistic concurrency. `expected_etag=None` creates only
@@ -449,6 +482,12 @@ mod tests {
     #[test]
     fn authenticated_empty_config_password_uses_vault_alias() {
         let mut server = mockito::Server::new();
+        let collection = server
+            .mock("PROPFIND", "/")
+            .match_header("authorization", "Basic dXNlcm5hbWU6dmF1bHQtcGFzcw==")
+            .match_header("depth", "0")
+            .with_status(207)
+            .create();
         let request = server
             .mock("GET", "/skilldo-profile.json")
             .match_header("authorization", "Basic dXNlcm5hbWU6dmF1bHQtcGFzcw==")
@@ -464,6 +503,7 @@ mod tests {
         let client = WebDavClient::new_with_provider(&cfg, &provider).unwrap();
 
         assert!(!client.check_profile(PROFILE_REMOTE_FILE).unwrap());
+        collection.assert();
         request.assert();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
@@ -471,6 +511,12 @@ mod tests {
     #[test]
     fn authenticated_in_memory_password_remains_available_for_tests() {
         let mut server = mockito::Server::new();
+        let collection = server
+            .mock("PROPFIND", "/")
+            .match_header("authorization", "Basic dXNlcm5hbWU6bWVtb3J5LXBhc3M=")
+            .match_header("depth", "0")
+            .with_status(207)
+            .create();
         let request = server
             .mock("GET", "/skilldo-profile.json")
             .match_header("authorization", "Basic dXNlcm5hbWU6bWVtb3J5LXBhc3M=")
@@ -486,6 +532,7 @@ mod tests {
         let client = WebDavClient::new_with_provider(&cfg, &provider).unwrap();
 
         assert!(!client.check_profile(PROFILE_REMOTE_FILE).unwrap());
+        collection.assert();
         request.assert();
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
@@ -593,8 +640,13 @@ mod tests {
     }
 
     #[test]
-    fn check_profile_is_get_only_and_does_not_create_remote_state() {
+    fn check_profile_is_read_only_and_does_not_create_remote_state() {
         let mut server = mockito::Server::new();
+        let collection = server
+            .mock("PROPFIND", "/")
+            .match_header("depth", "0")
+            .with_status(207)
+            .create();
         let request = server
             .mock("GET", "/skilldo-profile.json")
             .with_status(404)
@@ -602,7 +654,42 @@ mod tests {
         let client = WebDavClient::new(&config(server.url())).unwrap();
 
         assert!(!client.check_profile(PROFILE_REMOTE_FILE).unwrap());
+        collection.assert();
         request.assert();
+    }
+
+    #[test]
+    fn check_profile_rejects_missing_collection_instead_of_treating_route_404_as_empty_profile() {
+        let mut server = mockito::Server::new();
+        let collection = server.mock("PROPFIND", "/").with_status(404).create();
+        let profile = server
+            .mock("GET", "/skilldo-profile.json")
+            .with_status(404)
+            .expect(0)
+            .create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        let error = client
+            .check_profile(PROFILE_REMOTE_FILE)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("远程目录不存在"));
+        collection.assert();
+        profile.assert();
+    }
+
+    #[test]
+    fn check_profile_reports_proxy_blocking_propfind() {
+        let mut server = mockito::Server::new();
+        let collection = server.mock("PROPFIND", "/").with_status(405).create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        let error = client
+            .check_profile(PROFILE_REMOTE_FILE)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("未允许 PROPFIND"));
+        collection.assert();
     }
 
     #[test]
