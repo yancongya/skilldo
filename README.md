@@ -198,7 +198,7 @@ All commands support `--json` for agent-friendly structured output and `--yes` t
 | `skilldo backup webdav [--json]` | Upload the complete snapshot without local authentication credentials |
 | `skilldo restore file <path> [--json]` | Validate and restore a local snapshot |
 | `skilldo restore webdav [--json]` | Validate and restore the WebDAV snapshot |
-| `skilldo profile check [--json]` | Verify WebDAV Profile access using a read-only GET |
+| `skilldo profile check [--json]` | Verify the WebDAV collection with a read-only PROPFIND, then check the Profile with GET |
 | `skilldo profile status [--json]` | Preview the WebDAV profile merge without writing |
 | `skilldo profile sync [--yes] [--update-skills] [--json]` | Merge and apply the shared profile; refresh upstream Skills only with `--update-skills` |
 | `skilldo repair sources [--apply] [--json]` | Audit local records and promote verified Git-worktree sources |
@@ -248,7 +248,7 @@ skilldo config set webdav.user "username" --json
 printf '%s' 'password' | skilldo config set webdav.password --stdin --json
 skilldo config set webdav.remote_dir "services/skillsdo" --json
 
-# Verify saved non-secret values and test remote Profile access (read-only GET)
+# Verify saved non-secret values and test remote Profile access (read-only PROPFIND + GET)
 skilldo config get webdav --json
 skilldo profile check --json
 # Preview the merge; this does not upload or apply Skills
@@ -260,7 +260,7 @@ skilldo device pull --json
 
 In the desktop app, enter the same values under Settings → WebDAV, save them, choose **Check device state**, then **Get updates from other devices**. To publish changes back after reviewing them, use **Publish to other devices** or `skilldo device publish --yes --json`.
 
-The WebDAV URL must use HTTPS because WebDAV authentication uses HTTP Basic Auth. Plain HTTP is rejected for remote hosts. The versioned `skilldo-profile.json` stores portable desired state: Git/package Skill sources and revisions, standard global targets, tags, manual origin rules, language, cache policy, and Explore sources. Git-managed Skills are cloned or pulled on the receiving computer. Independent Skill lists, tags, and targets are merged as a union.
+The WebDAV URL must use HTTPS because WebDAV authentication uses HTTP Basic Auth. Plain HTTP is rejected for remote hosts. The endpoint must allow authenticated `PROPFIND` and `GET` for read checks. The first publish creates a missing remote directory with `MKCOL` and uploads the Profile with conditional `PUT`; the WebDAV account and any proxy in front of it must allow those methods and the account must have directory-create and write permission. `profile check` is read-only and reports a missing remote directory; it never creates it. The versioned `skilldo-profile.json` stores portable desired state: Git/package Skill sources and revisions, standard global targets, tags, manual origin rules, language, cache policy, and Explore sources. Git-managed Skills are cloned or pulled on the receiving computer. Independent Skill lists, tags, and targets are merged as a union.
 
 Use the DNS hostname covered by the server certificate's Subject Alternative Name (SAN) in the HTTPS URL; connecting by IP or an unlisted alias will fail hostname validation. SkillDo keeps TLS certificate validation enabled and uses the CA roots bundled with its HTTP client. A private or self-signed CA must be supported by that trust set; SkillDo does not offer a certificate-validation bypass or per-server CA setting. If a connection reports a TLS certificate error, confirm the URL hostname and have the WebDAV administrator provide a certificate chaining to a trusted CA.
 

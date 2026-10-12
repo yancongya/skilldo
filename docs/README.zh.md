@@ -247,6 +247,7 @@ skilldo config set webdav.remote_dir "services/skillsdo" --json
 
 # 读取并验证配置（密码会自动脱敏）
 skilldo config get webdav --json
+skilldo profile check --json
 skilldo device status --json
 
 # 拉取、合并并应用其他设备的状态
@@ -262,6 +263,8 @@ skilldo device publish --yes --json
 不同设备的 Git/npm Skills 列表、标签和全局同步目标会取并集。来源/revision 不一致和“删除对修改”会保留为明确冲突，不会静默覆盖。本地独有且没有仓库来源的 Skills 无法在新设备自动重建。
 
 HTTPS 地址中的 DNS 主机名必须与服务器证书的 Subject Alternative Name（SAN）匹配；使用 IP 或证书未列出的别名会导致主机名校验失败。SkillDo 始终启用 TLS 证书校验，并使用 HTTP 客户端内置的 CA 根证书。私有或自签 CA 必须属于该信任集合；SkillDo 不提供关闭证书校验或按服务器添加 CA 的选项。遇到 TLS 证书错误时，请核对 URL 主机名，并请 WebDAV 管理员提供由受信任 CA 签发的证书。
+
+`profile check` 只读验证：先以 `PROPFIND` 检查远程目录，再以 `GET` 检查 Profile 文件；远程目录不存在时会明确报错，不会创建目录。首次发布时，同步会用 `MKCOL` 创建远端目录，再用条件 `PUT` 上传 Profile。因此 WebDAV 服务及前置反向代理必须允许 `PROPFIND`、`GET`、`MKCOL` 和 `PUT`，账号需要具备目录读取、创建和写入权限。若返回 405，检查服务或反代是否拒绝对应方法；若返回 403，检查账号 ACL 和安全规则。
 
 版本化的 `skilldo-profile.json` 存储可移植的期望状态：Git/包管理的 Skill 来源与 revision、标准全局目标、标签、手动来源规则、语言、缓存策略与 Explore 来源。Git 管理的 Skill 在接收端电脑上 clone 或 pull。独立的 Skill 列表、标签与目标以并集合并。
 
