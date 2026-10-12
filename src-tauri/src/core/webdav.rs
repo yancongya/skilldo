@@ -378,6 +378,13 @@ pub fn upload_backup(cfg: &WebDavConfig, body: &str) -> Result<String> {
 pub fn download_backup(cfg: &WebDavConfig) -> Result<String> {
     let client = WebDavClient::new(cfg)?;
     let remote_path = backup_remote_path(&cfg.remote_dir);
+    let collection = remote_path
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
+    if !client.check_collection(collection)? {
+        anyhow::bail!("WebDAV 远端备份目录不存在 (HTTP 404)：请检查 HTTPS 基础路径和远程目录配置");
+    }
     client.get(&remote_path)
 }
 
@@ -777,6 +784,31 @@ mod tests {
         assert!(error.contains("MKCOL 被拒绝"));
         create.assert();
         collection.assert();
+    }
+
+    #[test]
+    fn download_backup_reports_missing_collection_before_requesting_file() {
+        let mut server = mockito::Server::new();
+        let collection = server
+            .mock("PROPFIND", "/backups/skilldo/")
+            .with_status(404)
+            .create();
+        let backup = server
+            .mock("GET", "/backups/skilldo/skilldo-backup.json")
+            .expect(0)
+            .create();
+        let cfg = WebDavConfig {
+            url: server.url(),
+            user: String::new(),
+            password: String::new(),
+            remote_dir: "backups/skilldo".to_string(),
+        };
+
+        let error = download_backup(&cfg).unwrap_err().to_string();
+
+        assert!(error.contains("远端备份目录不存在"));
+        collection.assert();
+        backup.assert();
     }
 
     #[test]
