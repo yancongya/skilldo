@@ -1,7 +1,7 @@
 {
   "name": "skilldo",
   "private": true,
-  "version": "0.7.19",
+  "version": "0.7.20",
   "type": "module",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",

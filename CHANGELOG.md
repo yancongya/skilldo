@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.20] - 2026-10-12
+
+### 更新
+- 区分 WebDAV 目录与文件 404
+
 ## [0.7.19] - 2026-10-12
 
 ### 更新
