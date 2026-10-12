@@ -154,9 +154,7 @@ impl WebDavClient {
                 anyhow::anyhow!(context)
             })?;
         let status = resp.status();
-        if status.is_success() {
-            Ok(())
-        } else if status == 405 && self.check_collection(dir)? {
+        if status.is_success() || (status == 405 && self.check_collection(dir)?) {
             Ok(())
         } else if status == 405 {
             anyhow::bail!(
