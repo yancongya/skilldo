@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.22] - 2026-10-12
+
+### 更新
+- 修正 WebDAV MKCOL 分支 lint
+- 支持首次同步创建 WebDAV 远程目录
+
 ## [0.7.21] - 2026-10-12
 
 ### 更新
