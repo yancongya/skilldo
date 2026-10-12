@@ -1030,7 +1030,7 @@ fn load_remote(
     client: &WebDavClient,
     path: &str,
 ) -> Result<Option<(ProfileDocument, Option<String>)>> {
-    let Some(remote) = client.get_optional(path)? else {
+    let Some(remote) = client.get_profile_optional(path)? else {
         return Ok(None);
     };
     let document: ProfileDocument =
@@ -1222,6 +1222,12 @@ mod tests {
         store.ensure_schema().unwrap();
 
         let mut server = mockito::Server::new();
+        let collection = server
+            .mock("PROPFIND", "/")
+            .match_header("depth", "0")
+            .with_status(207)
+            .expect(2)
+            .create();
         let remote = server
             .mock("GET", "/skilldo-profile.json")
             .with_status(404)
@@ -1240,6 +1246,7 @@ mod tests {
         let first = device_status(&store).unwrap();
         let second = device_status(&store).unwrap();
 
+        collection.assert();
         remote.assert();
         assert_eq!(first.profile.as_ref().unwrap().device_id, PREVIEW_DEVICE_ID);
         assert_eq!(

@@ -2,7 +2,7 @@
 //!
 //! Only the verbs we need are implemented (MKCOL / PROPFIND / PUT / GET) over the already
 //! available `reqwest` blocking client with HTTP Basic auth. We deliberately
-//! avoid PROPFIND / XML parsing by using a fixed remote layout
+//! avoid XML parsing by using a fixed remote layout
 //! (`<remote_dir>/skilldo-backup.json`), which keeps the dependency surface
 //! tiny while still covering the backup use-case.
 
@@ -225,18 +225,23 @@ impl WebDavClient {
     /// Read-only connection check. It verifies the collection with PROPFIND,
     /// then GETs the profile document; it never creates or uploads data.
     pub fn check_profile(&self, remote_path: &str) -> Result<bool> {
+        Ok(self.get_profile_optional(remote_path)?.is_some())
+    }
+
+    /// Read the profile only after confirming its parent collection exists.
+    pub fn get_profile_optional(&self, remote_path: &str) -> Result<Option<WebDavDocument>> {
         let collection = remote_path
             .rsplit_once('/')
             .map(|(parent, _)| parent)
             .unwrap_or("");
         self.check_collection(collection)?;
-        Ok(self.get_optional(remote_path)?.is_some())
+        self.get_optional(remote_path)
     }
 
     /// Verify that the configured remote collection exists before treating a
     /// missing profile document as a normal first-sync state.
     fn check_collection(&self, remote_dir: &str) -> Result<()> {
-        let url = self.full_url(remote_dir);
+        let url = format!("{}/", self.full_url(remote_dir).trim_end_matches('/'));
         let method = reqwest::Method::from_bytes(b"PROPFIND").context("非法 HTTP 方法 PROPFIND")?;
         let response = self
             .auth(self.client.request(method, &url).header("Depth", "0"))
@@ -690,6 +695,25 @@ mod tests {
             .to_string();
         assert!(error.contains("未允许 PROPFIND"));
         collection.assert();
+    }
+
+    #[test]
+    fn check_profile_uses_canonical_nested_collection_url() {
+        let mut server = mockito::Server::new();
+        let collection = server
+            .mock("PROPFIND", "/a/b/")
+            .match_header("depth", "0")
+            .with_status(207)
+            .create();
+        let profile = server
+            .mock("GET", "/a/b/skilldo-profile.json")
+            .with_status(404)
+            .create();
+        let client = WebDavClient::new(&config(server.url())).unwrap();
+
+        assert!(!client.check_profile("a/b/skilldo-profile.json").unwrap());
+        collection.assert();
+        profile.assert();
     }
 
     #[test]
