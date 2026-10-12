@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.19] - 2026-10-12
+
+### 更新
+- 改进 WebDAV 权限错误提示
+- chore: update featured-skills.json
+- chore: update featured-skills.json
+
 ## [0.7.18] - 2026-10-10
 
 ### 更新
