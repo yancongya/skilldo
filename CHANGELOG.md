@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.23] - 2026-10-12
+
+### 更新
+- Improve WebDAV backup directory diagnostics
+- 说明 WebDAV 首次同步所需权限
+
 ## [0.7.22] - 2026-10-12
 
 ### 更新
