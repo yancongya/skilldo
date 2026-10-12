@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.21] - 2026-10-12
+
+### 更新
+- 同步读取前校验 WebDAV 远程目录
+
 ## [0.7.20] - 2026-10-12
 
 ### 更新
