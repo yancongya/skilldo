@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.24] - 2026-11-08
+
 ### 修复
 - 安装脚本在 GitHub Release CDN 返回 5xx 时自动改用 GitHub API 资源端点下载；Windows 安装脚本显式启用 TLS 1.2、超时与重试
 - Linux 暂无预编译 CLI 包时，安装脚本与 npm 安装器改为明确提示从源码构建，不再请求不存在的资源
