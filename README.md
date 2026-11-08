@@ -104,7 +104,7 @@ The installer detects your platform (macOS/Linux/Windows), shows what's already 
 Direct links (no interactive menu):
 
 ```bash
-# CLI only — macOS (no prebuilt Linux CLI yet; build from source)
+# CLI only — macOS / Linux x64
 curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
 ```
 
@@ -113,7 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/inst
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-Releases include `skilldo-cli-macos-{aarch64,x86_64}.tar.gz` and `skilldo-cli-windows-{x64,arm64}.zip`, each with a `.sha256` file. Linux CLI binaries are not published yet — build from source with `./scripts/build.sh cli`. Cloning the source repository is only required for development.
+Releases include `skilldo-cli-macos-{aarch64,x86_64}.tar.gz`, `skilldo-cli-windows-{x64,arm64}.zip` and `skilldo-cli-linux-x64.tar.gz`, each with a `.sha256` file. The Linux x64 CLI asset is produced by the `release-cli-linux` job, so releases created before that job existed have no Linux asset — the installer tells you to build from source with `./scripts/build.sh cli` in that case. Linux arm64 and the Linux desktop app still need a source build. Cloning the source repository is only required for development.
 
 ### CLI (recommended for agents & automation)
 
@@ -393,10 +393,10 @@ See [open issues](https://github.com/yancongya/skilldo/issues) for the full list
 - **What are tags for?** Tags only help you find and organize skills; they do not change a skill's sync directory or which tools can use it.
 - **What is project-level sync?** A shared skill is still stored once in the Central Repo; the project directory is just a sync target. Project-owned skills should be committed directly to the parent project's Git repo. The cross-device Profile stores only the repo URL, branch/revision, and repo-relative paths — never another computer's absolute project path.
 - **Why is Cursor forced to Copy?** Cursor does not currently support symlink/junction skill directories, so syncing to Cursor always uses directory copy.
-- **Why does it sometimes fall back to Copy?** The default is symlink/junction, but on some systems (especially Windows) link creation may fail due to permissions/policy, and SkillDo automatically falls back to directory copy.
+- **Why does it sometimes fall back to Copy?** The default is a junction on Windows / symlink on macOS (directory symlinks need elevation on Windows), but link creation can still fail due to permissions/policy. SkillDo cleans up a half-created junction, prints a warning to stderr and then falls back to a directory copy — it is never a silent fallback. Re-running `sync` on a healthy link is a no-op; it does not replace the link with a copy.
 - **What does `TARGET_EXISTS|...` mean?** The target directory already exists and is not overwritten by default (for safety). Clean the target first, or retry through the explicit takeover/overwrite flow.
 - **macOS Gatekeeper note** (unsigned/unnotarized builds may behave differently across macOS versions): if you see "damaged / cannot verify developer", run `xattr -cr "/Applications/SkillDo.app"` ([ref](https://v2.tauri.app/distribute/#macos)).
-- **Why is there no prebuilt Linux CLI?** The release pipeline currently publishes macOS and Windows CLI binaries only. On Linux, build from source with `./scripts/build.sh cli` (see Supported Platforms).
+- **Why does the Linux CLI fail on an older release?** The Linux x64 CLI asset is published by the `release-cli-linux` workflow job. Releases created before that job existed only contain macOS/Windows CLI archives; either update to a newer release or build from source with `./scripts/build.sh cli`. Linux arm64 has no prebuilt CLI.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -404,7 +404,7 @@ See [open issues](https://github.com/yancongya/skilldo/issues) for the full list
 
 - **macOS** — verified
 - **Windows** — expected per architecture, not locally verified
-- **Linux** — expected per architecture, not locally verified (build from source)
+- **Linux** — x64 CLI prebuilt from the `release-cli-linux` job; arm64 CLI / desktop app build from source
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

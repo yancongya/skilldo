@@ -6,12 +6,13 @@ INSTALL_DIR="${SKILLDO_INSTALL_DIR:-$HOME/.local/bin}"
 case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) ASSET="skilldo-cli-macos-aarch64.tar.gz" ;;
   Darwin-x86_64) ASSET="skilldo-cli-macos-x86_64.tar.gz" ;;
+  Linux-x86_64|Linux-amd64) ASSET="skilldo-cli-linux-x64.tar.gz" ;;
   Linux-*)
-    echo "No prebuilt Linux CLI is published in GitHub Releases yet." >&2
+    echo "No prebuilt Linux CLI is published for $(uname -m) yet." >&2
     echo "Build it from source instead:" >&2
-    echo "  git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh release" >&2
+    echo "  git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh cli" >&2
     exit 1 ;;
-  *) echo "Unsupported platform: $(uname -s)-$(uname -m)." >&2; echo "Supported: macOS arm64/x86_64." >&2; exit 1 ;;
+  *) echo "Unsupported platform: $(uname -s)-$(uname -m)." >&2; echo "Supported: macOS arm64/x86_64, Linux x86_64." >&2; exit 1 ;;
 esac
 
 BASE="${SKILLDO_DOWNLOAD_BASE:-https://github.com/${REPO}/releases/latest/download}"
@@ -65,7 +66,14 @@ compute_sha256() {
   fi
 }
 
-download_asset "$ASSET" "$TMP_DIR/$ASSET"
+if ! download_asset "$ASSET" "$TMP_DIR/$ASSET"; then
+  if [[ "$ASSET" == skilldo-cli-linux-* ]]; then
+    echo "The latest release has no Linux CLI asset yet (Linux builds ship with releases created from the Linux build job onward)." >&2
+    echo "Build from source instead:" >&2
+    echo "  git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh cli" >&2
+  fi
+  exit 1
+fi
 download_asset "$ASSET.sha256" "$TMP_DIR/$ASSET.sha256"
 EXPECTED="$(awk '{print $1}' "$TMP_DIR/$ASSET.sha256" | tr '[:upper:]' '[:lower:]')"
 ACTUAL="$(compute_sha256 "$TMP_DIR/$ASSET" | tr '[:upper:]' '[:lower:]')"

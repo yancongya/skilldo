@@ -39,7 +39,10 @@ skilldo explore --query "rag" --json
 | macOS | Intel (x64) | `skilldo-cli-macos-aarch64.tar.gz` (via Rosetta 2) | `skilldo-macos-aarch64` |
 | Windows | x64 | `skilldo-cli-windows-x64.zip` | `skilldo-windows-x64.exe` |
 | Windows | arm64 | `skilldo-cli-windows-arm64.zip` | `skilldo-windows-arm64.exe` |
-| Linux | — | No prebuilt asset yet — build from source with `./scripts/build.sh cli` | — |
+| Linux | x64 | `skilldo-cli-linux-x64.tar.gz` | `skilldo-linux-x64` |
+| Linux | arm64 | No prebuilt asset — build from source with `./scripts/build.sh cli` | — |
+
+The Linux x64 asset is produced by the `release-cli-linux` workflow job. Releases created before that job existed have no Linux asset; the installer prints source-build instructions instead of silently installing a broken wrapper.
 
 No Node.js runtime is needed at execution — `skilldo` is a standalone Rust binary.
 

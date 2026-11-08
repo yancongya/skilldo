@@ -56,7 +56,7 @@ install_cli() {
 
   if [[ "$PLATFORM" == "unknown" ]]; then
     echo -e "  ${R}✗ 不支持的平台: $(uname -s)-$(uname -m)${RST}" >&2
-    echo -e "  ${DIM}预编译 CLI 支持 macOS arm64/x86_64；Windows 请用 install-cli.ps1；Linux 请从源码构建${RST}" >&2
+    echo -e "  ${DIM}预编译 CLI 支持 macOS arm64/x86_64、Linux x86_64；Windows 请用 install-cli.ps1${RST}" >&2
     return 1
   fi
 
@@ -67,9 +67,12 @@ install_cli() {
     return 0
   fi
 
-  if [[ "$PLATFORM" == linux-* ]]; then
-    echo -e "  ${R}✗ Linux 暂无预编译 CLI 包，请从源码构建:${RST}" >&2
-    echo -e "  ${C}git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh release${RST}" >&2
+  # Linux arm64 has no published asset yet; Linux x64 is built by the
+  # release-cli-linux workflow job and named skilldo-cli-linux-x64.tar.gz,
+  # which is exactly what `skilldo-cli-${PLATFORM}.tar.gz` resolves to.
+  if [[ "$PLATFORM" == "linux-aarch64" ]]; then
+    echo -e "  ${R}✗ Linux arm64 暂无预编译 CLI 包，请从源码构建:${RST}" >&2
+    echo -e "  ${C}git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh cli${RST}" >&2
     return 1
   fi
 
@@ -83,6 +86,9 @@ install_cli() {
   if ! curl --fail --location --silent --show-error --connect-timeout 20 --max-time 180 --retry 2 "$base/$asset" -o "$tmp_dir/$asset" 2>/dev/null; then
     echo -e "  ${R}✗ 下载失败。请检查网络或手动下载:${RST}" >&2
     echo -e "  ${C}${REleases_URL}${RST}" >&2
+    if [[ "$PLATFORM" == linux-* ]]; then
+      echo -e "  ${DIM}旧版本可能尚未包含 Linux CLI 资产，可从源码构建: ./scripts/build.sh cli${RST}" >&2
+    fi
     return 1
   fi
 

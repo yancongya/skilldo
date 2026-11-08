@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+- Windows 同步链路：识别 NTFS junction 存储的 `\\?\` 目标前缀（含大小写、尾部分隔符与 `canonicalize` 兜底），`sync` / `update` 不再把健康 junction 误判为「指向别处」后删除并回灌实体副本
+- 删除或覆盖同步目标时只移除链接本身，不再对 junction 调用 `remove_dir_all`，避免顺着 junction 删到 Central Repo 的实体文件（`unsync` / `delete` 同步受益）
+- Windows 优先创建 junction（目录软链需要管理员权限）；失败时清理 `junction` crate 遗留的空目录、输出告警，并让 CLI 告警真正可见（新增 stderr logger），回退 Copy 不再静默
+- `SyncOutcome.mode_used` 返回真实链接模式，junction 不再被记成 symlink，数据库 `mode` 与文件系统一致
+- GUI 预检查改用 `symlink_metadata`，悬空链接不再被当成不存在而重复同步
+
+### 更新
+- Release 流水线新增 Linux x64 CLI 构建任务，发布 `skilldo-cli-linux-x64.tar.gz` 与 `.sha256`；`install-cli.sh`、`install.sh`、npm 安装器同步支持 Linux x64，旧版本缺资产时明确提示从源码构建
+- 中英文 README、npm README 与落地页同步平台矩阵与 npm 包发布节奏说明
+- 补充 Windows junction 回归单测：前缀识别、幂等同步、删除链接不伤源、真实 mode 上报
+
 ## [0.7.24] - 2026-11-08
 
 ### 修复

@@ -19,10 +19,16 @@ pub struct SyncOutcome {
 }
 
 pub fn sync_dir_hybrid(source: &Path, target: &Path) -> Result<SyncOutcome> {
-    if target.exists() {
+    if !source.is_dir() {
+        anyhow::bail!("sync source is not a directory: {:?}", source);
+    }
+    // `Path::exists()` follows links, so a dangling symlink/junction looks
+    // absent and the code would try to create over it (or copy into it).
+    // symlink_metadata counts every reparse point as an existing target.
+    if std::fs::symlink_metadata(target).is_ok() {
         if is_same_link(target, source) {
             return Ok(SyncOutcome {
-                mode_used: SyncMode::Symlink,
+                mode_used: link_mode_at(target).unwrap_or(SyncMode::Symlink),
                 target_path: target.to_path_buf(),
                 replaced: false,
             });
@@ -32,23 +38,54 @@ pub fn sync_dir_hybrid(source: &Path, target: &Path) -> Result<SyncOutcome> {
 
     ensure_parent_dir(target)?;
 
-    if try_link_dir(source, target).is_ok() {
-        return Ok(SyncOutcome {
-            mode_used: SyncMode::Symlink,
-            target_path: target.to_path_buf(),
-            replaced: false,
-        });
-    }
-
+    // On Windows a directory symlink needs elevation / Developer Mode while a
+    // junction does not. Prefer the junction so ordinary installs keep a real
+    // link instead of silently degrading to a full copy.
     #[cfg(windows)]
-    if try_junction(source, target).is_ok() {
-        return Ok(SyncOutcome {
-            mode_used: SyncMode::Junction,
-            target_path: target.to_path_buf(),
-            replaced: false,
-        });
+    {
+        match try_junction(source, target) {
+            Ok(()) => {
+                return Ok(SyncOutcome {
+                    mode_used: SyncMode::Junction,
+                    target_path: target.to_path_buf(),
+                    replaced: false,
+                });
+            }
+            Err(err) => {
+                log::warn!(
+                    "[sync_engine] junction {:?} -> {:?} failed: {:#}; trying symlink",
+                    target,
+                    source,
+                    err
+                );
+                cleanup_failed_junction(target);
+            }
+        }
     }
 
+    match try_link_dir(source, target) {
+        Ok(()) => {
+            return Ok(SyncOutcome {
+                mode_used: SyncMode::Symlink,
+                target_path: target.to_path_buf(),
+                replaced: false,
+            });
+        }
+        Err(err) => log::debug!(
+            "[sync_engine] symlink {:?} -> {:?} failed: {:#}",
+            target,
+            source,
+            err
+        ),
+    }
+
+    log::warn!(
+        "[sync_engine] link creation failed for {:?} -> {:?}; falling back to a full copy (the target will no longer track central changes)",
+        target,
+        source
+    );
+    #[cfg(windows)]
+    cleanup_failed_junction(target);
     copy_dir_recursive(source, target)?;
     Ok(SyncOutcome {
         mode_used: SyncMode::Copy,
@@ -64,16 +101,20 @@ pub fn sync_dir_hybrid_with_overwrite(
 ) -> Result<SyncOutcome> {
     let mut did_replace = false;
     if std::fs::symlink_metadata(target).is_ok() {
+        // A healthy link already tracks the central directory: replacing it
+        // with a copy is a regression (wasted space + a stale target).
         if is_same_link(target, source) {
             return Ok(SyncOutcome {
-                mode_used: SyncMode::Symlink,
+                mode_used: link_mode_at(target).unwrap_or(SyncMode::Symlink),
                 target_path: target.to_path_buf(),
                 replaced: false,
             });
         }
 
         if overwrite {
-            std::fs::remove_dir_all(target)
+            // NEVER remove_dir_all here: on Windows the target can be a
+            // junction, and traversing it would delete the central repo.
+            remove_path_any(target)
                 .with_context(|| format!("remove existing target {:?}", target))?;
             did_replace = true;
         } else {
@@ -81,7 +122,6 @@ pub fn sync_dir_hybrid_with_overwrite(
         }
     }
 
-    // reuse normal flow
     sync_dir_hybrid(source, target).map(|mut out| {
         out.replaced = did_replace;
         out
@@ -134,7 +174,12 @@ fn ensure_parent_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn remove_path_any(path: &Path) -> Result<()> {
+/// Removes a target path without ever traversing a reparse point.
+///
+/// This is shared by the sync engine and by uninstall/unsync in `installer.rs`.
+/// A junction is a directory reparse point whose `file_type().is_symlink()` is
+/// false on Windows, so a plain `remove_dir_all` is not safe here.
+pub(crate) fn remove_path_any(path: &Path) -> Result<()> {
     let meta = match std::fs::symlink_metadata(path) {
         Ok(meta) => meta,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -142,9 +187,14 @@ fn remove_path_any(path: &Path) -> Result<()> {
     };
     let ft = meta.file_type();
 
-    // 软链接（即使指向目录）也应该用 remove_file 删除链接本身
-    if ft.is_symlink() {
-        std::fs::remove_file(path).with_context(|| format!("remove symlink {:?}", path))?;
+    // Symlinks and NTFS junctions are links: remove only the link itself.
+    // `remove_dir` deletes a directory link (and fails on a file link), while
+    // `remove_file` handles file symlinks and Unix symlinks.
+    if ft.is_symlink() || (ft.is_dir() && read_link_target(path).is_some()) {
+        if std::fs::remove_dir(path).is_ok() {
+            return Ok(());
+        }
+        std::fs::remove_file(path).with_context(|| format!("remove link {:?}", path))?;
         return Ok(());
     }
     if ft.is_dir() {
@@ -155,11 +205,90 @@ fn remove_path_any(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn is_same_link(link_path: &Path, target: &Path) -> bool {
-    if let Ok(existing) = std::fs::read_link(link_path) {
-        return existing == target;
+/// Reads the stored destination of a symlink or an NTFS junction.
+///
+/// `std::fs::read_link` understands both, but older junctions created without
+/// a PrintName are best read through the junction crate as a fallback.
+fn read_link_target(path: &Path) -> Option<PathBuf> {
+    if let Ok(existing) = std::fs::read_link(path) {
+        return Some(existing);
     }
-    false
+    #[cfg(windows)]
+    if let Ok(existing) = junction::get_target(path) {
+        return Some(existing);
+    }
+    None
+}
+
+/// Windows junction targets are stored as NT paths (`\\?\C:\...`), while the
+/// central path in the database is a normal Win32 path (`C:\...`). Comparing
+/// them byte-for-byte always fails, which used to make every `sync` delete a
+/// healthy junction and replace it with a copy.
+fn normalized_key(path: &Path) -> String {
+    #[cfg(windows)]
+    let raw = path.to_string_lossy().replace('/', "\\");
+    #[cfg(not(windows))]
+    let raw = path.to_string_lossy().to_string();
+
+    #[cfg(windows)]
+    let stripped = if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = raw.strip_prefix(r"\\?\") {
+        rest.to_owned()
+    } else {
+        raw.clone()
+    };
+    #[cfg(not(windows))]
+    let stripped = raw;
+
+    let key = stripped
+        .trim_end_matches(|c| c == '\\' || c == '/')
+        .to_owned();
+    #[cfg(windows)]
+    {
+        key.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        key
+    }
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    if normalized_key(left) == normalized_key(right) {
+        return true;
+    }
+    // Both paths usually exist; canonicalize resolves `..`, case differences
+    // and the junction chain (`.skillshub` -> `.agents/skills`) for us.
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(a), Ok(b)) => normalized_key(&a) == normalized_key(&b),
+        _ => false,
+    }
+}
+
+/// Returns true when `link_path` is a link whose destination is `target`.
+pub(crate) fn is_same_link(link_path: &Path, target: &Path) -> bool {
+    match read_link_target(link_path) {
+        Some(existing) => paths_equivalent(&existing, target),
+        None => false,
+    }
+}
+
+/// Reports the real link type at `path` (used so DB `mode` stays accurate).
+pub(crate) fn link_mode_at(path: &Path) -> Option<SyncMode> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    #[cfg(windows)]
+    {
+        // Rust's FileType reports *any* reparse point (junctions included) as
+        // `is_symlink() == true`, so check the actual reparse tag first.
+        if junction::exists(path).unwrap_or(false) {
+            return Some(SyncMode::Junction);
+        }
+    }
+    if meta.file_type().is_symlink() || read_link_target(path).is_some() {
+        return Some(SyncMode::Symlink);
+    }
+    None
 }
 
 fn try_link_dir(source: &Path, target: &Path) -> Result<()> {
@@ -183,9 +312,34 @@ fn try_link_dir(source: &Path, target: &Path) -> Result<()> {
 
 #[cfg(windows)]
 fn try_junction(source: &Path, target: &Path) -> Result<()> {
-    junction::create(source, target)
+    // junction 1.x writes "\??\" + source into the reparse buffer. A Win32
+    // verbatim prefix in `source` would produce an invalid mount point, so
+    // strip it before handing the path to the crate.
+    let raw = source.to_string_lossy();
+    let source = match raw.strip_prefix(r"\\?\UNC\") {
+        Some(rest) => PathBuf::from(format!(r"\\{rest}")),
+        None => raw
+            .strip_prefix(r"\\?\")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| source.to_path_buf()),
+    };
+    junction::create(&source, target)
         .with_context(|| format!("junction {:?} -> {:?}", target, source))?;
     Ok(())
+}
+
+#[cfg(windows)]
+fn cleanup_failed_junction(path: &Path) {
+    // junction 1.x creates the (empty) directory *before* setting its reparse
+    // point; a later failure leaves it behind and every retry then fails with
+    // AlreadyExists. `remove_dir` only succeeds on an empty directory, so this
+    // can never delete skill content.
+    if std::fs::symlink_metadata(path).is_err() {
+        return;
+    }
+    if let Err(err) = std::fs::remove_dir(path) {
+        log::debug!("[sync_engine] keeping existing target {:?}: {}", path, err);
+    }
 }
 
 fn should_skip_copy(entry: &walkdir::DirEntry) -> bool {

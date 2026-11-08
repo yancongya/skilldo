@@ -20,6 +20,7 @@ use super::github_download::{download_github_directory, parse_github_api_params}
 use super::skill_store::{SkillOriginRecord, SkillRecord, SkillStore};
 use super::sync_engine::copy_dir_recursive;
 use super::sync_engine::is_same_link;
+use super::sync_engine::remove_path_any;
 use super::sync_engine::sync_dir_copy_with_overwrite;
 use super::sync_engine::sync_dir_hybrid_with_overwrite;
 use super::tool_adapters::is_tool_installed;
@@ -3079,15 +3080,10 @@ pub fn unsync_skill_target_cli(
 }
 
 fn remove_sync_target_path(path: &Path) -> Result<()> {
-    let Ok(metadata) = std::fs::symlink_metadata(path) else {
-        return Ok(());
-    };
-    if metadata.file_type().is_symlink() || metadata.is_file() {
-        std::fs::remove_file(path).with_context(|| format!("remove target {:?}", path))?;
-    } else if metadata.is_dir() {
-        std::fs::remove_dir_all(path).with_context(|| format!("remove target {:?}", path))?;
-    }
-    Ok(())
+    // Delegate to the sync engine: a junction is a directory reparse point and
+    // must be removed as a link, never traversed with remove_dir_all (which
+    // could otherwise delete the central repo through the link).
+    remove_path_any(path)
 }
 
 // ---------------------------------------------------------------------------

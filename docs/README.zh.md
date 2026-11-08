@@ -104,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/inst
 直接安装 CLI（无需交互菜单）：
 
 ```bash
-# macOS（Linux 暂无预编译包，需从源码构建）
+# CLI 直装 — macOS / Linux x64
 curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
 ```
 
@@ -113,7 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/inst
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-Release 包含 `skilldo-cli-macos-{aarch64,x86_64}.tar.gz` 和 `skilldo-cli-windows-{x64,arm64}.zip`，每个都有 `.sha256` 校验文件。Linux 暂无预编译 CLI 包，需用 `./scripts/build.sh cli` 从源码构建。只有开发或自行构建时才需要 clone 完整仓库。
+Release 包含 `skilldo-cli-macos-{aarch64,x86_64}.tar.gz`、`skilldo-cli-windows-{x64,arm64}.zip` 与 `skilldo-cli-linux-x64.tar.gz`，每个都有 `.sha256` 校验文件。Linux x64 CLI 由 `release-cli-linux` 构建任务产出，因此该任务上线前创建的旧版本没有 Linux 资产，安装脚本会明确提示用 `./scripts/build.sh cli` 从源码构建。Linux arm64 与 Linux 桌面端仍需自行构建。只有开发或自行构建时才需要 clone 完整仓库。
 
 ### 桌面客户端
 
@@ -400,7 +400,7 @@ SkillDo 支持 **47** 个 AI 编程工具。项目级 skills 目录相对所选�
 - 为什么有时会变成 Copy？默认优先 symlink/junction，但在某些系统（尤其 Windows）可能因为权限/策略导致无法创建链接，会自动回退到目录复制。
 - `TARGET_EXISTS|...` 是什么意思？目标目录已存在且默认不覆盖（为了安全）。你需要先清理目标目录，或在“接管/覆盖”的明确流程里重试。
 - macOS Gatekeeper 备注（未签名/未公证构建，不同 macOS 版本表现可能不同）：如提示“已损坏/无法验证开发者”，可执行 `xattr -cr "/Applications/SkillDo.app"`（[参考](https://v2.tauri.app/distribute/#macos)）。
-- 为什么 Linux 没有预编译 CLI 包？当前发布流水线只产出 macOS 与 Windows 的 CLI 二进制，Linux 请用 `./scripts/build.sh cli` 从源码构建（见「支持的系统」）。
+- 为什么旧版本的 Linux CLI 装不上？Linux x64 CLI 资产由 `release-cli-linux` 构建任务发布；该任务上线前的 Release 只有 macOS / Windows 资产，升级到新版或用 `./scripts/build.sh cli` 从源码构建即可。Linux arm64 暂无预编译包。
 
 <p align="right">(<a href="#readme-top">回到顶部</a>)</p>
 
@@ -408,7 +408,7 @@ SkillDo 支持 **47** 个 AI 编程工具。项目级 skills 目录相对所选�
 
 - macOS（已验证）
 - Windows（按架构应支持，未做本地验证）
-- Linux（按架构应支持，未做本地验证）
+- Linux（x64 CLI 由 `release-cli-linux` 任务提供预编译包；arm64 CLI 与桌面端需从源码构建）
 
 <p align="right">(<a href="#readme-top">回到顶部</a>)</p>
 

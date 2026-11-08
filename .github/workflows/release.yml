@@ -375,10 +375,80 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
 
+  # The desktop app is only bundled for macOS/Windows, but the standalone CLI
+  # is pure Rust + app_lib and can be built natively on Linux. Publishing this
+  # asset makes `install-cli.sh` / the npm wrapper work on Linux x64 instead of
+  # telling users to build from source.
+  release-cli-linux:
+    name: CLI (Linux x64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux build deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev librsvg2-dev patchelf \
+            pkg-config libssl-dev build-essential
+          # Ubuntu 24.04 ships the Ayatana fork; older images use the original.
+          sudo apt-get install -y --no-install-recommends libayatana-appindicator3-dev \
+            || sudo apt-get install -y --no-install-recommends libappindicator3-dev
+
+      - name: Install frontend deps
+        run: npm ci && npm run build
+
+      - name: Build standalone CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path src-tauri/Cargo.toml --release \
+            --bin skilldo --target x86_64-unknown-linux-gnu
+
+      - name: Prepare Linux Asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          CLI="src-tauri/target/x86_64-unknown-linux-gnu/release/skilldo"
+          if [ ! -x "$CLI" ]; then
+            echo "❌ 未找到 standalone CLI: ${CLI}" >&2
+            exit 1
+          fi
+          ASSET="skilldo-cli-linux-x64.tar.gz"
+          tar -czf "release-assets/${ASSET}" -C "$(dirname "$CLI")" skilldo
+          sha256sum "release-assets/${ASSET}" > "release-assets/${ASSET}.sha256"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-assets-linux-x64
+          path: release-assets/*
+          if-no-files-found: error
+
   assemble-updater-json:
     name: Assemble updater.json
     runs-on: macos-15
-    needs: release
+    needs: [release, release-cli-linux]
     permissions:
       contents: write
     steps:

@@ -516,8 +516,34 @@ enum RepairAction {
     },
 }
 
+/// Minimal stderr logger for the standalone CLI binary.
+///
+/// The GUI installs tauri-plugin-log; without a logger every `log::warn!`
+/// emitted by `core` (e.g. "junction failed, falling back to a copy") is
+/// silently dropped in CLI mode. Warnings go to stderr so `--json` stdout
+/// stays machine-readable.
+struct CliLogger;
+
+impl log::Log for CliLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            eprintln!("[skilldo] {}: {}", record.level(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static CLI_LOGGER: CliLogger = CliLogger;
+
 /// Entry point invoked from the `skilldo` binary.
 pub fn run() {
+    let _ = log::set_logger(&CLI_LOGGER);
+    log::set_max_level(log::LevelFilter::Warn);
     let wants_json = std::env::args().any(|arg| arg == "--json");
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,

@@ -1218,7 +1218,9 @@ pub async fn sync_skill_to_tool(
             }
             let target = tool_root.join(&name);
             if let Some(existing) = store.get_skill_target(&skillId, &tool, scope, None)? {
-                if existing.target_path == target.to_string_lossy() && target.exists() {
+                if existing.target_path == target.to_string_lossy()
+                    && std::fs::symlink_metadata(&target).is_ok()
+                {
                     return Ok::<_, anyhow::Error>(SyncResultDto {
                         mode_used: existing.mode,
                         target_path: existing.target_path,
@@ -1324,7 +1326,9 @@ pub async fn sync_skill_to_tool(
         if let Some(existing) =
             store.get_skill_target(&skillId, &tool, scope, project_path_for_record.as_deref())?
         {
-            if existing.target_path == target.to_string_lossy() && target.exists() {
+            if existing.target_path == target.to_string_lossy()
+                && std::fs::symlink_metadata(&target).is_ok()
+            {
                 return Ok::<_, anyhow::Error>(SyncResultDto {
                     mode_used: existing.mode,
                     target_path: existing.target_path,

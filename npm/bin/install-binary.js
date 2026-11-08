@@ -3,8 +3,8 @@
 
 /**
  * postinstall script — downloads and verifies the native SkillDo binary.
- * Published assets: macOS (aarch64), Windows (x64 / arm64).
- * Linux has no prebuilt CLI yet and must be built from source.
+ * Published assets: macOS (aarch64), Windows (x64 / arm64), Linux (x64).
+ * Linux arm64 has no prebuilt CLI yet and must be built from source.
  *
  * Environment variables:
  *   SKILLDO_DOWNLOAD_BASE  — override download URL base (for mirrors / CI)
@@ -54,6 +54,13 @@ function getArch() {
 function getAssetName(platform, arch) {
   if (platform === "windows") return `skilldo-cli-windows-${arch}.zip`;
   if (platform === "macos") return "skilldo-cli-macos-aarch64.tar.gz";
+  if (platform === "linux") {
+    // The release-cli-linux workflow job publishes this asset for x64.
+    if (arch === "x64") return "skilldo-cli-linux-x64.tar.gz";
+    throw new Error(
+      `No prebuilt Linux ${arch} CLI yet; build from source: git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh cli`
+    );
+  }
   throw new Error(`No prebuilt CLI asset for ${platform}`);
 }
 
@@ -164,8 +171,8 @@ function verifyChecksum(archivePath, checksumPath) {
 
 async function main() {
   const platform = getPlatform();
-  if (platform === "linux") {
-    console.error("skilldo: no prebuilt Linux CLI is published in GitHub Releases yet.");
+  if (platform === "linux" && getArch() === "arm64") {
+    console.error("skilldo: no prebuilt Linux arm64 CLI is published in GitHub Releases yet.");
     console.error(`skilldo: build from source: git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh cli`);
     process.exitCode = 1;
     return;
@@ -210,5 +217,8 @@ async function main() {
 main().catch((err) => {
   console.error(`skilldo: failed to install the native binary: ${err.message}`);
   console.error(`skilldo: you can install manually from ${RELEASES_URL}`);
+  if (process.platform === "linux") {
+    console.error("skilldo: releases created before the Linux build job have no Linux CLI asset; build from source with ./scripts/build.sh cli");
+  }
   process.exitCode = 1;
 });
