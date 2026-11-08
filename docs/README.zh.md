@@ -83,7 +83,7 @@ SkillDo 是一个跨平台桌面应用（Tauri + React），用于统一管理 A
 ### 不 clone 源码安装
 
 ```bash
-# npm（推荐 — macOS / Linux / Windows）
+# npm — 已发布的包版本可能滞后于 GitHub Releases，需要最新版请用下方安装脚本
 npm install -g skilldo
 ```
 
@@ -97,14 +97,14 @@ curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/inst
 
 | 选项 | 安装内容 | 方式 |
 |---|---|---|
-| **1 → CLI** | `skilldo` 二进制 → `~/.local/bin` | 自动下载 + SHA-256 校验 |
+| **1 → CLI** | `skilldo` → `~/.local/bin`（macOS/Linux）或 `%LOCALAPPDATA%\SkillDo\bin`（Windows，自动加入 PATH） | 自动下载 + SHA-256 校验 |
 | **2 → Desktop** | `SkillDo.app` / `.exe` | 打开 GitHub Releases 下载 |
 | **3 → Agent** | 通过 agent 安装 CLI | 复制 prompt 给 Claude Code / Codex / Cursor |
 
 直接安装 CLI（无需交互菜单）：
 
 ```bash
-# macOS / Linux
+# macOS（Linux 暂无预编译包，需从源码构建）
 curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
 ```
 
@@ -113,7 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/inst
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-Release 包含 `skilldo-cli-{macos,linux}-{aarch64,x64}.tar.gz` 和 `skilldo-cli-windows-{x64,arm64}.zip`，每个都有 `.sha256` 校验文件。只有开发或自行构建时才需要 clone 完整仓库。
+Release 包含 `skilldo-cli-macos-{aarch64,x86_64}.tar.gz` 和 `skilldo-cli-windows-{x64,arm64}.zip`，每个都有 `.sha256` 校验文件。Linux 暂无预编译 CLI 包，需用 `./scripts/build.sh cli` 从源码构建。只有开发或自行构建时才需要 clone 完整仓库。
 
 ### 桌面客户端
 
@@ -400,6 +400,7 @@ SkillDo 支持 **47** 个 AI 编程工具。项目级 skills 目录相对所选�
 - 为什么有时会变成 Copy？默认优先 symlink/junction，但在某些系统（尤其 Windows）可能因为权限/策略导致无法创建链接，会自动回退到目录复制。
 - `TARGET_EXISTS|...` 是什么意思？目标目录已存在且默认不覆盖（为了安全）。你需要先清理目标目录，或在“接管/覆盖”的明确流程里重试。
 - macOS Gatekeeper 备注（未签名/未公证构建，不同 macOS 版本表现可能不同）：如提示“已损坏/无法验证开发者”，可执行 `xattr -cr "/Applications/SkillDo.app"`（[参考](https://v2.tauri.app/distribute/#macos)）。
+- 为什么 Linux 没有预编译 CLI 包？当前发布流水线只产出 macOS 与 Windows 的 CLI 二进制，Linux 请用 `./scripts/build.sh cli` 从源码构建（见「支持的系统」）。
 
 <p align="right">(<a href="#readme-top">回到顶部</a>)</p>
 

@@ -83,7 +83,7 @@ SkillDo manages AI Agent Skills from a single source of truth (the Central Repo)
 ### Install without cloning
 
 ```bash
-# npm (recommended — macOS / Linux / Windows)
+# npm — the published package may lag behind GitHub Releases; use the scripts below for the latest version
 npm install -g skilldo
 ```
 
@@ -97,14 +97,14 @@ The installer detects your platform (macOS/Linux/Windows), shows what's already 
 
 | Option | What it installs | How |
 |---|---|---|
-| **CLI** | `skilldo` binary → `~/.local/bin` | Auto-download + SHA-256 verify |
+| **CLI** | `skilldo` → `~/.local/bin` (macOS/Linux) or `%LOCALAPPDATA%\SkillDo\bin` (Windows, PATH added automatically) | Auto-download + SHA-256 verify |
 | **Desktop** | `SkillDo.app` / `.exe` | Opens GitHub Releases to download |
 | **Agent** | CLI via agent proxy | Copies a prompt for Claude Code / Codex / Cursor |
 
 Direct links (no interactive menu):
 
 ```bash
-# CLI only — macOS / Linux
+# CLI only — macOS (no prebuilt Linux CLI yet; build from source)
 curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash
 ```
 
@@ -113,7 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/inst
 irm https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.ps1 | iex
 ```
 
-Releases include `skilldo-cli-{macos,linux}-{aarch64,x64}.tar.gz` and `skilldo-cli-windows-{x64,arm64}.zip`, each with a `.sha256` file. Cloning the source repository is only required for development.
+Releases include `skilldo-cli-macos-{aarch64,x86_64}.tar.gz` and `skilldo-cli-windows-{x64,arm64}.zip`, each with a `.sha256` file. Linux CLI binaries are not published yet — build from source with `./scripts/build.sh cli`. Cloning the source repository is only required for development.
 
 ### CLI (recommended for agents & automation)
 
@@ -396,6 +396,7 @@ See [open issues](https://github.com/yancongya/skilldo/issues) for the full list
 - **Why does it sometimes fall back to Copy?** The default is symlink/junction, but on some systems (especially Windows) link creation may fail due to permissions/policy, and SkillDo automatically falls back to directory copy.
 - **What does `TARGET_EXISTS|...` mean?** The target directory already exists and is not overwritten by default (for safety). Clean the target first, or retry through the explicit takeover/overwrite flow.
 - **macOS Gatekeeper note** (unsigned/unnotarized builds may behave differently across macOS versions): if you see "damaged / cannot verify developer", run `xattr -cr "/Applications/SkillDo.app"` ([ref](https://v2.tauri.app/distribute/#macos)).
+- **Why is there no prebuilt Linux CLI?** The release pipeline currently publishes macOS and Windows CLI binaries only. On Linux, build from source with `./scripts/build.sh cli` (see Supported Platforms).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

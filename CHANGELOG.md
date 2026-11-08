@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 修复
+- 安装脚本在 GitHub Release CDN 返回 5xx 时自动改用 GitHub API 资源端点下载；Windows 安装脚本显式启用 TLS 1.2、超时与重试
+- Linux 暂无预编译 CLI 包时，安装脚本与 npm 安装器改为明确提示从源码构建，不再请求不存在的资源
+- 交互式安装器强制校验 SHA-256（不再跳过校验），修正 Windows 与 Linux 分支引导，修正 agent prompt 中的工具数量
+- npm 安装器修正 macOS / Windows 资源与二进制命名（含 Windows `.exe`），补齐 SHA-256 校验、API 回退与失败报错，不再静默安装空壳
+- 安装脚本兼容 `sha256sum` / `shasum`，并在压缩包内容异常时拒绝继续安装
+
+### 文档
+- 中英文 README 修正 CLI 安装路径（Windows 为 `%LOCALAPPDATA%\SkillDo\bin`）、Release 资产清单与 npm 包版本提示，补充 Linux 常见问题
+- npm 包 README 修正平台矩阵与安装说明；同步项目文档中的 AI 工具数量（47）
+
 ## [0.7.23] - 2026-10-12
 
 ### 更新

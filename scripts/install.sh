@@ -38,7 +38,7 @@ check_installed() {
   local app_path=""
   case "$PLATFORM" in
     macos-*) app_path="/Applications/SkillDo.app" ;;
-    windows) app_path="$LOCALAPPDATA/Programs/SkillDo" ;;
+    windows) if [[ -n "${LOCALAPPDATA:-}" ]]; then app_path="$LOCALAPPDATA/Programs/SkillDo"; fi ;;
   esac
   if [[ -n "$app_path" && -e "$app_path" ]]; then
     echo -e "  ${G}✓${RST} Desktop: ${BOLD}SkillDo.app${RST} ${DIM}($app_path)${RST}"
@@ -56,15 +56,21 @@ install_cli() {
 
   if [[ "$PLATFORM" == "unknown" ]]; then
     echo -e "  ${R}✗ 不支持的平台: $(uname -s)-$(uname -m)${RST}" >&2
-    echo -e "  ${DIM}支持: macOS arm64/x86_64, Linux x86_64/aarch64, Windows${RST}" >&2
+    echo -e "  ${DIM}预编译 CLI 支持 macOS arm64/x86_64；Windows 请用 install-cli.ps1；Linux 请从源码构建${RST}" >&2
     return 1
   fi
 
   if [[ "$PLATFORM" == "windows" ]]; then
     echo -e "  ${Y}→ Windows 平台，请在 PowerShell 中运行:${RST}"
-    echo -e "  ${C}irm ${REleases_URL}/download/skilldo-cli-windows-x64.zip -OutFile skilldo.zip${RST}"
-    echo -e "  ${DIM}或直接下载: ${REleases_URL}${RST}"
+    echo -e "  ${C}irm https://raw.githubusercontent.com/${REPO}/main/scripts/install-cli.ps1 | iex${RST}"
+    echo -e "  ${DIM}或手动下载: ${REleases_URL}${RST}"
     return 0
+  fi
+
+  if [[ "$PLATFORM" == linux-* ]]; then
+    echo -e "  ${R}✗ Linux 暂无预编译 CLI 包，请从源码构建:${RST}" >&2
+    echo -e "  ${C}git clone https://github.com/${REPO}.git && cd skilldo && npm install && ./scripts/build.sh release${RST}" >&2
+    return 1
   fi
 
   local asset="skilldo-cli-${PLATFORM}.tar.gz"
@@ -74,25 +80,33 @@ install_cli() {
   trap 'rm -rf "$tmp_dir"' RETURN
 
   echo -e "  ${DIM}→ 下载 ${asset}...${RST}"
-  if ! curl --fail --location --silent --show-error "$base/$asset" -o "$tmp_dir/$asset" 2>/dev/null; then
+  if ! curl --fail --location --silent --show-error --connect-timeout 20 --max-time 180 --retry 2 "$base/$asset" -o "$tmp_dir/$asset" 2>/dev/null; then
     echo -e "  ${R}✗ 下载失败。请检查网络或手动下载:${RST}" >&2
     echo -e "  ${C}${REleases_URL}${RST}" >&2
     return 1
   fi
 
   echo -e "  ${DIM}→ 校验 SHA-256...${RST}"
-  if ! curl --fail --location --silent --show-error "$base/$asset.sha256" -o "$tmp_dir/$asset.sha256" 2>/dev/null; then
-    echo -e "  ${Y}⚠ 无法下载校验文件，跳过校验${RST}"
-  else
-    local expected actual
-    expected=$(awk '{print $1}' "$tmp_dir/$asset.sha256")
-    actual=$(shasum -a 256 "$tmp_dir/$asset" 2>/dev/null | awk '{print $1}')
-    if [[ "$expected" != "$actual" ]]; then
-      echo -e "  ${R}✗ SHA-256 校验失败${RST}" >&2
-      return 1
-    fi
-    echo -e "  ${G}✓ 校验通过${RST}"
+  if ! curl --fail --location --silent --show-error --connect-timeout 20 --max-time 60 --retry 2 "$base/$asset.sha256" -o "$tmp_dir/$asset.sha256" 2>/dev/null; then
+    echo -e "  ${R}✗ 无法下载校验文件，出于安全考虑中止安装。请手动下载:${RST}" >&2
+    echo -e "  ${C}${REleases_URL}${RST}" >&2
+    return 1
   fi
+  local expected actual
+  expected=$(awk '{print $1}' "$tmp_dir/$asset.sha256" | tr '[:upper:]' '[:lower:]')
+  if command -v sha256sum &>/dev/null; then
+    actual=$(sha256sum "$tmp_dir/$asset" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+  elif command -v shasum &>/dev/null; then
+    actual=$(shasum -a 256 "$tmp_dir/$asset" | awk '{print $1}' | tr '[:upper:]' '[:lower:]')
+  else
+    echo -e "  ${R}✗ 缺少 sha256sum / shasum，拒绝安装未校验的二进制${RST}" >&2
+    return 1
+  fi
+  if [[ "$expected" != "$actual" ]]; then
+    echo -e "  ${R}✗ SHA-256 校验失败${RST}" >&2
+    return 1
+  fi
+  echo -e "  ${G}✓ 校验通过${RST}"
 
   echo -e "  ${DIM}→ 安装到 ${INSTALL_DIR}...${RST}"
   mkdir -p "$INSTALL_DIR"
@@ -136,11 +150,10 @@ install_desktop() {
       echo -e "  ${G}✓${RST} 下载 ${BOLD}.exe${RST} 安装包运行即可"
       echo -e "  ${DIM}支持 NSIS 自动更新${RST}"
       ;;
-    linux)
+    linux-*)
       echo -e "  ${DIM}→ Linux 桌面端需要从源码构建:${RST}"
       echo -e "  ${C}git clone https://github.com/${REPO}.git && cd skilldo && npm install && npm run tauri:dev${RST}"
-      echo -e "  ${DIM}或下载 CLI 版本（推荐）:${RST}"
-      echo -e "  选择 ${BOLD}1${RST} 安装 CLI"
+      echo -e "  ${DIM}CLI 同样需要从源码构建: ./scripts/build.sh release${RST}"
       ;;
     *)
       echo -e "  ${R}✗ 无法自动打开下载页面${RST}"
@@ -154,7 +167,7 @@ show_agent_prompt() {
   echo ""
   echo -e "${BOLD}▶ Agent 安装（复制以下 prompt 给你的 AI agent）${RST}"
   echo ""
-  local prompt="I want to set up SkillDo — an open-source skill manager for AI coding agents (https://github.com/yancongya/skilldo).\n\nPlease do the following:\n1. Star the repository (yancongya/skilldo) so I can find it later.\n2. Install the standalone CLI:\n   curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash\n3. Run \`skilldo status --json\` and tell me which of the 45 supported AI tools are installed on this machine.\n4. Run \`skilldo explore --json\` and recommend 3 featured skills worth installing for my stack."
+  local prompt="I want to set up SkillDo — an open-source skill manager for AI coding agents (https://github.com/yancongya/skilldo).\n\nPlease do the following:\n1. Star the repository (yancongya/skilldo) so I can find it later.\n2. Install the standalone CLI:\n   curl -fsSL https://raw.githubusercontent.com/yancongya/skilldo/main/scripts/install-cli.sh | bash\n3. Run \`skilldo status --json\` and tell me which of the 47 supported AI tools are installed on this machine.\n4. Run \`skilldo explore --json\` and recommend 3 featured skills worth installing for my stack."
   echo -e "${C}${prompt}${RST}"
   echo ""
   echo -e "  ${DIM}适用: Claude Code, Codex CLI, Cursor, WorkBuddy, 等支持 shell 命令的 agent${RST}"

@@ -13,7 +13,7 @@ const fs = require("fs");
 const BIN_DIR = path.join(__dirname, "..", "bin");
 const PLATFORM = getPlatform();
 const ARCH = getArch();
-const BINARY = path.join(BIN_DIR, `skilldo-${PLATFORM}-${ARCH}`);
+const BINARY = path.join(BIN_DIR, `skilldo-${PLATFORM}-${ARCH}${PLATFORM === "windows" ? ".exe" : ""}`);
 
 function getPlatform() {
   const p = process.platform;
@@ -23,17 +23,14 @@ function getPlatform() {
   throw new Error(`Unsupported platform: ${p}`);
 }
 
+// Keep in sync with npm/bin/install-binary.js: macOS always uses the aarch64
+// binary (Intel Macs run it through Rosetta 2), Windows uses x64 / arm64.
 function getArch() {
+  if (process.platform === "darwin") return "aarch64";
   const a = process.arch;
-  if (a === "arm64" || a === "aarch64") return "aarch64";
-  if (a === "x64" || a === "x86_64") return process.platform === "darwin" ? "aarch64" : "x64";
+  if (a === "arm64" || a === "aarch64") return "arm64";
+  if (a === "x64" || a === "x86_64") return "x64";
   throw new Error(`Unsupported architecture: ${a}`);
-}
-
-// On macOS arm64, default to aarch64; on macOS x64, also aarch64 (Rosetta 2)
-if (process.platform === "darwin") {
-  // Apple Silicon Macs run arm64 natively; Intel Macs run arm64 via Rosetta 2
-  // Always ship aarch64 binary — it works on both via Rosetta
 }
 
 if (!fs.existsSync(BINARY)) {
