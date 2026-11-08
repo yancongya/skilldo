@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 - 交互式安装器强制校验 SHA-256（不再跳过校验），修正 Windows 与 Linux 分支引导，修正 agent prompt 中的工具数量
 - npm 安装器修正 macOS / Windows 资源与二进制命名（含 Windows `.exe`），补齐 SHA-256 校验、API 回退与失败报错，不再静默安装空壳
 - 安装脚本兼容 `sha256sum` / `shasum`，并在压缩包内容异常时拒绝继续安装
+- 迁移 GitHub Actions 的 macOS runner 标签（`macos-14` 镜像已于 2026-11-02 退役），修复签名构建无法分配 runner、导致 Release 缺少 macOS 资产的问题
 
 ### 文档
 - 中英文 README 修正 CLI 安装路径（Windows 为 `%LOCALAPPDATA%\SkillDo\bin`）、Release 资产清单与 npm 包版本提示，补充 Linux 常见问题
