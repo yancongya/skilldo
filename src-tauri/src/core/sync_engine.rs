@@ -241,9 +241,7 @@ fn normalized_key(path: &Path) -> String {
     #[cfg(not(windows))]
     let stripped = raw;
 
-    let key = stripped
-        .trim_end_matches(|c| c == '\\' || c == '/')
-        .to_owned();
+    let key = stripped.trim_end_matches(['\\', '/']).to_owned();
     #[cfg(windows)]
     {
         key.to_lowercase()
@@ -303,7 +301,7 @@ fn try_link_dir(source: &Path, target: &Path) -> Result<()> {
     {
         std::os::windows::fs::symlink_dir(source, target)
             .with_context(|| format!("symlink {:?} -> {:?}", target, source))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(any(unix, windows)))]
